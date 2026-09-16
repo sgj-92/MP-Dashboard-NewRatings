@@ -239,11 +239,21 @@
         });
         if (!res.ok) throw new Error(`write ${collection}/${id} failed: ${res.status} ${await res.text()}`);
       },
+      // Firestore caps a page by response size, not just pageSize, so a large
+      // collection comes back in pieces. Following nextPageToken is required --
+      // without it a read silently truncates and looks like missing data.
       async getAll(collection) {
-        const res = await doFetch(`${base}/${collection}?pageSize=1000`);
-        if (!res.ok) throw new Error(`read ${collection} failed: ${res.status}`);
-        const body = await res.json();
-        return (body.documents || []).map((d) => fromFirestoreFields(d.fields));
+        const out = [];
+        let pageToken = null;
+        do {
+          const url = `${base}/${collection}?pageSize=300` + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+          const res = await doFetch(url);
+          if (!res.ok) throw new Error(`read ${collection} failed: ${res.status}`);
+          const body = await res.json();
+          (body.documents || []).forEach((d) => out.push(fromFirestoreFields(d.fields)));
+          pageToken = body.nextPageToken || null;
+        } while (pageToken);
+        return out;
       },
     };
   }
