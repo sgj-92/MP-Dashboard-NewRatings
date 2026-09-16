@@ -1,0 +1,151 @@
+Date,Type,Team A,Team B,Score,Winner,Draw,Team A Rating,Team B Rating,Expected Win % (A/B whichever won),Actual Win %,Overperformance %,Verified,Status,Submitted By
+2026-07-02,doubles,Len & Eli,Shaun & Osh,"0-6, 6-3, 6-4",Len & Eli,No,1625.7,1548.7,60.9,48,-12.9,Yes,approved,Historical record
+2026-07-02,doubles,Dennis & Osh,KC & Eli,"7-5, 6-2",Dennis & Osh,No,1670.6,1651.5,52.7,65,12.3,Yes,approved,Historical record
+2026-07-02,doubles,Tee & MK,Rhys & Fee,"6-0, 6-2",Tee & MK,No,1271.9,1091.2,73.9,85.7,11.8,Yes,approved,Historical record
+2026-07-02,doubles,KC & Shaun,Osh & Carla,"6-4, 6-3, 6-4",KC & Shaun,No,1554.2,1544.3,51.4,62.1,10.6,Yes,approved,Historical record
+2026-07-03,singles,Osh,Len,"15-13, 15-11",Osh,No,1698.2,1657.7,55.8,55.6,-0.2,Yes,approved,Historical record
+2026-07-03,doubles,Eli & Fatch,Stormzy & Omar,"6-4, 6-3",Eli & Fatch,No,1418.6,1397.9,53,63.2,10.2,Yes,approved,Historical record
+2026-07-05,doubles,Len & Eli,Erf & Max,"3-6, 6-2, 6-3",Len & Eli,No,1625.7,1577,57,57.7,0.7,Yes,approved,Historical record
+2026-07-05,doubles,Erf & Eli,Len & Max,"6-4, 6-2",Erf & Eli,No,1658.7,1544,65.9,66.7,0.7,Yes,approved,Historical record
+2026-07-05,doubles,Erf & Len,Max & Eli,"6-1, 5-0",Erf & Len,No,1690.8,1512,73.7,91.7,18,Yes,approved,Historical record
+2026-07-06,doubles,Stormzy & Osh,Max & Len,"6-4, 6-3",Stormzy & Osh,No,1540.1,1544,49.4,63.2,13.7,Yes,approved,Historical record
+2026-07-07,doubles,Erf & Osh,Len & Eli,"6-2, 7-5",Erf & Osh,No,1711,1625.7,62,65,3,Yes,approved,Historical record
+2026-07-08,doubles,Rishi & Max,Harry & Shaun,"7-5, 7-5",Rishi & Max,No,1456.8,1417.8,55.6,58.3,2.7,Yes,approved,Historical record
+2026-07-08,doubles,Rishi & Harry,Max & Shaun,"6-7, 6-4, 7-5",Rishi & Harry,No,1459.9,1414.7,56.5,54.3,-2.2,Yes,approved,Historical record
+2026-07-09,doubles,Harry & Omar,Max & Rishi,"6-3, 7-6",Harry & Omar,No,1425.2,1456.8,45.5,59.1,13.6,Yes,approved,Historical record
+2026-07-10,doubles,Eli & Erf,Kaz & Max,"4-6, 6-1, 6-1",Eli & Erf,No,1658.7,1599,58.5,66.7,8.2,Yes,approved,Historical record
+2026-07-12,doubles,Erf & Rishi,PDM & Eli,"6-3, 6-3",Erf & Rishi,No,1603.5,1541.2,58.9,66.7,7.8,Yes,approved,Historical record
+2026-07-12,doubles,Manny & Kaz,Osh & Dennis,"6-1, 6-0",Manny & Kaz,No,1890,1670.6,78,92.3,14.4,Yes,approved,Historical record
+2026-07-12,doubles,Manny & Dennis,Osh & Kaz,"6-4, 6-3",Manny & Dennis,No,1827.6,1733,63.3,63.2,-0.1,Yes,approved,Historical record
+2026-07-12,doubles,Eli & Len,Rishi & Osh,"7-5, 5-7, 7-5",Eli & Len,No,1625.7,1590.8,55,52.8,-2.2,Yes,approved,Historical record
+2026-07-13,doubles,Jords & Kaz,Erf & Rishi,"6-4, 6-4, 6-3",Jords & Kaz,No,1544.2,1603.5,41.6,62.1,20.5,Yes,approved,Historical record
+2026-07-13,doubles,Harry & Antz,Shaun & Rocky,"4-6, 6-4, 9-8",Harry & Antz,No,1427.1,1377,57.2,51.4,-5.8,Yes,approved,Historical record
+2026-07-13,doubles,Jams & Rishi,Fatch & Jords,"6-3, 7-5",Jams & Rishi,No,1290.6,1282.2,51.2,61.9,10.7,Yes,approved,Historical record
+2026-07-14,doubles,KC & Erf,Osh & Dennis,"2-6, 6-1, 6-2",KC & Erf,No,1716.6,1670.6,56.6,60.9,4.3,Yes,approved,Historical record
+2026-07-15,doubles,Rishi & Antz,Jords & MK,"1-6, 6-3, 6-0",Rishi & Antz,No,1450.5,1375.6,60.6,59.1,-1.5,Yes,approved,Historical record
+2026-07-15,doubles,Kaz & Rishi,Max & Erf,"6-4, 6-3",Kaz & Rishi,No,1625.5,1577,56.9,63.2,6.2,Yes,approved,Historical record
+2026-07-16,doubles,Max & PDM,Rishi & Jords,"7-6, 7-6",Max & PDM,No,1459.5,1402,58.2,53.8,-4.4,Yes,approved,Historical record
+2026-07-16,doubles,Len & Antz,Harry & PDM,"6-2, 6-3, 7-5",Len & Antz,No,1537.7,1462.7,60.6,65.5,4.9,Yes,approved,Historical record
+2026-07-17,doubles,Harry & Len,Max & Eli,"6-2, 6-2",Harry & Len,No,1547.1,1512,55,75,20,Yes,approved,Historical record
+2026-07-17,doubles,Len & Erf,Kaz & Rishi,"6-4, 6-3",Len & Erf,No,1690.8,1625.5,59.3,63.2,3.9,Yes,approved,Historical record
+2026-07-17,doubles,Kaz & Jords,Rishi & Erf,"2-6, 6-2, 6-1",Kaz & Jords,No,1544.2,1603.5,41.6,60.9,19.3,Yes,approved,Historical record
+2026-07-18,doubles,Rishi & Eli,Max & PDM,"5-7, 6-1, 6-3",Rishi & Eli,No,1538.5,1459.5,61.2,60.7,-0.5,Yes,approved,Historical record
+2026-07-20,doubles,Harry & PDM,Rishi & Chloe,"6-2, 4-6, 6-2",Harry & PDM,No,1462.7,1425.7,55.3,61.5,6.2,Yes,approved,Historical record
+2026-07-20,doubles,Harry & Rishi,Jords & Omar,"6-4, 8-7",Harry & Rishi,No,1459.9,1367.3,63,56,-7,Yes,approved,Historical record
+2026-07-21,doubles,Dennis & Rishi,Harry & PDM,"6-2, 4-6, 6-4",Dennis & Rishi,No,1563.1,1462.7,64.1,57.1,-6.9,Yes,approved,Historical record
+2026-07-21,doubles,KC & Rishi,Antz & Len,"6-3, 7-5",KC & Rishi,No,1596.3,1537.7,58.4,61.9,3.5,Yes,approved,Historical record
+2026-07-22,doubles,Harry & Rocky,Shaun & Max,"6-4, 6-2",Harry & Rocky,No,1395.7,1414.7,47.3,66.7,19.4,Yes,approved,Historical record
+2026-07-22,doubles,Harry & Fatch,Shaun & Tee,"6-3, 6-4",Harry & Fatch,No,1340.1,1256.3,61.8,63.2,1.3,Yes,approved,Historical record
+2026-07-25,doubles,Tee & Fatch,Rhys & Fee,"4-6, 6-4, 6-2",Tee & Fatch,No,1178.5,1091.2,62.3,57.1,-5.2,Yes,approved,Historical record
+2026-07-25,doubles,KC & Shaun,Max & PDM,"6-3, 6-3",KC & Shaun,No,1554.2,1459.5,63.3,66.7,3.4,Yes,approved,Historical record
+2026-07-25,doubles,KC & Max,Shaun & PDM,"6-2, 7-6",KC & Max,No,1569.9,1443.9,67.4,61.9,-5.5,Yes,approved,Historical record
+2026-07-27,doubles,Tom & Shaun,Max & Tee,"6-1, 6-4",Tom & Shaun,No,1372.6,1271.9,64.1,70.6,6.5,Yes,approved,Historical record
+2026-07-30,doubles,PDM & Rishi,Harry & Rocky,"6-0, 6-0",PDM & Rishi,No,1486,1395.7,62.7,100,37.3,Yes,approved,Historical record
+2026-07-30,doubles,KC & Fatch,Max & Rishi,"6-4, 6-3, 7-5",KC & Fatch,No,1476.5,1456.8,52.8,61.3,8.5,Yes,approved,Historical record
+2026-07-30,doubles,Fatch & Antz,Rishi & Jords,"6-2, 1-6, 6-3",Fatch & Antz,No,1330.6,1402,39.9,54.2,14.3,Yes,approved,Historical record
+2026-08-01,doubles,PDM & Rishi,Jords & Omar,"6-3, 6-2, 6-3",PDM & Rishi,No,1486,1367.3,66.5,69.2,2.8,Yes,approved,Historical record
+2026-08-02,doubles,Jams & Rishi,Fatch & Tom,"6-4, 3-6, 7-6",Jams & Rishi,No,1290.6,1294.9,49.4,50,0.6,Yes,approved,Historical record
+2026-08-02,doubles,Tee & MK,Tom & Shaun,"5-7, 6-4, 6-3",Tee & MK,No,1271.9,1372.6,35.9,54.8,18.9,Yes,approved,Historical record
+2026-08-03,doubles,KC & Max,Erf & Rishi,"5-7, 6-1, 7-6",KC & Max,No,1569.9,1603.5,45.2,56.3,11.1,Yes,approved,Historical record
+2026-08-04,doubles,Aubyn & Antz,Fatch & Jams,"6-4, 6-3",Aubyn & Antz,No,1266.4,1170.7,63.4,63.2,-0.3,Yes,approved,Historical record
+2026-08-04,doubles,MK & Fatch,Shaun & Tom,"6-4, 6-3",MK & Fatch,No,1337,1372.6,44.9,63.2,18.3,Yes,approved,Historical record
+2026-08-05,doubles,Rishi & Jams,Aubyn & Antz,"6-2, 6-2, 2-6",Rishi & Jams,No,1290.6,1266.4,53.5,58.3,4.9,Yes,approved,Historical record
+2026-08-05,doubles,Rishi & Omar,Max & Eli,"7-6, 4-6, 6-3",Rishi & Omar,No,1448.5,1512,41,53.1,12.2,Yes,approved,Historical record
+2026-08-06,doubles,Skapz & Rhys,Tee & Fee,"6-2, 6-2, 3-6",Skapz & Rhys,No,1102.9,1099.2,50.5,60,9.5,Yes,approved,Historical record
+2026-08-08,doubles,Tom & Erf,Antz & Fatch,"6-3, 6-2, 6-4",Tom & Erf,No,1535,1330.6,76.4,66.7,-9.8,Yes,approved,Historical record
+2026-08-08,doubles,Erf & PDM,Osh & Fatch,"8-6, 6-2",Erf & PDM,No,1606.3,1470.9,68.6,63.6,-4.9,Yes,approved,Historical record
+2026-08-09,doubles,Len & Fatch,PDM & Antz,"8-6, 5-7, 9-7",Len & Fatch,No,1450.7,1453.2,49.6,52.4,2.7,Yes,approved,Historical record
+2026-08-09,doubles,Rocky & Max,MK & Fatch,"6-4, 6-4, 7-6",Rocky & Max,No,1392.6,1337,57.9,57.6,-0.4,Yes,approved,Historical record
+2026-08-11,doubles,Osh & Eli,PDM & Max,"6-3, 6-4",Osh & Eli,No,1646,1459.5,74.5,63.2,-11.4,Yes,approved,Historical record
+2026-08-11,doubles,PDM & Shaun,Tarique & Max,"6-3, 6-2",PDM & Shaun,No,1443.9,1391.3,57.5,70.6,13.1,Yes,approved,Historical record
+2026-08-12,doubles,Rocky & PDM,Rishi & Max,"6-2, 6-4, 6-7",Rocky & PDM,No,1421.8,1456.8,45,58.1,13.1,Yes,approved,Historical record
+2026-08-14,doubles,Mulley & Osh,KC & Shaun,"4-6, 7-5, 6-2",Mulley & Osh,No,1551.9,1554.2,49.7,56.7,7,Yes,approved,Historical record
+2026-08-14,doubles,Max & Kaz,PDM & Rishi,"5-7, 6-0, 6-3",Max & Kaz,No,1599,1486,65.7,63,-2.7,Yes,approved,Historical record
+2026-08-15,doubles,KC & Fatch,Max & PDM,"4-6, 7-5, 6-2",KC & Fatch,No,1476.5,1459.5,52.4,56.7,4.2,Yes,approved,Historical record
+2026-08-15,doubles,Max & Fatch,Rocky & PDM,"6-4, 6-3",Max & Fatch,No,1336.9,1421.8,38,63.2,25.1,Yes,approved,Historical record
+2026-08-16,doubles,Len & Eli,Rishi & PDM,"6-1, 6-4",Len & Eli,No,1625.7,1486,69.1,70.6,1.5,Yes,approved,Historical record
+2026-08-16,doubles,Osh & KC,Max & Kaz,"6-1, 6-2, 6-1",Osh & KC,No,1703.8,1599,64.6,81.8,17.2,Yes,approved,Historical record
+2026-08-17,doubles,Osh & Eli,Len & KC,"6-4, 6-3",Osh & Eli,No,1646,1683.6,44.6,63.2,18.5,Yes,approved,Historical record
+2026-08-19,doubles,Rishi & Omar,PDM & Shaun,"7-5, 6-3, 6-4",Rishi & Omar,No,1448.5,1443.9,50.7,61.3,10.6,Yes,approved,Historical record
+2026-08-19,doubles,Max & Aubyn,Rishi & Jams,"6-4, 6-0, 8-6",Max & Aubyn,No,1272.7,1290.6,47.4,66.7,19.2,Yes,approved,Historical record
+2026-08-20,doubles,Rishi & Len,Eli & Stormzy,"6-3, 6-1, 6-4",Rishi & Len,No,1570.5,1487.9,61.7,69.2,7.6,Yes,approved,Historical record
+2026-08-20,doubles,Rishi & Stormzy,Fatch & Max,"6-3, 3-6, 6-3",Rishi & Stormzy,No,1432.7,1336.9,63.4,55.6,-7.9,Yes,approved,Historical record
+2026-08-21,doubles,Rishi & PDM,Stormzy & Max,"7-5, 6-2",Rishi & PDM,No,1486,1406.2,61.3,65,3.7,Yes,approved,Historical record
+2026-08-21,doubles,Stormzy & Max,Rishi & PDM,"6-3, 2-6, 6-2",Stormzy & Max,No,1406.2,1486,38.7,56,17.3,Yes,approved,Historical record
+2026-08-25,doubles,Tom & Rishi,Max & Rocky,"2-6, 6-3, 6-2",Tom & Rishi,No,1414.7,1392.6,53.2,56,2.8,Yes,approved,Historical record
+2026-08-25,doubles,Erf & Kaz,Osh & KC,"6-1, 6-2",Erf & Kaz,No,1745.7,1703.8,56,80,24,Yes,approved,Historical record
+2026-08-25,doubles,Erf & Kaz,Osh & Eli,"6-1, 6-2",Erf & Kaz,No,1745.7,1646,64,80,16,Yes,approved,Historical record
+2026-08-27,doubles,Eli & Ant Slice,Rishi & Max,"8-6, 6-2",Eli & Ant Slice,No,1604.9,1456.8,70.1,63.6,-6.5,Yes,approved,Historical record
+2026-08-27,doubles,Max & PDM,Ant Slice & Chloe,"4-6, 6-2, 6-2",Max & PDM,No,1459.5,1492.1,45.3,61.5,16.2,Yes,approved,Historical record
+2026-06-02,doubles,Rishi & Jords,Tarique & Harry,"4-6, 6-3, 7-5",Rishi & Jords,No,1402,1394.4,51.1,54.8,3.7,Yes,approved,Historical record
+2026-06-02,doubles,Rocky & Harry,Rishi & Jords,"6-4, 6-4, 3-6",Rocky & Harry,No,1395.7,1402,49.1,51.7,2.6,Yes,approved,Historical record
+2026-06-03,doubles,Harry & Antz,Rishi & MK,"1-6, 6-1, 8-6",Harry & Antz,No,1427.1,1456.8,45.7,53.6,7.8,Yes,approved,Historical record
+2026-06-04,doubles,Harry & Tom,Fatch & Jords,"7-5, 6-2",Harry & Tom,No,1391.3,1282.2,65.2,65,-0.2,Yes,approved,Historical record
+2026-06-04,doubles,Fatch & Harry,Tom & Jords,"2-6, 6-1, 7-5",Fatch & Harry,No,1340.1,1333.5,50.9,55.6,4.6,Yes,approved,Historical record
+2026-06-05,doubles,Rocky & Tarique,Rishi & Harry,"6-3, 6-4, 2-6",Rocky & Tarique,No,1353.6,1459.9,35.2,51.9,16.7,Yes,approved,Historical record
+2026-06-07,doubles,Max & Tom,Shaun & MK,"6-2, 6-3, 4-6",Max & Tom,No,1388.2,1414.7,46.2,59.3,13.1,Yes,approved,Historical record
+2026-06-07,doubles,Stormzy & Len,Rishi & Antz,"6-3, 6-0",Stormzy & Len,No,1519.9,1450.5,59.9,80,20.1,Yes,approved,Historical record
+2026-06-07,doubles,Rishi & Antz,Stormzy & Len,"7-6, 4-6, 6-3",Rishi & Antz,No,1450.5,1519.9,40.1,53.1,13,Yes,approved,Historical record
+2026-06-09,doubles,Rishi & Fatch,Chloe & Jords,"2-6, 6-2, 6-2",Rishi & Fatch,No,1363.4,1344.4,52.7,58.3,5.6,Yes,approved,Historical record
+2026-06-09,doubles,Rishi & Chloe,Fatch & Jords,"6-0, 6-1",Rishi & Chloe,No,1425.7,1282.2,69.5,92.3,22.8,Yes,approved,Historical record
+2026-06-09,doubles,Erf & Osh,Eli & Len,"4-6, 7-5, 6-3",Erf & Osh,No,1711,1625.7,62,54.8,-7.2,Yes,approved,Historical record
+2026-06-10,doubles,Eli & Harry,Jords & KC,"4-6, 6-0, 6-2",Eli & Harry,No,1515.1,1515.1,50,66.7,16.7,Yes,approved,Historical record
+2026-06-14,doubles,Jords & MK,Rocky & Fatch,"9-7, 6-1",Jords & MK,No,1375.6,1299.2,60.8,65.2,4.4,Yes,approved,Historical record
+2026-06-14,doubles,Max & Shaun,MK & Harry,"6-4, 7-5, 5-7",Max & Shaun,No,1414.7,1433.4,47.3,52.9,5.6,Yes,approved,Historical record
+2026-06-16,doubles,Max & Rishi,KC & Tom,"6-3, 6-3, 8-6",Max & Rishi,No,1456.8,1527.8,39.9,62.5,22.6,Yes,approved,Historical record
+2026-06-16,doubles,Jords & Kaz,Rishi & Eli,"6-4, 6-3, 6-2, 2-6",Jords & Kaz,No,1544.2,1538.5,50.8,57.1,6.3,Yes,approved,Historical record
+2026-06-18,doubles,Shaun & Rocky,Harry & Jords,"6-1, 6-4, 6-2",Shaun & Rocky,No,1377,1378.7,49.8,72,22.2,Yes,approved,Historical record
+2026-06-21,doubles,Max & Rishi,Tarique & Kaz,"7-5, 3-6, 7-5",Max & Rishi,No,1456.8,1560,35.6,51.5,16,Yes,approved,Historical record
+2026-06-21,doubles,Rishi & Fatch,Antz & Tarique,"7-5, 6-8, 6-3",Rishi & Fatch,No,1363.4,1385,46.9,54.3,7.4,Yes,approved,Historical record
+2026-06-22,doubles,Max & Kaz,KC & Rishi,"6-4, 6-4, 4-6",Max & Kaz,No,1599,1596.3,50.4,53.3,2.9,Yes,approved,Historical record
+2026-06-22,doubles,Rishi & Del,Harry & Dennis,"6-2, 6-4",Rishi & Del,No,1596.2,1539.7,58.1,66.7,8.6,Yes,approved,Historical record
+2026-06-23,doubles,Erf & Shaun,Rishi & Max,"6-2, 6-3",Erf & Shaun,No,1561.4,1456.8,64.6,70.6,6,Yes,approved,Historical record
+2026-06-24,doubles,Erf & Eli,KC & Shaun,"6-4, 6-4",Erf & Eli,No,1658.7,1554.2,64.6,60,-4.6,Yes,approved,Historical record
+2026-06-26,doubles,Fatch & Antz,Jords & M.R,"6-2, 6-2",Fatch & Antz,No,1330.6,1204.6,67.4,75,7.6,Yes,approved,Historical record
+2026-06-28,singles,Len,Harry,"6-7, 6-2, 6-4",Len,No,1657.7,1436.5,78.1,58.1,-20.1,Yes,approved,Historical record
+2026-06-29,doubles,Kaz & Osh,KC & Erf,"6-4, 6-3",Kaz & Osh,No,1733,1716.6,52.4,63.2,10.8,Yes,approved,Historical record
+2026-06-30,doubles,KC & Rishi,Osh & Harry,"6-2, 6-3",KC & Rishi,No,1596.3,1567.4,54.2,70.6,16.4,Yes,approved,Historical record
+2026-06-30,doubles,Harry & Osh,KC & Rishi,"6-2, 7-5",Harry & Osh,No,1567.4,1596.3,45.8,65,19.2,Yes,approved,Historical record
+2026-06-30,doubles,Max & MK,Tarique & Rocky,"6-4, 6-0",Max & MK,No,1430.3,1353.6,60.9,75,14.1,Yes,approved,Historical record
+2026-06-30,doubles,Harry & Len,Max & Erf,"6-3, 3-6, 6-4",Harry & Len,No,1547.1,1577,45.7,53.6,7.9,Yes,approved,Historical record
+2026-07-11,doubles,Omar & Jords,Tom & Max,"7-6, 4-6, 6-2",Omar & Jords,No,1367.3,1388.2,47,54.8,7.8,Yes,approved,Historical record
+2026-07-18,doubles,Tom & Chloe,Fatch & Antz,"6-2, 7-5, 7-5, 6-3",Tom & Chloe,No,1357.1,1330.6,53.8,63.4,9.6,Yes,approved,Historical record
+2026-08-19,doubles,Eli & Stormzy,Osh & Jords,"6-8, 6-3, 6-3",Eli & Stormzy,No,1487.9,1509.5,46.9,56.3,9.4,Yes,approved,Historical record
+2026-08-19,doubles,Eli & Stormzy,Osh & Jords,"7-5, 6-1",Eli & Stormzy,No,1487.9,1509.5,46.9,68.4,21.5,Yes,approved,Historical record
+2026-08-23,doubles,Stormzy & Chloe,Jords & Tom,"6-1, 5-7, 6-2, 5-7, 6-1",Stormzy & Chloe,No,1375,1333.5,56,60.9,4.9,Yes,approved,Historical record
+2026-08-29,doubles,PDM & Tom,Fatch & Shaun,"6-3, 6-3, 6-4",PDM & Tom,No,1417.5,1321.3,63.5,64.3,0.8,Yes,approved,Historical record
+2026-07-20,doubles,Kaz & Tom,Rocky & MK,"6-1, 6-1",Kaz & Tom,No,1556.9,1392.6,72,85.7,13.7,Yes,approved,
+2026-08-26,doubles,PDM & Max,Ant Slice & Chloe,"4-6, 6-2, 6-1",PDM & Max,No,1459.5,1492.1,45.3,64,18.7,Yes,approved,Shaun
+2026-08-31,doubles,Erf & Rishi,Eli & Len,"6-3, 6-3",Erf & Rishi,No,1603.5,1625.7,46.8,66.7,19.9,Yes,approved,Shaun
+2026-08-31,doubles,Kaz & PDM,Dennis & Rishi,"6-4, 6-4",Kaz & PDM,No,1628.2,1563.1,59.3,60,0.7,Yes,approved,Shaun
+2026-09-01,doubles,Osh & Erf,Kaz & Eli,"6-3, 6-4, 4-6",Osh & Erf,No,1711,1680.7,54.4,55.2,0.8,Yes,approved,Shaun
+2026-09-01,doubles,Osh & Tom,PDM & Jords,"7-6, 6-6",,Yes,,,,,,Yes,approved,Shaun
+2026-09-02,doubles,Rishi & Erf,Kaz & Jords,"3-6, 6-3, 6-4",Rishi & Erf,No,1603.5,1544.2,58.4,53.6,-4.9,Yes,approved,Shaun
+2026-09-02,doubles,KC & PDM,Kaz & Rishi,"6-1, 1-6, 7-6",KC & PDM,No,1599.1,1625.5,46.2,51.9,5.6,Yes,approved,Shaun
+2026-09-02,doubles,Fee & Skapz,Rhys & Aubyn,"6-1, 3-6, 1-4",,Yes,,,,,,Yes,approved,Tom
+2026-09-02,doubles,Osh & Erf,Eli & Len,"7-5, 6-4",Osh & Erf,No,1711,1625.7,62,59.1,-2.9,Yes,approved,Shaun
+2026-09-03,doubles,KC & Rishi,Ant Slice & PDM,"7-5, 6-4, 6-2",KC & Rishi,No,1596.3,1552.5,56.3,63.3,7.1,Yes,approved,Shaun
+2026-09-03,doubles,Erf & Tom,PDM & Rishi,"6-2, 6-4",Erf & Tom,No,1535,1486,57,66.7,9.7,Yes,approved,Shaun
+2026-09-03,doubles,Eli & Jords,PDM & Rishi,"4-6, 6-4, 6-4",Eli & Jords,No,1457.2,1486,45.9,53.3,7.5,Yes,approved,Shaun
+2026-08-16,doubles,Eli & Jords,Stormzy & Omar,"7-5, 6-1",Eli & Jords,No,1457.2,1397.9,58.5,68.4,10,Yes,approved,Shaun
+2026-08-12,doubles,Eli & Jords,Stormzy & Omar,"6-2, 6-3",Eli & Jords,No,1457.2,1397.9,58.5,70.6,12.1,Yes,approved,Shaun
+2026-07-06,doubles,Antz & Fee,MK & Tee,"4-6, 8-6, 6-4",Antz & Fee,No,1251.2,1271.9,47,52.9,5.9,Yes,approved,Shaun
+2026-09-04,doubles,Rishi & PDM,MK & Tom,"6-2, 6-4, 6-3",Rishi & PDM,No,1486,1388.2,63.7,66.7,3,Yes,approved,Shaun
+2026-09-04,doubles,Manny & Rishi,Kaz & Osh,"4-6, 7-5",,Yes,,,,,,Yes,approved,Shaun
+2026-09-05,doubles,Len & Rishi,Jords & PDM,"4-6, 6-4, 6-1",Len & Rishi,No,1570.5,1404.8,72.2,59.3,-12.9,Yes,approved,Shaun
+2026-09-06,doubles,Osh & Rishi,KC & Max,"4-6, 7-5, 6-4",Osh & Rishi,No,1590.8,1569.9,53,53.1,0.1,Yes,approved,Shaun
+2026-09-07,doubles,Rocky & Len,Rishi & Jords,"6-4, 6-4, 4-6, 6-2",Rocky & Len,No,1506.3,1402,64.6,57.9,-6.7,Yes,approved,Shaun
+2026-09-07,doubles,Rocky & Tom,Aubyn & Tee,"6-1, 6-3",Rocky & Tom,No,1350.5,1114.3,79.6,75,-4.6,Yes,approved,Shaun
+2026-09-08,doubles,Dennis & Len,Osh & Rishi,"4-6, 6-3, 6-4",Dennis & Len,No,1650.3,1590.8,58.5,55.2,-3.3,Yes,approved,Shaun
+2026-09-08,doubles,KC & Rishi,Stormzy & Kaz,"6-0, 6-4",KC & Rishi,No,1596.3,1574.9,53.1,75,21.9,Yes,approved,Shaun
+2026-09-08,doubles,Rishi & Len,Kaz & Jords,"6-3, 6-3",Rishi & Len,No,1570.5,1544.2,53.8,66.7,12.9,Yes,approved,Shaun
+2026-09-09,doubles,Osh & Jords,Len & Harry,"6-4, 3-6, 6-4",Osh & Jords,No,1509.5,1547.1,44.6,51.7,7.1,Yes,approved,Shaun
+2026-09-11,doubles,Rishi & KC,Dennis & Ant Slice,"7-5, 6-4",Rishi & KC,No,1596.3,1629.6,45.2,59.1,13.9,Yes,approved,Shaun
+2026-09-11,doubles,KC & Harry,Rishi & Ant Slice,"6-3, 6-4",KC & Harry,No,1573,1549.7,53.3,63.2,9.8,Yes,approved,Shaun
+2026-09-13,doubles,Len & Tom,Rishi & Jords,"6-1, 6-1",Len & Tom,No,1501.9,1402,64,85.7,21.7,Yes,approved,Shaun
+2026-09-13,doubles,Len & Jords,Tom & Rishi,"6-0, 5-7",,Yes,,,,,,Yes,approved,Shaun
+2026-09-13,doubles,MK & Rocky,Max & Harry,"1-6, 7-5, 6-4",MK & Rocky,No,1392.6,1433.4,44.2,48.3,4.1,Yes,approved,Shaun
+2026-09-14,doubles,Max & Jams,Jords & Ant Slice,"5-7, 6-1, 5-5",,Yes,,,,,,Yes,approved,Shaun
+2026-09-14,doubles,Max & Jords,PDM & Stormzy,"6-3, 5-7, 6-4",Max & Jords,No,1375.5,1435.4,41.5,54.8,13.4,Yes,approved,Shaun
+2026-09-15,doubles,Len & Antz,Stormzy & Max,"6-2, 6-3",Len & Antz,No,1537.7,1406.2,68.1,70.6,2.5,Yes,approved,Shaun
+2026-09-15,doubles,Antz & Len,Max & Stormzy,"6-2, 7-5",Antz & Len,No,1537.7,1406.2,68.1,65,-3.1,Yes,approved,Shaun
