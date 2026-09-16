@@ -74,6 +74,9 @@
     return doc;
   }
 
+  // Firestore rejects an array whose elements are themselves arrays, so a set
+  // score is stored as a map per set rather than as [gamesA, gamesB]. The
+  // engine's own shape is restored by matchFromDoc.
   function toMatchDoc(match) {
     return {
       id: match.id,
@@ -82,11 +85,48 @@
       sourceIndex: match.sourceIndex ?? null,
       teamA: match.teamA,
       teamB: match.teamB,
-      sets: match.sets,
+      sets: match.sets.map((s) => ({ teamA: s[0], teamB: s[1] })),
       outcome: match.outcome,
       type: match.type ?? null,
       drawSideAssignmentArbitrary: !!match.drawSideAssignmentArbitrary,
     };
+  }
+
+  function matchFromDoc(doc) {
+    return {
+      id: doc.id,
+      sourceIndex: doc.sourceIndex,
+      date: doc.date,
+      teamA: doc.teamA,
+      teamB: doc.teamB,
+      sets: doc.sets.map((s) => [s.teamA, s.teamB]),
+      outcome: doc.outcome,
+      type: doc.type,
+      drawSideAssignmentArbitrary: doc.drawSideAssignmentArbitrary,
+    };
+  }
+
+  // Walks a document and rejects anything Firestore will not accept. Cheap, and
+  // it turns a failed network round-trip into a failing test.
+  function assertFirestoreSafe(doc, collection) {
+    const walk = (value, pathStr, insideArray) => {
+      if (Array.isArray(value)) {
+        if (insideArray) {
+          throw new Error(`Nested array at ${collection}/${doc.id} ${pathStr} — Firestore rejects these.`);
+        }
+        value.forEach((v, i) => walk(v, `${pathStr}[${i}]`, true));
+        return;
+      }
+      if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([k, v]) => walk(v, `${pathStr}.${k}`, false));
+        return;
+      }
+      if (typeof value === 'number' && !Number.isFinite(value)) {
+        throw new Error(`Non-finite number at ${collection}/${doc.id} ${pathStr}`);
+      }
+    };
+    Object.entries(doc).forEach(([k, v]) => walk(v, k, false));
+    return doc;
   }
 
   function toPlayerDoc(playerId, state) {
@@ -125,6 +165,7 @@
     const ids = docs[COLLECTIONS.journey].map((d) => d.id);
     const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
     if (dupes.length) throw new Error('Duplicate journey ids: ' + [...new Set(dupes)].join(', '));
+    Object.entries(docs).forEach(([c, list]) => list.forEach((d) => assertFirestoreSafe(d, c)));
     return docs;
   }
 
@@ -248,7 +289,7 @@
 
   return {
     COLLECTIONS, SCHEMA_VERSION, JOURNEY_FIELDS, MATCH_EVENT_FIELDS,
-    eventId, toJourneyDoc, toMatchDoc, toPlayerDoc,
+    eventId, toJourneyDoc, toMatchDoc, matchFromDoc, toPlayerDoc, assertFirestoreSafe,
     buildWritePlan, summarisePlan, writePlan, limitPlan,
     memoryBackend, firestoreRestBackend, toFirestoreFields, fromFirestoreFields,
   };

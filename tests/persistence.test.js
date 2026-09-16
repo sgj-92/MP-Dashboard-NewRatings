@@ -261,3 +261,30 @@ test('a full seed overwrites everything a limited seed wrote', async () => {
       c + ' should hold exactly the full plan, with no orphans from the sample');
   }
 });
+
+// ---------- Firestore compatibility ----------
+
+test('no planned document contains a nested array', () => {
+  // Firestore rejects arrays of arrays; a set score is stored as a map per set.
+  const plan = Store.buildWritePlan(planInput());
+  const match = plan[Store.COLLECTIONS.matches][0];
+  assert.ok(!Array.isArray(match.sets[0]), 'set scores must not be raw arrays');
+  assert.deepStrictEqual(match.sets[0], { teamA: 4, teamB: 6 });
+  Object.entries(plan).forEach(([c, docs]) =>
+    docs.forEach((d) => assert.doesNotThrow(() => Store.assertFirestoreSafe(d, c))));
+});
+
+test('the safety check actually catches a nested array', () => {
+  assert.throws(() => Store.assertFirestoreSafe({ id: 'x', sets: [[1, 2]] }, 'matches'), /Nested array/);
+  assert.throws(() => Store.assertFirestoreSafe({ id: 'x', n: Infinity }, 'matches'), /Non-finite/);
+  assert.doesNotThrow(() => Store.assertFirestoreSafe({ id: 'x', a: ['p', 'q'], b: { c: [1, 2] } }, 'matches'));
+});
+
+test('a stored match round-trips back to the engine shape', () => {
+  const original = D.loadAllMatches()[0];
+  const restored = Store.matchFromDoc(Store.toMatchDoc(original));
+  assert.deepStrictEqual(restored.sets, original.sets);
+  assert.deepStrictEqual(restored.teamA, original.teamA);
+  assert.strictEqual(restored.outcome, original.outcome);
+  assert.strictEqual(restored.id, original.id);
+});
