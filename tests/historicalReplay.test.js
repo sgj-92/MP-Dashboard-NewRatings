@@ -115,6 +115,39 @@ test('replay is reproducible across runs and independent of input order', () => 
   assert.deepStrictEqual(restored.state, forward.state);
 });
 
+// ---------- Experiment 11 walk-forward accuracy (§7.2, §21) ----------
+
+function walkForward(stage) {
+  const { journey } = D.replayStage(stage);
+  const byMatch = {};
+  journey.filter((e) => e.eventType === E.EVENT.MATCH_UPDATE)
+    .forEach((e) => { (byMatch[e.matchId] = byMatch[e.matchId] || []).push(e); });
+
+  let predictable = 0, decided = 0, correct = 0;
+  D.experimentDataset().forEach((m) => {
+    const evs = byMatch[m.id];
+    const priorGames = {};
+    evs.forEach((e) => { priorGames[e.playerId] = e.lifetimeMatchesAtEvent - 1; });
+    if (![...m.teamA, ...m.teamB].every((n) => priorGames[n] >= 1)) return;
+    predictable++;
+    if (m.outcome === E.OUTCOME.DRAW) return; // no winner to score
+    decided++;
+    if (evs.find((e) => e.side === 'A').preMatchExpectedScore > 0.5) correct++;
+  });
+  return { predictable, decided, accuracy: 100 * correct / decided };
+}
+
+test('Experiment 11: 66.4% walk-forward accuracy over 122 predictable matches', () => {
+  const r = walkForward(1);
+  assert.strictEqual(r.predictable, 122, 'matches where all four players had >=1 prior match');
+  assert.strictEqual(r.decided, 119, 'the 3 draws are predictable but have no winner to score');
+  assert.strictEqual(at1dp(r.accuracy), 66.4);
+});
+
+test('the authoritative history predicts at least as well as Stage 1', () => {
+  assert.ok(walkForward(2).accuracy >= walkForward(1).accuracy);
+});
+
 test('no monthly reset: September opens where August closed', () => {
   const { journey } = D.replayStage(2);
   const rishi = journey.filter((e) => e.eventType === E.EVENT.MATCH_UPDATE && e.playerId === 'Rishi');
