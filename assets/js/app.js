@@ -66,14 +66,19 @@ const TIER_ORDER_LIST = ["S","A","B","C"];
 const TIER_IDX = {S:0,A:1,B:2,C:3};
 
 // ===================== STORAGE (Firebase Firestore + localStorage) =====================
-// Fill in your own Firebase project config here (Firebase console > Project settings > General > Your apps).
+// Beta v3 project — deliberately NOT the live `mp---dashboard` project the
+// production dashboard reads and writes. v3 must never write to production.
+// This database starts empty: the Firestore overlays (approved submissions,
+// match edits, deletions, tier overrides) still live in the production project
+// and have not been migrated, so anything this app computes from Firestore
+// alone will differ from production until that migration runs.
 const firebaseConfig = {
-  apiKey: "AIzaSyAYDCghLPhMLpHaxTbbC8Rm2sV09UlPKOw",
-  authDomain: "mp---dashboard.firebaseapp.com",
-  projectId: "mp---dashboard",
-  storageBucket: "mp---dashboard.firebasestorage.app",
-  messagingSenderId: "10882600309",
-  appId: "1:10882600309:web:4e3a8e186f465cc35bd73c"
+  apiKey: "AIzaSyDIiA5NVo3jKCkr_Kzi8y1fJhzXsWNuVmY",
+  authDomain: "mp-dashboard-beta-v3.firebaseapp.com",
+  projectId: "mp-dashboard-beta-v3",
+  storageBucket: "mp-dashboard-beta-v3.firebasestorage.app",
+  messagingSenderId: "1084285278543",
+  appId: "1:1084285278543:web:c183d0e28374747a234d3a"
 };
 
 let db = null;
