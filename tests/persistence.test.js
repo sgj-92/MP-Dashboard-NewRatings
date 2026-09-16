@@ -288,3 +288,37 @@ test('a stored match round-trips back to the engine shape', () => {
   assert.strictEqual(restored.outcome, original.outcome);
   assert.strictEqual(restored.id, original.id);
 });
+
+// ---------- pagination ----------
+
+test('a REST collection read follows nextPageToken to the end', async () => {
+  // Firestore pages by response size as well as pageSize. A reader that ignores
+  // the token silently truncates, which looks exactly like missing data.
+  const pages = [
+    { documents: [{ fields: { id: { stringValue: 'a' } } }, { fields: { id: { stringValue: 'b' } } }], nextPageToken: 't1' },
+    { documents: [{ fields: { id: { stringValue: 'c' } } }], nextPageToken: 't2' },
+    { documents: [{ fields: { id: { stringValue: 'd' } } }] },
+  ];
+  const seen = [];
+  let call = 0;
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    const body = pages[call++];
+    return { ok: true, json: async () => body };
+  };
+  const backend = Store.firestoreRestBackend({ projectId: 'test', fetchImpl });
+  const docs = await backend.getAll('ratingJourney');
+
+  assert.deepStrictEqual(docs.map((d) => d.id), ['a', 'b', 'c', 'd'],
+    'every page must be read, not just the first');
+  assert.strictEqual(seen.length, 3);
+  assert.ok(!seen[0].includes('pageToken'), 'the first request carries no token');
+  assert.ok(seen[1].includes('pageToken=t1'));
+  assert.ok(seen[2].includes('pageToken=t2'));
+});
+
+test('a failed page surfaces as an error rather than a short read', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 503, text: async () => 'nope' });
+  const backend = Store.firestoreRestBackend({ projectId: 'test', fetchImpl });
+  await assert.rejects(() => backend.getAll('matches'), /read matches failed: 503/);
+});
