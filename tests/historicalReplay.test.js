@@ -37,7 +37,7 @@ test('every match in the dataset has four (or two) known players and a usable sc
 // ---------- Stage 1 (§7.1 / §7.2) ----------
 
 test('Stage 1 reproduces the Experiment 12 monthly checkpoints', () => {
-  const { journey } = D.replayStage(1);
+  const { journey } = D.replayStage(1, null, 'experiment');
   assert.strictEqual(at2dp(D.monthlyPct(journey, 'Rishi', '2026-06')), 8.17);
   assert.strictEqual(at2dp(D.monthlyPct(journey, 'Rishi', '2026-07')), 0.22);
   assert.strictEqual(at2dp(D.monthlyPct(journey, 'Rishi', '2026-08')), 4.57);
@@ -46,7 +46,7 @@ test('Stage 1 reproduces the Experiment 12 monthly checkpoints', () => {
 });
 
 test('Stage 1 reproduces the Experiment 12 final ratings', () => {
-  const { state } = D.replayStage(1);
+  const { state } = D.replayStage(1, null, 'experiment');
   assert.strictEqual(at1dp(state.Shaun.rating), 1385.7);
   assert.strictEqual(at1dp(state.Tom.rating), 1358.4);
 });
@@ -54,7 +54,7 @@ test('Stage 1 reproduces the Experiment 12 final ratings', () => {
 // ---------- Stage 2 (§7.3) ----------
 
 test('Stage 2 reproduces the authoritative monthly performance', () => {
-  const { journey } = D.replayStage(2);
+  const { journey } = D.replayStage(2, null, 'experiment');
   assert.strictEqual(at2dp(D.monthlyPct(journey, 'Rishi', '2026-06')), 5.81);
   assert.strictEqual(at2dp(D.monthlyPct(journey, 'Rishi', '2026-07')), -1.11);
   assert.strictEqual(at2dp(D.monthlyPct(journey, 'Rishi', '2026-08')), 4.35);
@@ -62,7 +62,7 @@ test('Stage 2 reproduces the authoritative monthly performance', () => {
 });
 
 test('Stage 2 reproduces the authoritative final ratings', () => {
-  const { state } = D.replayStage(2);
+  const { state } = D.replayStage(2, null, 'experiment');
   assert.strictEqual(at1dp(state.Shaun.rating), 1178.7);
   assert.strictEqual(at1dp(state.Tom.rating), 1148.0);
 });
@@ -103,28 +103,32 @@ test('replay is reproducible across runs and independent of input order', () => 
   const b = D.replayStage(2);
   assert.deepStrictEqual(a.state, b.state);
 
-  // Reversing the source array must not change the result, because ordering is
-  // pinned to (date, declared source order) rather than retrieval order.
+  // Every match carries a sourceIndex derived from its permanent Match ID, so
+  // the order rows happen to arrive in cannot reach the result at all.
   const ds = D.experimentDataset();
   const forward = D.replayStage(2, ds);
-  const reversedInput = D.replayStage(2, ds.slice().reverse());
-  assert.notDeepStrictEqual(forward.state, reversedInput.state,
-    'reversing the declared source order legitimately changes same-date tie-breaks');
-  // ...but re-sorting back into declared order restores it exactly.
-  const restored = D.replayStage(2, ds.slice().reverse().sort((x, y) => x.sourceIndex - y.sourceIndex));
-  assert.deepStrictEqual(restored.state, forward.state);
+  const reversed = D.replayStage(2, ds.slice().reverse());
+  assert.deepStrictEqual(reversed.state, forward.state,
+    'database retrieval order must never determine ratings');
+
+  const shuffled = ds.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = (i * 7919 + 13) % (i + 1); // deterministic shuffle
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  assert.deepStrictEqual(D.replayStage(2, shuffled).state, forward.state);
 });
 
 // ---------- Experiment 11 walk-forward accuracy (§7.2, §21) ----------
 
 function walkForward(stage) {
-  const { journey } = D.replayStage(stage);
+  const { journey } = D.replayStage(stage, null, 'experiment');
   const byMatch = {};
   journey.filter((e) => e.eventType === E.EVENT.MATCH_UPDATE)
     .forEach((e) => { (byMatch[e.matchId] = byMatch[e.matchId] || []).push(e); });
 
   let predictable = 0, decided = 0, correct = 0;
-  D.experimentDataset().forEach((m) => {
+  D.experimentDataset('experiment').forEach((m) => {
     const evs = byMatch[m.id];
     const priorGames = {};
     evs.forEach((e) => { priorGames[e.playerId] = e.lifetimeMatchesAtEvent - 1; });

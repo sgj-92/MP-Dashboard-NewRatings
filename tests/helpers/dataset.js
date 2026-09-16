@@ -31,11 +31,14 @@ function parseCsv(text) {
 // score is always recorded from Team A's perspective. For a draw the side
 // assignment is whatever the export recorded -- arbitrary, but fixed and
 // carried through deterministically.
-function toMatch(row, index) {
+function toMatch(row) {
   const isDraw = row['Draw'].trim() === 'Yes';
+  const id = row['Match ID'].trim();
   return {
-    id: 'csv_' + index,
-    sourceIndex: index,
+    id,
+    // Match IDs are `YYYY-MM-DD-N`; N is the export's own same-date sequence and
+    // is the explicit tie-break §6.1 requires. Retrieval order never decides it.
+    sourceIndex: parseInt(id.slice(id.lastIndexOf('-') + 1), 10),
     date: row['Date'],
     teamA: row['Team A'].split('&').map((s) => s.trim()),
     teamB: row['Team B'].split('&').map((s) => s.trim()),
@@ -65,11 +68,39 @@ function loadBaseTiers() {
 // hand from a screenshot. That is 143 + 1 = the 144 matches the spec cites.
 const EXPERIMENT_CUTOFF = '2026-09-11';
 
-function experimentDataset() {
+// Experiments 11/12/13B ran before the export carried Match IDs, against the
+// row order of the day. On exactly three dates the new ID sequence disagrees
+// with that order -- the rows submitted later now sort first, so the sequence
+// is an artifact of the export, not the order the matches were played. Neither
+// ordering is "true": the source has date granularity only.
+//
+// The engine-equivalence proof (§7.1) has to replay the ordering the
+// experiments actually used, so it is recorded here rather than lost. Live v3
+// replay uses plain Match ID order.
+const EXPERIMENT_TIE_BREAK = {
+  '2026-06-22': ['2026-06-22-2', '2026-06-22-1'],
+  '2026-07-18': ['2026-07-18-2', '2026-07-18-1'],
+  '2026-08-19': ['2026-08-19-3', '2026-08-19-4', '2026-08-19-1', '2026-08-19-2'],
+};
+
+function applyExperimentTieBreak(matches) {
+  return matches.map((m) => {
+    const order = EXPERIMENT_TIE_BREAK[m.date];
+    if (!order) return m;
+    const i = order.indexOf(m.id);
+    if (i === -1) throw new Error('Unlisted match on a re-ordered date: ' + m.id);
+    return { ...m, sourceIndex: i };
+  });
+}
+
+// `ordering`: 'experiment' replays the tie-break the experiments used (for
+// Stage 1 equivalence); 'canonical' (default) uses Match ID order.
+function experimentDataset(ordering = 'canonical') {
   const all = loadAllMatches();
   const manual = all.find((m) => m.date === '2026-09-13' && m.teamA.join(' & ') === 'MK & Rocky');
   if (!manual) throw new Error('The manually added 2026-09-13 MK & Rocky match is missing.');
-  return all.filter((m) => m.date <= EXPERIMENT_CUTOFF).concat([manual]);
+  const ds = all.filter((m) => m.date <= EXPERIMENT_CUTOFF).concat([manual]);
+  return ordering === 'experiment' ? applyExperimentTieBreak(ds) : ds;
 }
 
 // Fatch is seeded at Tier C in BOTH stages: the legacy BASE_STARTING_TIER
@@ -101,8 +132,8 @@ function buildInitialisations(matches, { historical }) {
 
 // Stage 1 (§7.1): the experiments' own assumptions -- proves engine equivalence.
 // Stage 2 (§7.3): the authoritative §5.3 historical classifications.
-function replayStage(stage, matches) {
-  const ms = matches || experimentDataset();
+function replayStage(stage, matches, ordering = 'canonical') {
+  const ms = matches || experimentDataset(ordering);
   const historical = stage === 2;
   return E.replay({
     matches: ms,
@@ -118,5 +149,5 @@ function monthlyPct(journey, playerId, month) {
 
 module.exports = {
   parseCsv, loadAllMatches, loadBaseTiers, experimentDataset, replayStage, monthlyPct,
-  EXPERIMENT_CUTOFF, HISTORICAL_EVENTS, HISTORICAL_SEED,
+  EXPERIMENT_CUTOFF, EXPERIMENT_TIE_BREAK, HISTORICAL_EVENTS, HISTORICAL_SEED,
 };

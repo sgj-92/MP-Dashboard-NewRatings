@@ -195,13 +195,16 @@
   // Source data has date granularity only and many matches share a date.
   // Retrieval order must never decide ratings, so ties break on an explicit
   // stable key: the match's position in the declared source order.
+  // A match that carries its own `sourceIndex` (derived from its permanent
+  // match id) is ordered by that, so retrieval order cannot reach the result at
+  // all. Array position is only the fallback for matches without one.
   function orderMatches(matches) {
     return matches
-      .map((m, sourceIndex) => ({ m, sourceIndex }))
+      .map((m, position) => ({ m, key: m.sourceIndex === undefined ? position : m.sourceIndex }))
       .sort((x, y) => {
         if (x.m.date < y.m.date) return -1;
         if (x.m.date > y.m.date) return 1;
-        return x.sourceIndex - y.sourceIndex;
+        return x.key - y.key;
       })
       .map((x) => x.m);
   }
