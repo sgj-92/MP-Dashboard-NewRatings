@@ -1,0 +1,8 @@
+{
+  "name": "mp-dashboard-newratings",
+  "private": true,
+  "description": "Money Padel Prestige v3 beta — static dashboard plus the sequential-v1 rating engine.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}
