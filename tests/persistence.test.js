@@ -214,3 +214,50 @@ test('every planned document id is a legal, non-null Firestore id', () => {
     assert.ok(!d.id.includes('/') && !d.id.includes('undefined'), 'illegal id: ' + d.id);
   });
 });
+
+// ---------- --limit sampling ----------
+
+test('a limited plan caps the total and still covers every collection', () => {
+  const full = Store.buildWritePlan(planInput());
+  const ten = Store.limitPlan(full, 10);
+  const total = Object.values(ten).reduce((s, d) => s + d.length, 0);
+  assert.strictEqual(total, 10);
+  Object.keys(full).forEach((c) => assert.ok(ten[c].length > 0, c + ' must be represented'));
+});
+
+test('a limited plan is a true subset — same ids, same content', () => {
+  const full = Store.buildWritePlan(planInput());
+  const sample = Store.limitPlan(full, 12);
+  Object.entries(sample).forEach(([c, docs]) => {
+    docs.forEach((d) => {
+      const original = full[c].find((x) => x.id === d.id);
+      assert.ok(original, d.id + ' is not in the full plan');
+      assert.deepStrictEqual(d, original, d.id + ' differs from the full plan');
+    });
+  });
+});
+
+test('the sample spans event types rather than taking the first N', () => {
+  const full = Store.buildWritePlan(planInput());
+  const types = new Set(Store.limitPlan(full, 10)[Store.COLLECTIONS.journey].map((d) => d.eventType));
+  assert.ok(types.size > 1, 'a 10-document sample should show more than one event type');
+});
+
+test('limiting is deterministic and degrades sensibly at the edges', () => {
+  const full = Store.buildWritePlan(planInput());
+  assert.deepStrictEqual(Store.limitPlan(full, 10), Store.limitPlan(full, 10));
+  assert.strictEqual(Object.values(Store.limitPlan(full, 1)).reduce((s, d) => s + d.length, 0), 1);
+  assert.strictEqual(Object.values(Store.limitPlan(full, 0)).reduce((s, d) => s + d.length, 0), 0);
+  assert.deepStrictEqual(Store.limitPlan(full, 99999), full, 'a limit above the total returns everything');
+});
+
+test('a full seed overwrites everything a limited seed wrote', async () => {
+  const full = Store.buildWritePlan(planInput());
+  const backend = Store.memoryBackend();
+  await Store.writePlan(backend, Store.limitPlan(full, 10));
+  await Store.writePlan(backend, full);
+  for (const [c, docs] of Object.entries(full)) {
+    assert.strictEqual((await backend.getAll(c)).length, docs.length,
+      c + ' should hold exactly the full plan, with no orphans from the sample');
+  }
+});

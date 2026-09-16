@@ -3,7 +3,9 @@
 //
 //   node scripts/seed-beta.js                 # dry run, writes nothing
 //   node scripts/seed-beta.js --manifest out.json
-//   node scripts/seed-beta.js --write         # actually writes to Firestore
+//   node scripts/seed-beta.js --limit 10      # preview a 10-document sample
+//   node scripts/seed-beta.js --limit 10 --write   # smoke test: write only those 10
+//   node scripts/seed-beta.js --write         # the full backfill
 //
 // Dry run is the default and is exhaustive: it prints every collection, every
 // document count, and a sample document per collection, so what the write path
@@ -76,12 +78,20 @@ function main() {
   const args = process.argv.slice(2);
   const write = args.includes('--write');
   const manifestAt = args.includes('--manifest') ? args[args.indexOf('--manifest') + 1] : null;
+  const limit = args.includes('--limit') ? Number(args[args.indexOf('--limit') + 1]) : null;
+  if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+    console.error('--limit needs a positive whole number.');
+    process.exitCode = 1;
+    return;
+  }
 
   const { matches, replay, provenance } = buildBackfill();
-  const plan = Store.buildWritePlan({ matches, journey: replay.journey, state: replay.state, provenance });
+  const fullPlan = Store.buildWritePlan({ matches, journey: replay.journey, state: replay.state, provenance });
+  const plan = limit === null ? fullPlan : Store.limitPlan(fullPlan, limit);
   const summary = Store.summarisePlan(plan);
 
-  console.log('Money Padel v3 backfill — ' + (write ? 'WRITE' : 'DRY RUN (nothing will be written)'));
+  console.log('Money Padel v3 backfill — ' + (write ? 'WRITE' : 'DRY RUN (nothing will be written)')
+    + (limit === null ? '' : ` — SAMPLE, capped at ${limit} documents`));
   console.log('  project        :', PROJECT_ID);
   console.log('  engine version :', Engine.RATING_MODEL_VERSION);
   console.log('  schema version :', Store.SCHEMA_VERSION);
@@ -110,6 +120,13 @@ function main() {
   if (manifestAt) {
     fs.writeFileSync(path.resolve(manifestAt), JSON.stringify(plan, null, 2));
     console.log('\nFull manifest written to ' + manifestAt);
+  }
+
+  if (limit !== null) {
+    const full = Store.summarisePlan(fullPlan).totalDocuments;
+    console.log(`\nThis is a SAMPLE of ${summary.totalDocuments} of ${full} documents. It leaves the`);
+    console.log('database deliberately incomplete. Document ids are deterministic, so the');
+    console.log('full seed overwrites these same documents -- there is nothing to clean up.');
   }
 
   if (!write) {

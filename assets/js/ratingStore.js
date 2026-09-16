@@ -128,6 +128,34 @@
     return docs;
   }
 
+  function evenlySpaced(arr, k) {
+    if (k <= 0) return [];
+    if (k >= arr.length) return [...arr];
+    const out = [];
+    for (let i = 0; i < k; i++) out.push(arr[Math.round((i * (arr.length - 1)) / (k - 1 || 1))]);
+    return out;
+  }
+
+  // A capped sample of a plan, for a smoke-test write. Documents are taken
+  // round-robin across collections so a small limit still covers every
+  // collection, and evenly spaced within each so the sample is not all one
+  // event type. The result is a real subset: same ids, same content, so the
+  // later full seed simply overwrites it.
+  function limitPlan(plan, limit) {
+    const names = Object.keys(plan);
+    const counts = Object.fromEntries(names.map((n) => [n, 0]));
+    let remaining = Math.max(0, limit);
+    let progressed = true;
+    while (remaining > 0 && progressed) {
+      progressed = false;
+      for (const n of names) {
+        if (remaining === 0) break;
+        if (counts[n] < plan[n].length) { counts[n]++; remaining--; progressed = true; }
+      }
+    }
+    return Object.fromEntries(names.map((n) => [n, evenlySpaced(plan[n], counts[n])]));
+  }
+
   function summarisePlan(plan) {
     const journey = plan[COLLECTIONS.journey];
     const byType = {};
@@ -221,7 +249,7 @@
   return {
     COLLECTIONS, SCHEMA_VERSION, JOURNEY_FIELDS, MATCH_EVENT_FIELDS,
     eventId, toJourneyDoc, toMatchDoc, toPlayerDoc,
-    buildWritePlan, summarisePlan, writePlan,
+    buildWritePlan, summarisePlan, writePlan, limitPlan,
     memoryBackend, firestoreRestBackend, toFirestoreFields, fromFirestoreFields,
   };
 });
