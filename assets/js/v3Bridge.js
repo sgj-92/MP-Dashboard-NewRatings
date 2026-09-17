@@ -88,6 +88,36 @@
     return state;
   }
 
+  // Converts a stored v3 match into the shape the existing application reads.
+  // Team A is the winning side for every decided match; a draw carries isDraw
+  // and its side assignment is arbitrary but fixed.
+  function toLegacyMatchShape(doc) {
+    const isDraw = doc.outcome === Engine.OUTCOME.DRAW;
+    return {
+      id: doc.id,
+      date: doc.date,
+      sourceIndex: doc.sourceIndex,
+      winners: doc.teamA,
+      losers: doc.teamB,
+      sets: doc.sets.map((s) => [s.teamA, s.teamB]),
+      type: doc.type || 'doubles',
+      note: '',
+      verified: true,
+      isDraw: isDraw,
+      _v3: true,
+    };
+  }
+
+  // Ordering is pinned to (date, sourceIndex) exactly as the engine orders it,
+  // so the application and the rating it displays walk the same sequence.
+  async function loadMatches(backend) {
+    const docs = await backend.getAll('matches');
+    if (!docs || docs.length === 0) throw new Error('The v3 matches collection is empty.');
+    return docs
+      .map(toLegacyMatchShape)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.sourceIndex - b.sourceIndex));
+  }
+
   // The map buildPlayers() consumes: name -> Power Rating. Reading this when
   // state has not loaded is a programming error, not a reason to substitute.
   function ratingsMap(state) {
@@ -148,7 +178,7 @@
   }
 
   return {
-    createState, load, ratingsMap, tierMap, decoratePlayer,
+    createState, load, loadMatches, toLegacyMatchShape, ratingsMap, tierMap, decoratePlayer,
     indexSnapshot, reconcileSnapshot, reliabilityBand, validatePlayerDoc, REQUIRED_FIELDS,
   };
 });

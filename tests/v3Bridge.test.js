@@ -5,6 +5,7 @@ const path = require('node:path');
 const Engine = require('../assets/js/ratingEngine.js');
 const Store = require('../assets/js/ratingStore.js');
 const Bridge = require('../assets/js/v3Bridge.js');
+const D = require('./helpers/dataset.js');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -198,4 +199,88 @@ test('recomputeAll refuses to build state when v3 has not loaded', () => {
   assert.ok(fn.indexOf('PLAYERS = []') < fn.indexOf('V3Bridge.ratingsMap'),
     'the unavailable branch must return before any rating is produced');
   assert.ok(!/computeElo\(/.test(fn), 'the legacy solver must no longer feed application state');
+});
+
+// ---------- v3 match history as the application's match source ----------
+
+test('a decided v3 match converts to the legacy winners/losers shape', () => {
+  const m = Bridge.toLegacyMatchShape({
+    id: '2026-06-02-1', date: '2026-06-02', sourceIndex: 1,
+    teamA: ['Rishi', 'Jords'], teamB: ['Tarique', 'Harry'],
+    sets: [{ teamA: 4, teamB: 6 }, { teamA: 6, teamB: 3 }], outcome: 'A_WINS', type: 'doubles',
+  });
+  assert.deepStrictEqual(m.winners, ['Rishi', 'Jords']);
+  assert.deepStrictEqual(m.losers, ['Tarique', 'Harry']);
+  assert.deepStrictEqual(m.sets, [[4, 6], [6, 3]]);
+  assert.strictEqual(m.isDraw, false);
+  assert.strictEqual(m.verified, true);
+});
+
+test('a v3 draw carries isDraw so it is never counted as a win', () => {
+  const m = Bridge.toLegacyMatchShape({
+    id: '2026-09-01-2', date: '2026-09-01', sourceIndex: 2,
+    teamA: ['Osh', 'Tom'], teamB: ['PDM', 'Jords'],
+    sets: [{ teamA: 7, teamB: 6 }, { teamA: 6, teamB: 6 }], outcome: 'DRAW', type: 'doubles',
+  });
+  assert.strictEqual(m.isDraw, true);
+});
+
+test('match history loads in engine order and refuses an empty collection', async () => {
+  const docs = [
+    { id: '2026-06-02-2', date: '2026-06-02', sourceIndex: 2, teamA: ['A'], teamB: ['B'], sets: [{ teamA: 6, teamB: 0 }], outcome: 'A_WINS' },
+    { id: '2026-06-01-1', date: '2026-06-01', sourceIndex: 1, teamA: ['A'], teamB: ['B'], sets: [{ teamA: 6, teamB: 0 }], outcome: 'A_WINS' },
+    { id: '2026-06-02-1', date: '2026-06-02', sourceIndex: 1, teamA: ['A'], teamB: ['B'], sets: [{ teamA: 6, teamB: 0 }], outcome: 'A_WINS' },
+  ];
+  const b = Store.memoryBackend();
+  for (const d of docs) await b.set('matches', d.id, d);
+  const loaded = await Bridge.loadMatches(b);
+  assert.deepStrictEqual(loaded.map((m) => m.id), ['2026-06-01-1', '2026-06-02-1', '2026-06-02-2']);
+
+  await assert.rejects(() => Bridge.loadMatches(Store.memoryBackend()), /matches collection is empty/);
+});
+
+test('the application reads v3 match history, not the pre-v3 base layer', () => {
+  const app = fs.readFileSync(path.join(ROOT, 'assets', 'js', 'app.js'), 'utf8');
+  const raw = app.slice(app.indexOf('function getAllApprovedMatches()'), app.indexOf('function getEffectiveMatches()'));
+  const fn = raw.replace(/^\s*\/\/.*$/gm, ''); // compare code, not the comment explaining the change
+  assert.ok(/V3_MATCHES/.test(fn), 'the match source must be the v3 collection');
+  assert.ok(!/BASE_MATCHES/.test(fn), 'BASE_MATCHES caused the 127-vs-150 divergence and must not be read here');
+  assert.ok(!/matchEditsState|deletedIdsState/.test(fn),
+    'legacy overlays would desync a match from the rating computed for it');
+});
+
+test('every player record reconciles with the evidence behind their rating', () => {
+  // wins + losses + draws must equal lifetimeMatches for all 34 players, which
+  // is the whole point of sourcing both from the same 150-match history.
+  const { replay } = require('../scripts/seed-beta.js').buildBackfill();
+  const matches = D.loadAllMatches();
+  const tally = {};
+  matches.forEach((m) => {
+    const draw = m.outcome === Engine.OUTCOME.DRAW;
+    [...m.teamA, ...m.teamB].forEach((n) => {
+      tally[n] = tally[n] || { w: 0, l: 0, d: 0 };
+      if (draw) tally[n].d++;
+    });
+    if (!draw) {
+      m.teamA.forEach((n) => tally[n].w++);
+      m.teamB.forEach((n) => tally[n].l++);
+    }
+  });
+  const failures = Object.entries(replay.state)
+    .map(([name, s]) => {
+      const t = tally[name];
+      const total = t.w + t.l + t.d;
+      return total === s.lifetimeMatches ? null : `${name}: W${t.w}/L${t.l}/D${t.d}=${total} vs lifetime ${s.lifetimeMatches}`;
+    })
+    .filter(Boolean);
+  assert.deepStrictEqual(failures, []);
+  assert.strictEqual(Object.keys(replay.state).length, 34);
+});
+
+test('the match history spans June to September, including the draws', () => {
+  const matches = D.loadAllMatches();
+  assert.strictEqual(matches.length, 150);
+  assert.strictEqual(matches.filter((m) => m.outcome === Engine.OUTCOME.DRAW).length, 5);
+  assert.strictEqual(matches.filter((m) => m.date >= '2026-09-01').length, 28,
+    'September must be present — it was entirely absent from the pre-v3 base layer');
 });

@@ -436,18 +436,20 @@ function rebuildMapsFromState(){
 // of truth for "what exists", used for display. Rating computation uses getEffectiveMatches()
 // below, which filters draws out, since an unfinished game has no defined winner to rate.
 function getAllApprovedMatches(){
-  let all = BASE_MATCHES.concat(extraMatchesState.filter(m=>m.status==='approved'));
-  all = all.map(m=>{
-    const edit = matchEditsState[m.id];
-    if(!edit) return m;
-    const {date,winners,losers,sets,type,note,isDraw} = edit;
-    return {...m,
-      date: date!==undefined?date:m.date, winners: winners!==undefined?winners:m.winners,
-      losers: losers!==undefined?losers:m.losers, sets: sets!==undefined?sets:m.sets,
-      type: type!==undefined?type:m.type, note: note!==undefined?note:m.note,
-      isDraw: isDraw!==undefined?isDraw:m.isDraw};
-  });
-  all = all.filter(m=>!deletedIdsState.includes(m.id));
+  // The v3 `matches` collection is the match history. It is the same 150-match
+  // set the engine rated, already carrying every correction and deletion that
+  // was applied in production, so the record shown beside a rating and the
+  // record that produced it are one history rather than two.
+  //
+  // BASE_MATCHES is no longer read here. It is the pre-v3 base layer: 127
+  // June-August matches with no September and no draws, and reading it was the
+  // cause of the 127-vs-150 divergence.
+  //
+  // The legacy edit/deletion overlays are likewise not applied. v3 match
+  // documents are already the edited truth, and re-applying an overlay would
+  // desync a match from the rating computed for it. Historical editing stays
+  // unavailable until replay-forward exists.
+  let all = V3_MATCHES.slice();
   // Every calculated statistic in the app -- ratings, monthly ratings,
   // win/loss, league points, form, partnerships, head-to-head,
   // recommendations, call-outs -- is derived from this function (directly, or
@@ -841,12 +843,23 @@ function buildDifficultySuggestions(allPlayers, activePlayers){
 // the source of every Power Rating the application shows. The legacy solver is
 // still present for beta diagnostics but no longer feeds the UI.
 let V3_STATE = (typeof V3Bridge !== 'undefined') ? V3Bridge.createState() : { loaded:false, error:'v3Bridge.js did not load', players:{} };
+let V3_MATCHES = [];   // the v3 `matches` collection, in the shape the app reads
 let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
   ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
 
 async function loadV3State(){
   if(!db){ V3_STATE = {loaded:false, error:'No database connection.', players:{}}; }
-  else V3_STATE = await V3Bridge.load(RatingStore.firestoreCompatBackend(db));
+  else {
+    const backend = RatingStore.firestoreCompatBackend(db);
+    V3_STATE = await V3Bridge.load(backend);
+    if(V3_STATE.loaded){
+      try { V3_MATCHES = await V3Bridge.loadMatches(backend); }
+      catch(e){
+        V3_MATCHES = [];
+        V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 match history: ' + e.message};
+      }
+    }
+  }
   if(!V3_STATE.loaded) console.error('v3 state failed to load:', V3_STATE.error);
   renderV3StatusBanner();
   return V3_STATE;
@@ -878,7 +891,7 @@ function recomputeAll(){
   // to a tier seed, or to 1400 -- a believable wrong number is the worst
   // outcome for a beta whose entire purpose is comparing two rating systems.
   if(!V3_STATE.loaded){
-    PLAYERS = []; MATCHES = []; H2H = {}; PARTNERSHIPS = []; BEST_PARTNER = {};
+    PLAYERS = []; MATCHES = []; ALL_MATCHES = []; H2H = {}; PARTNERSHIPS = []; BEST_PARTNER = {};
     BOUNDARY_TESTS = []; CALIBRATION_GAMES = []; WITHIN_TIER_GAMES = []; DIFFICULTY_SUGGESTIONS = {};
     INACTIVE_PLAYERS = new Set();
     return;
@@ -897,6 +910,19 @@ function recomputeAll(){
   MATCHES = enrichMatches(ALL_MATCHES, ratings);
   PLAYERS = buildPlayers(MATCHES, ratings, TIER_MAP, ACTIVE_MAP);
   PLAYERS.forEach(p=>V3Bridge.decoratePlayer(p, V3_STATE, PRODUCTION_SNAPSHOT_INDEX));
+
+  // v3 rates draws; wins/losses cannot. Counting them here is what makes a
+  // player's record reconcile with the evidence behind their rating:
+  // wins + losses + draws === lifetimeMatches.
+  const drawCounts = {};
+  getAllApprovedMatches().filter(m=>m.isDraw).forEach(m=>{
+    [...m.winners, ...m.losers].forEach(n=>{ drawCounts[n] = (drawCounts[n]||0) + 1; });
+  });
+  PLAYERS.forEach(p=>{
+    p.draws = drawCounts[p.name] || 0;
+    p.recordTotal = p.wins + p.losses + p.draws;
+    p.recordReconciles = (p.lifetimeMatches === undefined) || (p.recordTotal === p.lifetimeMatches);
+  });
   PLAYERS.forEach(p=>{
     const form = computeRecentForm(p.name, 10);
     p.recent_form = form ? form.avgPct : null;

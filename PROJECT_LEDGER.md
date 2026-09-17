@@ -30,15 +30,19 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `7e47fb9` |
-| Tests | **104 / 104 passing** |
+| Last verified implementation commit | `e967f39` + this change |
+| Tests | **110 / 110 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
 
 **Wired to v3:** `recomputeAll` hydrates `PLAYERS[]` from the compact `players`
-collection. Rankings order, profiles, Home, matchups, partner/calibration
-suggestions, promotion gaps, tier tables and CSV exports all inherit it.
+collection, and the match history now comes from the v3 `matches` collection.
+Rankings order, profiles, Home, matchups, partner/calibration suggestions,
+promotion gaps, tier tables, head-to-head, partnerships and CSV exports all
+inherit both. A player's record and the rating beside it derive from the same
+150-match history: wins + losses + draws equals `lifetimeMatches` for all 34
+players.
 
 **Still legacy:** monthly ratings (`computeMonthlyRating`, 9 call sites — note
 the default Rankings view still *leads* with this number), `computeMonthlyJourney`,
@@ -114,22 +118,24 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner: Shaun.** Ledger migration is complete; no implementation work is in
-progress. Awaiting Shaun's go-ahead before the next UI integration step.
+**Owner: Shaun.** No implementation work in progress. Awaiting direction on the
+next item in NEXT.
 
-**Completion of the previous task** (Claude Code, done at `7e47fb9`): v3 read
-layer built, chokepoint switched, production snapshot integrated, failure path
-verified.
+**Completion of the previous task** (Claude Code): `ALL_MATCHES` switched to the
+v3 `matches` collection; record and rating now derive from one history,
+verified in-browser and by regression test.
 
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
 
-1. **Match-set divergence.** v3 rates 150 matches; the app's win/loss record
-   still comes from the beta's 127 `BASE_MATCHES`. Rishi shows
-   `lifetimeMatches 72` beside `total 56`, and September matches are absent
-   from the app entirely. *Proposed resolution: switch `ALL_MATCHES` to the v3
-   `matches` collection — this is the recommended next task.*
+1. **Match edits and deletions are inert.** The legacy edit/deletion overlays
+   are no longer applied, because v3 match documents are already the edited
+   truth and re-applying an overlay would desync a match from the rating
+   computed for it. Consistent with historical editing being unavailable until
+   replay-forward exists, but it means the admin edit controls currently have
+   no effect on the match history. *Decision needed: hide those controls, or
+   leave them until replay-forward lands?*
 2. **Production snapshot does not reconcile.** 149 matches vs v3's 150;
    17 players' counts disagree, six of them negatively. Not explained by draws.
    Treat as an approximate reference, not a reconcilable truth.
@@ -144,7 +150,17 @@ verified.
 
 ## 6. HANDOFFS
 
-### CCode — 17 Sep 2026
+### CCode — 17 Sep 2026 (latest)
+Switched `ALL_MATCHES` to the v3 `matches` collection, closing the 127-vs-150
+divergence. September is now in the app (28 matches; history runs 2026-06-02 to
+2026-09-15) and the five draws are carried as draws. Verified in-browser: 150
+matches loaded, 145 decided, 34 players, **zero record reconciliation failures**
+— Rishi now reads W38/L32/D2 = 72 against `lifetimeMatches` 72, where he
+previously showed 56. Zero page errors. 110/110 tests.
+**Discovered:** legacy match edit/deletion overlays are now inert — see open
+question 1. **Baton → Shaun.**
+
+### CCode — 17 Sep 2026 (previous)
 Built the v3 read layer (`v3Bridge.js`) and switched the `recomputeAll`
 chokepoint: `PLAYERS[]` now hydrates from the persisted `players` collection.
 Integrated the dated production snapshot as structurally-excluded read-only
@@ -171,6 +187,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `e967f39` | PROJECT_LEDGER.md migrated into the repository |
 | `7e47fb9` | CLAUDE.md coordination protocol |
 | `5a93378` | v3 read layer; `recomputeAll` switched to v3; production snapshot integrated |
 | `1cb8ff4` | `RATING_MODEL.md`; pagination regression test |
@@ -189,13 +206,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Switch `ALL_MATCHES` to the v3 `matches` collection** — closes open
-   question 1, brings September into the app, prerequisite for trustworthy
-   Monthly Performance.
-2. Monthly Performance from persisted expectations; retire `computeMonthlyRating`.
-3. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
+1. Monthly Performance from persisted expectations; retire `computeMonthlyRating`.
+2. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
    estimate" disclaimer).
-4. Kings of Tiers on historical tier.
-5. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-6. Beta diagnostics and beta reset workflow.
-7. Replay-forward — **required before any historical editing UI is exposed.**
+3. Kings of Tiers on historical tier.
+4. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
+5. Beta diagnostics and beta reset workflow.
+6. Replay-forward — **required before any historical editing UI is exposed.**
