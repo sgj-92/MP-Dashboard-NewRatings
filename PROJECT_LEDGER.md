@@ -33,7 +33,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `717e9b4` |
+| Last verified implementation commit | `4cf819e` |
 | Tests | **122 / 122 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
@@ -52,7 +52,7 @@ self-declared "story estimate"), and `enrichMatches` expectations. The legacy
 monthly solver is **retired** — `computeMonthlyRating` no longer exists; all 11
 call sites now read real month-end Power Ratings via `monthEndRatings`.
 
-**Not built:** Rating Journey UI · Monthly Performance UI · Kings of Tiers ·
+**Not built:** Rating Journey UI · Kings of Tiers on historical tier ·
 Admin Monthly Review · reassessment write path (`applyClubDecision` does not
 exist; only the read-only recommendation) · beta diagnostics screen · beta reset
 workflow · replay-forward for historical edits · UI regression tests · final
@@ -253,7 +253,27 @@ reported 122/122 test result remain those of the last verified CCode work.
 Earlier handoffs below are historical; this decision supersedes their pending
 1a blocker and absolute prohibition on cumulative historical reads.
 
-### CCode — 17 Sep 2026 (latest, monthly views)
+### CCode — 17 Sep 2026 (latest, monthly UI)
+Monthly UI presentation built on the existing Rankings screen — no redesign, no
+new nav destination. A monthly stories panel separates the four measures under
+their own headings with a plain-English line each, and the ranking rows now carry
+month-end rating, points moved and a rank arrow alongside performance.
+
+The separation is visible in the data rather than only asserted: in August the
+top performer (Erf +14.1%) is not the top riser (PDM +22.7 pts), and KC fell 1
+point while climbing a place — rating and rank genuinely diverging.
+
+**Fixed a misleading label:** the monthly methodology note still described "a
+genuine tier-seeded rating using only this month's matches, as if it were its
+own mini-season". That solver no longer exists. It now explains that the big
+number is the one continuous Power Rating as it stood at month end, with points
+moved and rank movement beneath it, and that performance is a separate question.
+
+Ranking Movement uses the session-cached cumulative read per the resolved Open
+Question 1a. Verified in-browser, zero page errors, 122/122 tests.
+**Baton → Shaun.**
+
+### CCode — 17 Sep 2026 (previous, monthly data layer)
 Retired the legacy monthly solver. `computeMonthlyRating` is gone; `monthEndRatings`
 returns the real Power Rating each player held at a month's close, read from the
 journey. New `monthlyViews.js` builds all four monthly stories from one pass over
@@ -330,6 +350,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `4cf819e` | Monthly UI: four views presented; stale mini-season copy corrected |
 | `717e9b4` | Legacy monthly solver retired; `monthlyViews.js` builds all four monthly views from the real trajectory |
 | `e8d21f4` | Match history sourced from the v3 matches collection |
 | `e967f39` | PROJECT_LEDGER.md migrated into the repository |
@@ -365,10 +386,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    `ratingJourney` read, cached for the session, for Ranking Movement while
    small. No snapshot collection yet. Apply Section 2's future review trigger
    when journey size, read cost or latency becomes material.
-2. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
+1. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
    estimate" disclaimer).
-3. Kings of Tiers on historical tier.
-4. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-5. Beta diagnostics and beta reset workflow.
-6. Replay-forward — **required before any historical editing UI is exposed; hide
+2. Kings of Tiers on historical tier — the monthly data layer already exposes
+   historical tier per row, so this is presentation.
+3. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
+4. Beta diagnostics and beta reset workflow.
+5. Replay-forward — **required before any historical editing UI is exposed; hide
    inert Edit/Delete Match controls until then.**

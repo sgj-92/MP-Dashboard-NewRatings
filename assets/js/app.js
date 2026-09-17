@@ -1115,6 +1115,59 @@ function computeMonthlyStats(month){
 // chronological Sequential-v1 trajectory. This REPLACES the retired
 // computeMonthlyRating, which solved a separate monthly rating of its own.
 // There is no monthly solver any more and there must not be one again.
+// ---- Monthly stories -------------------------------------------------------
+// Three distinct measures, never merged: where the real Power Rating stood and
+// how far it moved, how the rank moved, and how far play beat expectation.
+function monthlyMovementIndex(month){
+  if(month === 'all' || !MONTHLY_VIEWS) return {};
+  const m = MONTHLY_VIEWS.byMonth[month];
+  if(!m) return {};
+  const out = {};
+  m.rows.forEach(r=>{ out[r.playerId] = r; });
+  return out;
+}
+
+// The monthly stories panel. Four separate views, deliberately separated by
+// heading so Monthly Performance is never read as rating movement or vice
+// versa. League Table is untouched and stays on its own tab.
+function buildMonthlyStoriesHtml(month){
+  if(month === 'all' || !MONTHLY_VIEWS || !MONTHLY_VIEWS.byMonth[month]) return '';
+  const label = monthLabel(month);
+  const perf = MonthlyViews.performanceTable(MONTHLY_VIEWS, month).slice(0,3);
+  const risers = MonthlyViews.ratingMovementTable(MONTHLY_VIEWS, month).filter(r=>r.ratingChange>0).slice(0,3);
+  const climbers = MONTHLY_VIEWS.byMonth[month].rows
+    .filter(r=>r.rankChangeOverall !== null && r.rankChangeOverall > 0)
+    .sort((a,b)=>b.rankChangeOverall-a.rankChangeOverall).slice(0,3);
+  const crossovers = MONTHLY_VIEWS.byMonth[month].crossovers.slice(0,3);
+
+  const line = (main, sub) => `<div class="ms-line"><span class="ms-main">${main}</span><span class="ms-sub">${sub}</span></div>`;
+  const block = (title, explain, body) => body
+    ? `<div class="ms-block"><div class="ms-title">${title}</div><div class="ms-explain">${explain}</div>${body}</div>` : '';
+
+  const perfBody = perf.map(r=>line(r.playerId,
+    `<span class="${r.monthlyPerformance>0?'perf-pos':'perf-neg'}">${r.performancePct>0?'+':''}${r.performancePct}%</span> vs expectation · ${r.matches} games`)).join('');
+  const riseBody = risers.map(r=>line(r.playerId,
+    `${Math.round(r.startRating)} → ${Math.round(r.endRating)} · <span class="perf-pos">+${r.ratingChange} pts</span>`)).join('');
+  const climbBody = climbers.map(r=>line(r.playerId,
+    `#${r.startRankOverall} → #${r.endRankOverall} · <span class="perf-pos">▲${r.rankChangeOverall}</span>`)).join('');
+  const crossBody = crossovers.map(c=>line(`${c.overtook} passed ${c.overtaken}`, '')).join('');
+
+  return `<div class="monthly-stories">
+    <div class="ms-head">${label} — the month in four parts</div>
+    ${block('Monthly Performance', 'Who most beat their pre-match expectation. This is what drives the podium and Kings of Tiers.', perfBody)}
+    ${block('Rating Movement', 'How far the real Power Rating actually moved. Not the same question as performance.', riseBody)}
+    ${block('Ranking Movement', 'Where they climbed to overall.', climbBody)}
+    ${block('Crossovers', 'Who overtook whom during the month.', crossBody)}
+    <div class="ms-foot">League points are a separate record — see the League tab.</div>
+  </div>`;
+}
+
+function rankArrowHtml(change){
+  if(change === null || change === undefined || change === 0) return '';
+  const up = change > 0;
+  return ` · <span class="${up?'perf-pos':'perf-neg'}">${up?'▲':'▼'}${Math.abs(change)}</span>`;
+}
+
 function monthEndRatings(month){
   if(month === 'all' || !MONTHLY_VIEWS) return {};
   return MonthlyViews.monthEndRatings(MONTHLY_VIEWS, month);
@@ -1461,8 +1514,19 @@ function render(){
   if(selectedMonth !== 'all'){
     const monthly = computeMonthlyStats(selectedMonth);
     monthlyRatings = monthEndRatings(selectedMonth);
-    rows = rows.map(p => ({...p, ...(monthly[p.name] || ZERO_MONTH_STATS),
-      month_rating: (p.name in monthlyRatings) ? Math.round(monthlyRatings[p.name]*10)/10 : null}));
+    const movement = monthlyMovementIndex(selectedMonth);
+    rows = rows.map(p => {
+      const mv = movement[p.name] || null;
+      return {...p, ...(monthly[p.name] || ZERO_MONTH_STATS),
+        month_rating: (p.name in monthlyRatings) ? Math.round(monthlyRatings[p.name]*10)/10 : null,
+        // The three monthly stories, kept as distinct fields so no screen can
+        // quietly present one as another.
+        month_rating_change: mv ? mv.ratingChange : null,
+        month_rank_change: mv ? mv.rankChangeOverall : null,
+        month_rank_change_tier: mv ? mv.rankChangeInTier : null,
+        month_performance_pct: mv ? mv.performancePct : null,
+        month_performance_provisional: mv ? mv.provisional : true};
+    });
   }
   rows = rows.filter(p => p.total >= minGames);
   if(query) rows = rows.filter(p => p.name.toLowerCase().includes(query));
@@ -1482,7 +1546,7 @@ function render(){
     note.className = 'section-sub';
     note.style.cssText = 'padding:8px 2px; display:none;';
     note.innerHTML = activeTab==='power'
-      ? `Showing <b style="color:var(--text);">${monthLabel(selectedMonth)}</b> only — record, avg opp., clutch and upsets are for this month. "This month" is a genuine tier-seeded rating using only ${monthLabel(selectedMonth)}'s matches, as if it were its own mini-season — separate from the overall rating, which stays as-is.`
+      ? `Showing <b style="color:var(--text);">${monthLabel(selectedMonth)}</b> only — record, avg opp., clutch and upsets are for this month. The big number is your <b style="color:var(--text);">real Power Rating as it stood at the end of ${monthLabel(selectedMonth)}</b>, not a separate monthly score: there is one continuous rating and this is where it had reached. Underneath it, the points figure is how far it moved during the month, and the arrow is rank movement. <b style="color:var(--text);">Performance</b> is a different question again — how far above or below pre-match expectation you played.`
       : `Showing <b style="color:var(--text);">${monthLabel(selectedMonth)}</b> only.`;
     noteToggle.onclick = ()=>{
       const isOpen = note.style.display !== 'none';
@@ -1492,6 +1556,15 @@ function render(){
     noteWrapper.appendChild(noteToggle);
     noteWrapper.appendChild(note);
     list.appendChild(noteWrapper);
+
+    if(activeTab==='power'){
+      const stories = buildMonthlyStoriesHtml(selectedMonth);
+      if(stories){
+        const wrap = document.createElement('div');
+        wrap.innerHTML = stories;
+        list.appendChild(wrap);
+      }
+    }
   }
 
   rows.forEach((p, i)=>{
@@ -1528,8 +1601,12 @@ function render(){
         : (inMonthView
             ? `<div class="rating-big" style="color:var(--text-dim); font-size:20px;">–</div>`
             : `<div class="rating-big">${Math.round(p.rating)}</div>`);
+      const chg = p.month_rating_change;
+      const moveHtml = (inMonthView && hasMonthGames && chg !== null)
+        ? `<div class="rating-sub" style="font-size:10px;"><span class="${chg>0?'perf-pos':(chg<0?'perf-neg':'')}">${chg>0?'+':''}${chg} pts</span>${rankArrowHtml(p.month_rank_change)}</div>`
+        : '';
       const seasonSubHtml = inMonthView
-        ? `<div class="rating-sub" style="font-size:10px; color:var(--text-dim);">overall: ${Math.round(p.rating)}</div>`
+        ? moveHtml + `<div class="rating-sub" style="font-size:10px; color:var(--text-dim);">overall: ${Math.round(p.rating)}</div>`
         : '';
       const monthRatingHtml = (inMonthView && !hasMonthGames)
         ? `<div class="rating-sub" style="font-size:10px; color:var(--text-dim);">no games this month</div>`

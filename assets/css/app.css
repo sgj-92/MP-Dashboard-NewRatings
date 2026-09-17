@@ -1408,3 +1408,16 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 @media (max-width: 360px){
   .full-history-pill{ font-size: 8px; padding: 3px 5px; letter-spacing: 0.04em; }
 }
+
+/* ---- Monthly stories: four separate measures, visually separated so none
+   reads as a restatement of another ---- */
+.monthly-stories{border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 2px 14px;background:var(--card);}
+.ms-head{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;}
+.ms-block{margin-bottom:12px;}
+.ms-block:last-of-type{margin-bottom:6px;}
+.ms-title{font-size:13px;font-weight:600;color:var(--text);}
+.ms-explain{font-size:11px;color:var(--text-dim);margin:2px 0 6px;line-height:1.35;}
+.ms-line{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px;}
+.ms-main{color:var(--text);white-space:nowrap;}
+.ms-sub{color:var(--text-dim);text-align:right;}
+.ms-foot{font-size:11px;color:var(--text-dim);border-top:1px solid var(--line);padding-top:8px;}
