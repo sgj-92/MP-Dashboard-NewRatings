@@ -118,6 +118,15 @@
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.sourceIndex - b.sourceIndex));
   }
 
+  // The Rating Journey. Read once per session for the monthly views, never for
+  // ordinary player state -- that still comes from the compact `players`
+  // collection. 633 documents today, growing ~120 a month.
+  async function loadJourney(backend) {
+    const docs = await backend.getAll('ratingJourney');
+    if (!docs || docs.length === 0) throw new Error('The ratingJourney collection is empty.');
+    return docs;
+  }
+
   // The map buildPlayers() consumes: name -> Power Rating. Reading this when
   // state has not loaded is a programming error, not a reason to substitute.
   function ratingsMap(state) {
@@ -178,7 +187,7 @@
   }
 
   return {
-    createState, load, loadMatches, toLegacyMatchShape, ratingsMap, tierMap, decoratePlayer,
+    createState, load, loadMatches, loadJourney, toLegacyMatchShape, ratingsMap, tierMap, decoratePlayer,
     indexSnapshot, reconcileSnapshot, reliabilityBand, validatePlayerDoc, REQUIRED_FIELDS,
   };
 });

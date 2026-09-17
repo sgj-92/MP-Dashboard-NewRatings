@@ -844,6 +844,8 @@ function buildDifficultySuggestions(allPlayers, activePlayers){
 // still present for beta diagnostics but no longer feeds the UI.
 let V3_STATE = (typeof V3Bridge !== 'undefined') ? V3Bridge.createState() : { loaded:false, error:'v3Bridge.js did not load', players:{} };
 let V3_MATCHES = [];   // the v3 `matches` collection, in the shape the app reads
+let V3_JOURNEY = [];   // the Rating Journey -- monthly views only, never player state
+let MONTHLY_VIEWS = null;
 let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
   ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
 
@@ -853,10 +855,18 @@ async function loadV3State(){
     const backend = RatingStore.firestoreCompatBackend(db);
     V3_STATE = await V3Bridge.load(backend);
     if(V3_STATE.loaded){
-      try { V3_MATCHES = await V3Bridge.loadMatches(backend); }
+      try {
+        V3_MATCHES = await V3Bridge.loadMatches(backend);
+        // Loaded at start-up rather than lazily because the app opens on a
+        // monthly view, so a lazy read would fire immediately anyway.
+        V3_JOURNEY = await V3Bridge.loadJourney(backend);
+        MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, {
+          tierAsOf: TierHistory.create({ currentTiers: TIER_MAP }).tierAsOf,
+        });
+      }
       catch(e){
-        V3_MATCHES = [];
-        V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 match history: ' + e.message};
+        V3_MATCHES = []; V3_JOURNEY = []; MONTHLY_VIEWS = null;
+        V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 history: ' + e.message};
       }
     }
   }
@@ -1045,7 +1055,7 @@ function computeMonthlyStats(month){
   // Judge opponent strength and upset status using each player's rating AS OF this specific
   // month, not their season-long rating -- otherwise "avg opp." and "upset" would be judged by
   // a different yardstick than the Month Rating headline number sitting right next to them.
-  const monthlyRatings = month==='all' ? {} : computeMonthlyRating(month);
+  const monthlyRatings = month==='all' ? {} : monthEndRatings(month);
   function ratingFor(name){
     if(name in monthlyRatings) return monthlyRatings[name];
     const p = PLAYERS.find(x=>x.name===name);
@@ -1101,10 +1111,13 @@ function computeMonthlyStats(month){
 // A genuine tier-seeded rating computed from ONLY the given month's matches -- as if that month
 // were its own mini-season. Uses the exact same engine as the official Power Rating, just on a
 // restricted match set. Players with no games that month simply won't appear in the result.
-function computeMonthlyRating(month){
-  if(month === 'all') return {};
-  const monthMatches = ALL_MATCHES.filter(m => m.date.slice(0,7) === month);
-  return computeElo(monthMatches, TIER_MAP, STARTING_TIER_MAP);
+// The real Power Rating each player held at that month's close, taken from the
+// chronological Sequential-v1 trajectory. This REPLACES the retired
+// computeMonthlyRating, which solved a separate monthly rating of its own.
+// There is no monthly solver any more and there must not be one again.
+function monthEndRatings(month){
+  if(month === 'all' || !MONTHLY_VIEWS) return {};
+  return MonthlyViews.monthEndRatings(MONTHLY_VIEWS, month);
 }
 
 // Builds the raw ingredients for a "monthly awards" style recap: games played, wins/losses/draws
@@ -1447,7 +1460,7 @@ function render(){
   let monthlyRatings = {};
   if(selectedMonth !== 'all'){
     const monthly = computeMonthlyStats(selectedMonth);
-    monthlyRatings = computeMonthlyRating(selectedMonth);
+    monthlyRatings = monthEndRatings(selectedMonth);
     rows = rows.map(p => ({...p, ...(monthly[p.name] || ZERO_MONTH_STATS),
       month_rating: (p.name in monthlyRatings) ? Math.round(monthlyRatings[p.name]*10)/10 : null}));
   }
@@ -2938,7 +2951,7 @@ function buildDevAreasSection(name){
 
 function buildMonthlyRatingSection(name){
   if(selectedMonth === 'all') return '';
-  const monthlyRatings = computeMonthlyRating(selectedMonth);
+  const monthlyRatings = monthEndRatings(selectedMonth);
   const p = PLAYERS.find(x=>x.name===name);
   const label = monthLabel(selectedMonth);
   if(!(name in monthlyRatings)){
@@ -2967,7 +2980,7 @@ function buildMonthlyRatingSection(name){
 // opinion computed differently.
 function computeMonthlyTierStandings(month, tier){
   if(month === 'all') return [];
-  const monthlyRatings = computeMonthlyRating(month);
+  const monthlyRatings = monthEndRatings(month);
   const monthly = computeMonthlyStats(month);
   return PLAYERS.filter(p => p.tier === tier)
     .map(p => ({...p, ...(monthly[p.name] || ZERO_MONTH_STATS),
@@ -3175,7 +3188,7 @@ function openSheet(name, matchFilter){
   if(upsetFilterActive){
     // If a month is active, judge "upset" by ratings as of that month too, so this drill-down's
     // count always matches the upset figures already shown in the monthly list view.
-    const monthlyRatingsForFilter = monthActive ? computeMonthlyRating(selectedMonth) : null;
+    const monthlyRatingsForFilter = monthActive ? monthEndRatings(selectedMonth) : null;
     const ratingForFilter = (n) => {
       if(monthlyRatingsForFilter && (n in monthlyRatingsForFilter)) return monthlyRatingsForFilter[n];
       const p2 = PLAYERS.find(x=>x.name===n);
@@ -4039,7 +4052,7 @@ function renderH2H(){
   const monthActive = selectedMonth !== 'all';
 
   if(monthActive){
-    const monthlyRatings = computeMonthlyRating(selectedMonth);
+    const monthlyRatings = monthEndRatings(selectedMonth);
     const monthlyStatsAll = computeMonthlyStats(selectedMonth);
     const aHas = h2hPlayerA in monthlyRatings, bHas = h2hPlayerB in monthlyRatings;
     const aOverall = PLAYERS.find(p=>p.name===h2hPlayerA).rating;

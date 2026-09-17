@@ -813,7 +813,7 @@ function computeRankingsPodiumTop3(){
   const inMonthView = selectedMonth !== 'all';
   if(inMonthView){
     const monthly = computeMonthlyStats(selectedMonth);
-    const monthlyRatings = computeMonthlyRating(selectedMonth);
+    const monthlyRatings = monthEndRatings(selectedMonth);
     rows = rows.map(p => ({...p, ...(monthly[p.name] || ZERO_MONTH_STATS),
       month_rating: (p.name in monthlyRatings) ? Math.round(monthlyRatings[p.name]*10)/10 : null}));
   }
@@ -901,7 +901,7 @@ function computeKingsOfTiers(){
   let rows = PLAYERS.slice();
   if(inMonthView){
     const monthly = computeMonthlyStats(selectedMonth);
-    const monthlyRatings = computeMonthlyRating(selectedMonth);
+    const monthlyRatings = monthEndRatings(selectedMonth);
     rows = rows.map(p => ({...p, ...(monthly[p.name] || ZERO_MONTH_STATS),
       month_rating: (p.name in monthlyRatings) ? Math.round(monthlyRatings[p.name]*10)/10 : null}));
   }
@@ -1291,7 +1291,7 @@ function getViewerSnapshot(name){
   const availableMonths = (typeof getAvailableMonths === 'function') ? getAvailableMonths() : [];
   const currentMonth = availableMonths.length ? availableMonths[availableMonths.length-1] : null;
   const monthStats = currentMonth ? (computeMonthlyStats(currentMonth)[name] || null) : null;
-  const monthRating = currentMonth ? (computeMonthlyRating(currentMonth)[name] ?? null) : null;
+  const monthRating = currentMonth ? (monthEndRatings(currentMonth)[name] ?? null) : null;
 
   return {
     name: p.name, tier: p.tier, rating: p.rating,

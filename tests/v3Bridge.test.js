@@ -157,15 +157,26 @@ test('all 34 snapshot players reconcile with all 34 v3 players by name', async (
 
 // ---------- structural guarantees ----------
 
-test('normal player state never scans ratingJourney', async () => {
-  const reads = [];
-  const backend = { getAll: async (c) => { reads.push(c); return [playerDoc()]; } };
-  await Bridge.load(backend);
-  assert.deepStrictEqual(reads, ['players'], 'hydration must read players only');
+test('each loader reads exactly one collection, and player state never scans the journey', async () => {
+  // The guarantee is behavioural, not a ban on the word: hydrating player
+  // state must touch `players` and nothing else. The journey is reachable, but
+  // only through its own explicitly named loader, used by monthly views.
+  const record = (rows) => { const reads = []; return {
+    reads, getAll: async (c) => { reads.push(c); return rows; } }; };
 
-  const strip = (s) => s.replace(/^\s*\/\/.*$/gm, '');
-  const bridge = strip(fs.readFileSync(path.join(ROOT, 'assets', 'js', 'v3Bridge.js'), 'utf8'));
-  assert.ok(!bridge.includes('ratingJourney'), 'the read layer must not touch ratingJourney at all');
+  const p = record([playerDoc()]);
+  await Bridge.load(p);
+  assert.deepStrictEqual(p.reads, ['players'], 'hydration must read players only');
+
+  const m = record([{ id: '2026-06-01-1', date: '2026-06-01', sourceIndex: 1, teamA: ['A'], teamB: ['B'], sets: [{ teamA: 6, teamB: 0 }], outcome: 'A_WINS' }]);
+  await Bridge.loadMatches(m);
+  assert.deepStrictEqual(m.reads, ['matches']);
+
+  const j = record([{ id: 'x', eventType: 'MATCH_UPDATE' }]);
+  await Bridge.loadJourney(j);
+  assert.deepStrictEqual(j.reads, ['ratingJourney']);
+
+  await assert.rejects(() => Bridge.loadJourney(Store.memoryBackend()), /ratingJourney collection is empty/);
 });
 
 test('the April/May display-only players cannot leak into v3 state', async () => {

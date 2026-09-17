@@ -31,7 +31,7 @@ rating chokepoint now reads v3 persisted state.
 |---|---|
 | Branch | `main` |
 | Last verified implementation commit | `e8d21f4` |
-| Tests | **110 / 110 passing** |
+| Tests | **122 / 122 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -44,10 +44,10 @@ inherit both. A player's record and the rating beside it derive from the same
 150-match history: wins + losses + draws equals `lifetimeMatches` for all 34
 players.
 
-**Still legacy:** monthly ratings (`computeMonthlyRating`, 9 call sites — note
-the default Rankings view still *leads* with this number), `computeMonthlyJourney`,
-`computePlayerJourney` (a self-declared "story estimate"), and `enrichMatches`
-expectations.
+**Still legacy:** `computeMonthlyJourney`, `computePlayerJourney` (a
+self-declared "story estimate"), and `enrichMatches` expectations. The legacy
+monthly solver is **retired** — `computeMonthlyRating` no longer exists; all 11
+call sites now read real month-end Power Ratings via `monthEndRatings`.
 
 **Not built:** Rating Journey UI · Monthly Performance UI · Kings of Tiers ·
 Admin Monthly Review · reassessment write path (`applyClubDecision` does not
@@ -150,9 +150,9 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner: Shaun.** No implementation work in progress. **NEXT #1 is now unblocked**:
-CGPT resolved the month-boundary read strategy in favour of filtered
-`ratingJourney` queries.
+**Owner: Shaun.** NEXT #1 data layer is built and tested. No implementation work
+in progress. **One open conflict with the agreed read strategy — see Open
+Question 1a.**
 
 **Completion of the previous task** (Claude Code): `ALL_MATCHES` switched to the
 v3 `matches` collection; record and rating now derive from one history,
@@ -172,6 +172,24 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
    is amended: `players` remains the normal current-state read source;
    `ratingJourney` is allowed for bounded historical views. No precomputed
    monthly snapshots for now.
+1a. **CONFLICT — Ranking Movement cannot be built from bounded reads.** The
+   agreed strategy is month-filtered `ratingJourney` queries with no snapshot
+   collection. Monthly Performance and Rating Movement satisfy that. **Ranking
+   Movement does not:** a rank at a month boundary needs *every* player's rating
+   at that instant, including players who did not play that month, and their
+   rating exists only in earlier events. A month-filtered query cannot return
+   it. The options are an unbounded (cumulative) read or the snapshot collection
+   that was excluded.
+
+   As shipped, `monthlyViews.js` performs **one whole-journey read per session**
+   (633 docs, cached; ordinary page render never touches it). That is not a scan
+   per render, but it is not a bounded read either, so it does not match the
+   letter of the agreed decision.
+
+   *Decision needed: accept the once-per-session cumulative read, revisit
+   snapshots, or drop Ranking Movement from the monthly scope.* Claude Code
+   recommends accepting the cached read while the journey is small, and
+   revisiting when it outgrows a single load.
 2. **Match edits and deletions are inert.** The legacy edit/deletion overlays
    are no longer applied, because v3 match documents are already the edited
    truth and re-applying an overlay would desync a match from the rating
@@ -191,6 +209,24 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 17 Sep 2026 (latest, monthly views)
+Retired the legacy monthly solver. `computeMonthlyRating` is gone; `monthEndRatings`
+returns the real Power Rating each player held at a month's close, read from the
+journey. New `monthlyViews.js` builds all four monthly stories from one pass over
+the real trajectory — no monthly solver exists and a test asserts none returns.
+
+Verified: the final month's closing ratings are *identical* to live player state,
+which is only possible if the view is derived rather than re-solved; a month opens
+exactly where the previous closed; rank movement uses the tier in force at the
+boundary (Shaun reads Tier C in June, B in July); the best performer and the
+biggest riser are different players, so the two measures cannot be confused.
+In-browser: 633 journey events, 4 months, 34 players, 23 August crossovers, zero
+page errors. 122/122 tests.
+
+**Raises Open Question 1a:** Ranking Movement cannot be satisfied by bounded
+month-filtered reads, so the implementation currently does one cached
+whole-journey read per session. Needs a decision. **Baton → Shaun.**
 
 ### CGPT — 17 Sep 2026 (latest)
 Resolved CCode's NEXT #1 blocker. **Use filtered `ratingJourney` reads** for
@@ -251,6 +287,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `e8d21f4` | Match history sourced from the v3 matches collection |
 | `e967f39` | PROJECT_LEDGER.md migrated into the repository |
 | `7e47fb9` | CLAUDE.md coordination protocol |
 | `5a93378` | v3 read layer; `recomputeAll` switched to v3; production snapshot integrated |
@@ -270,8 +307,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. Monthly Performance from persisted expectations; retire
-   `computeMonthlyRating`. In the same pass, preserve the monthly progress story:
+1. **Monthly UI presentation.** The data layer for all four views is built and
+   tested (`monthlyViews.js`); what remains is showing it. Original scope:
    - real Power Rating start → end and points gained/lost;
    - overall and within-tier rank start → end;
    - meaningful player crossovers where practical;
