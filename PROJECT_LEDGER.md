@@ -101,13 +101,25 @@ Monthly Performance remains the basis for the monthly performance podium and
 Kings of Tiers; rating/rank movement is complementary context, not an award
 substitute.
 
+**Read strategy:** normal current-state rendering reads the compact `players`
+collection. This constraint does **not** prohibit targeted historical reads.
+Monthly Performance, Rating Movement, Ranking Movement and the real Rating
+Journey may query `ratingJourney` when historical event state is intrinsically
+required. These must be bounded/filtered reads (for example by month and/or
+player), never a full 633-and-growing collection scan for ordinary page render.
+For the current monthly pass, use a month-filtered `ratingJourney` query and add
+the required Firestore index on `effectiveDate` if necessary. Do **not** add
+precomputed monthly snapshots yet; they duplicate derived state and would add
+replay maintenance before replay-forward exists.
+
 **Club reassessment:** forward-only and audited; never rewrites history. Two
 modes — recommended statistical reassessment, and explicit club override of
 rating *and* reliability. Promotion/demotion and rating reassessment are
 separate events.
 
 **Storage:** `matches/{matchId}` · `ratingJourney/{eventId}` · `players/{playerId}`.
-Normal rendering reads `players`; `ratingJourney` is only for journey views.
+Normal current-state rendering reads `players`; historical views use targeted
+`ratingJourney` reads as defined above.
 
 **Three corrections found in implementation, documented in `RATING_MODEL.md`
 and authoritative over older instructions:** Fatch seeded Tier C in *both*
@@ -132,13 +144,15 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
 | Monthly Rating is replaced, not monthly rating progress | Monthly Performance becomes the performance metric, while real Power Rating movement, rank movement/crossovers and League Table remain visible as separate monthly stories. No new monthly rating solver. |
+| Historical monthly reads use filtered `ratingJourney` queries | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Use bounded month/player queries; no full collection scans and no monthly snapshot collection for now. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner: Shaun.** No implementation work in progress. **NEXT #1 is blocked** on
-Open Question 1 — the read-strategy decision for month-boundary ratings.
+**Owner: Shaun.** No implementation work in progress. **NEXT #1 is now unblocked**:
+CGPT resolved the month-boundary read strategy in favour of filtered
+`ratingJourney` queries.
 
 **Completion of the previous task** (Claude Code): `ALL_MATCHES` switched to the
 v3 `matches` collection; record and rating now derive from one history,
@@ -153,29 +167,11 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
 
 ## 5. OPEN QUESTIONS / DECISIONS
 
-1. **BLOCKING NEXT #1 — monthly Rating/Ranking Movement cannot come from
-   `players`.** The approved scope requires each player's Power Rating and rank
-   at month start → month end. The `players` collection holds only *current*
-   state: one rating per player. Month boundaries exist nowhere except
-   `ratingJourney`, which carries `preMatchRating`/`postMatchRating` per event.
-   So the new scope necessarily reads `ratingJourney`, while Section 2 and the
-   original UI brief both state that normal rendering reads `players` and that
-   `ratingJourney` is for journey views only.
-
-   This is a conflict between an approved product scope and a standing
-   architectural constraint, not an implementation detail. Two sound routes:
-
-   - **Filtered query** — read `ratingJourney` where `effectiveDate` falls in
-     the month. Not the full-collection scan the constraint was written to
-     prevent; needs a Firestore index on `effectiveDate`; read cost scales with
-     matches per month (~120), not total history. *Claude Code recommends this.*
-   - **Precomputed monthly snapshots** — e.g. `monthlySnapshots/{playerId}__{YYYY-MM}`
-     holding start rating, end rating and rank, written during seed/backfill.
-     Fixed tiny reads, but adds derived state that must be rebuilt on every
-     replay.
-
-   *Decision needed from Shaun/CGPT before NEXT #1 starts: which route, and
-   confirmation that Section 2's constraint is amended to permit it.*
+1. **RESOLVED — monthly historical read strategy.** Use a month-filtered
+   `ratingJourney` query (and the required Firestore index if needed). Section 2
+   is amended: `players` remains the normal current-state read source;
+   `ratingJourney` is allowed for bounded historical views. No precomputed
+   monthly snapshots for now.
 2. **Match edits and deletions are inert.** The legacy edit/deletion overlays
    are no longer applied, because v3 match documents are already the edited
    truth and re-applying an overlay would desync a match from the rating
@@ -197,6 +193,26 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
 ## 6. HANDOFFS
 
 ### CGPT — 17 Sep 2026 (latest)
+Resolved CCode's NEXT #1 blocker. **Use filtered `ratingJourney` reads** for
+historical monthly state. The old "normal rendering reads players" constraint
+is clarified rather than discarded: `players` remains the compact source for
+current state, while monthly historical views and Rating Journey may make
+bounded month/player event queries. No full journey scan and no precomputed
+monthly snapshots at this stage. Add the necessary Firestore index if required.
+NEXT #1 is unblocked. **Baton → Shaun/CCode when Shaun issues `Ledger CCode`.**
+
+### CCode — 17 Sep 2026 (latest)
+**Blocker raised against NEXT #1 before starting** — now resolved above.
+Monthly Rating Movement and Ranking Movement need month-boundary ratings, which
+exist only in `ratingJourney`; recommended a month-filtered `ratingJourney`
+query over precomputed snapshots.
+
+Also corrected the CLAUDE.md protocol: it required conflicts to be "reported"
+without saying where, and only triggered a Ledger update *after* an
+implementation task. Conflicts and blockers now go into Open Questions the
+moment they are found, since chat is invisible to CGPT and CChat.
+
+### CGPT — 17 Sep 2026 (previous)
 Shaun confirmed that replacing Monthly Power Rating must not remove the monthly
 progress story. Added the four-part monthly model: Monthly Performance (versus
 expectation), Rating Movement (real Power Rating start→end and points change),
@@ -204,21 +220,7 @@ Ranking Movement (overall/tier rank start→end plus crossovers), and League Tab
 (results/points). Monthly Performance remains the podium/Kings basis. Rating and
 rank movement come from the actual Sequential-v1 trajectory; **no separate
 monthly rating solver is to be recreated.** Also resolved the inert historical
-Edit/Delete controls: hide until replay-forward exists. **Baton → Shaun/CCode
-when Shaun issues `Ledger CCode`.**
-
-### CCode — 17 Sep 2026 (latest)
-**Blocker raised against NEXT #1 before starting** — see Open Question 1.
-Monthly Rating Movement and Ranking Movement need month-boundary ratings, which
-exist only in `ratingJourney`; the approved scope therefore conflicts with the
-Section 2 constraint that normal rendering reads `players` only. Recommend a
-month-filtered `ratingJourney` query over precomputed snapshots. Needs a
-Shaun/CGPT decision plus an amendment to Section 2 before work begins.
-
-Also corrected the CLAUDE.md protocol: it required conflicts to be "reported"
-without saying where, and only triggered a Ledger update *after* an
-implementation task. Conflicts and blockers now go into Open Questions the
-moment they are found, since chat is invisible to CGPT and CChat.
+Edit/Delete controls: hide until replay-forward exists.
 
 ### CCode — 17 Sep 2026 (previous, match source)
 Switched `ALL_MATCHES` to the v3 `matches` collection, closing the 127-vs-150
@@ -227,8 +229,7 @@ divergence. September is now in the app (28 matches; history runs 2026-06-02 to
 matches loaded, 145 decided, 34 players, **zero record reconciliation failures**
 — Rishi now reads W38/L32/D2 = 72 against `lifetimeMatches` 72, where he
 previously showed 56. Zero page errors. 110/110 tests.
-**Discovered:** legacy match edit/deletion overlays are now inert — see open
-question 1. **Baton → Shaun.**
+**Discovered:** legacy match edit/deletion overlays are now inert.
 
 ### CCode — 17 Sep 2026 (earlier, read layer)
 Built the v3 read layer (`v3Bridge.js`) and switched the `recomputeAll`
@@ -237,14 +238,7 @@ Integrated the dated production snapshot as structurally-excluded read-only
 reference. Removed the silent `1400` fallback; added an explicit "Power Ratings
 unavailable" banner. Verified in a real browser — 34 players hydrate, zero page
 errors — and the failure path confirmed working when Firebase is unreachable.
-Commit `7e47fb9`, 104/104 tests. **Discovered:** open questions 1–3 above.
-**Baton → Shaun.**
-
-### CGPT — 17 Sep 2026 (previous)
-Issued the UI integration brief: engine frozen, no production runtime
-connection, no silent legacy fallback, no browser-side recomputation of
-historical expectations. Defined the narrow scope for this pass (read layer and
-chokepoint only, no new screens) and the stop point.
+Commit `7e47fb9`, 104/104 tests.
 
 ### CChat — 17 Sep 2026
 Reviewed and approved the specification. *Note: that approval predates the three
@@ -283,7 +277,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    - meaningful player crossovers where practical;
    - existing League Table remains the results/points view.
    Monthly Performance drives podium/Kings; movement views are complementary.
-   **Do not create another monthly rating solver.**
+   **Do not create another monthly rating solver.** Historical state should use
+   a bounded month-filtered `ratingJourney` query, never a full collection scan.
 2. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
    estimate" disclaimer).
 3. Kings of Tiers on historical tier.
