@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `707f6e8` |
-| Tests | **128 / 128 passing** |
+| Last verified implementation commit | `bd47757` |
+| Tests | **140 / 140 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -47,12 +47,21 @@ inherit both. A player's record and the rating beside it derive from the same
 150-match history: wins + losses + draws equals `lifetimeMatches` for all 34
 players.
 
-**Still legacy:** `computeMonthlyJourney`, `computePlayerJourney` (a
-self-declared "story estimate"), and `enrichMatches` expectations. The legacy
-monthly solver is **retired** — `computeMonthlyRating` no longer exists; all 11
-call sites now read real month-end Power Ratings via `monthEndRatings`.
+The player Rating Journey now replays persisted `ratingJourney` events. The
+reconstruction (`computePlayerJourney`) and its "story estimate" disclaimer are
+deleted, not merely unused: the journey's last point **is** the Power Rating for
+all 34 players, so there is no second number to caveat. Per-match rating changes
+on profile cards are the engine's own per-player deltas. Costs no extra read —
+`V3_JOURNEY` is already in memory for the monthly views.
 
-**Not built:** Rating Journey UI · Kings of Tiers on historical tier ·
+**Still legacy — two reconstructions remain, both newly specified in Open
+Questions 6 and 7:** `computeMonthlyJourney` (legacy joint solver, restarts each
+player at their tier seed) and `enrichMatches` expectations (recomputed in the
+browser). The legacy monthly solver is **retired** — `computeMonthlyRating` no
+longer exists; all 11 call sites now read real month-end Power Ratings via
+`monthEndRatings`.
+
+**Not built:** Kings of Tiers on historical tier ·
 Admin Monthly Review · reassessment write path (`applyClubDecision` does not
 exist; only the read-only recommendation) · beta diagnostics screen · beta reset
 workflow · replay-forward for historical edits · UI regression tests · final
@@ -170,27 +179,22 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code.** Complete the remaining monthly presentation
-acceptance gap in NEXT #1, then proceed to the real Rating Journey UI.
+**Owner / baton: Claude Code.** The Real Rating Journey UI is complete
+(`bd47757`). Next unblocked item is Kings of Tiers on historical tier.
 On `Ledger CCode`, reconcile repository state and start the first approved,
 unblocked item without another Shaun decision.
 
-**Progress reconciled by CGPT:** the monthly stories panel and rating/rank
-movement rows shipped on `main` in `05f6cd4`. CCode reports browser verification,
-zero page errors and 122/122 tests; CGPT has inspected the commit and relevant
-source, but has not independently rerun those checks.
-
-**Remaining gap:** `assets/js/app.js` populates `month_rank_change_tier` but
-does not render it. The stories panel shows start/end ratings only for the top
-positive risers, and start/end overall ranks only for the top climbers; individual
-rows show month-end rating, points movement and an overall rank arrow. Finish
-the already-agreed player-level start/end rating and overall/within-tier rank
-presentation, including declines and meaningful inactive-player boundary state.
-The highlights can remain, but do not substitute for the agreed movement views.
+**Needs a look from CGPT/CChat before it is built on:** Open Questions 6 and 7
+below record the last two places in the application that still present a
+reconstruction. Question 6 is a **standing-constraint conflict**, not a
+preference — the constraint says historical expectations are never recomputed in
+the browser, and `enrichMatches` does exactly that on every match card. Both are
+now read swaps rather than calculations, because the authoritative figures are
+persisted for every rated match.
 
 Open Question 1a remains resolved. Preserve the small-journey session cache
 exception and review trigger, the frozen engine, and all four distinct monthly
-concepts. This CGPT pass changes coordination only, not application code.
+concepts.
 
 ---
 
@@ -233,6 +237,29 @@ concepts. This CGPT pass changes coordination only, not application code.
    over 144 matches; measured is −42.8 (Stage 1) / −39.1 (Stage 2). Every other
    figure reproduces exactly, so this is most likely a different metric —
    recorded rather than quietly reconciled.
+6. **Standing-constraint conflict: expectations are still recomputed in the
+   browser.** Raised by CCode, 17 Sep 2026, while building the Rating Journey.
+   The standing constraint is *"Never recompute historical expectations in the
+   browser."* `enrichMatches` in `assets/js/app.js` does precisely that: it
+   derives `expected_winshare` from **today's** ratings and prints it on every
+   match card as "expected ~32% of games", and `computeMatchDelta` derives a
+   "rating impact" figure the same way. Neither is the engine's number. The
+   authoritative `preMatchExpectedScore` and a per-player `ratingDelta` are
+   persisted for all 596 rated match events, so this is a read swap.
+   One structural consequence needs a product answer, not an implementation
+   choice: because K is per-player, a match moves each of the four players by a
+   **different** amount, so the current card line ("+X for winners · −X for
+   losers") has no v3 equivalent and the card must be redesigned, not renumbered.
+   Not fixed inside the Rating Journey task because it spans the Games view as
+   well, and a half-fix would put two different expectation figures on screen at
+   once. **Recommendation: schedule as its own item before beta review.**
+7. **`computeMonthlyJourney` still runs the legacy joint solver.** It restarts
+   every player from their tier seed, which v3 does not do — there is one
+   continuous rating and no monthly reset. Live in two places: the Monthly Rating
+   breakdown modal and the head-to-head month view, the latter still telling the
+   reader "Each player starts the month at their tier baseline." These are the
+   last screens in the app showing a reconstruction. The four monthly views in
+   `monthlyViews.js` already carry the real figures.
 
 ---
 
@@ -256,6 +283,56 @@ take the real Rating Journey UI. No new product decision from Shaun is required.
 Keep the already-approved hiding of inert Edit/Delete controls in the queue;
 historical editing remains unavailable until replay-forward. No application
 changes or new release-scope decisions were made in this CGPT pass.
+
+### CCode — 17 Sep 2026 (Real Rating Journey UI shipped)
+`bd47757` on `main`. 140/140 tests (12 new). The profile Rating Journey now
+replays persisted `ratingJourney` events instead of reconstructing a sequence
+from `MATCHES`. The reconstruction and the "Story estimate — official Power
+Rating is X" disclaimer are deleted from the source; a test fails if either
+returns. Verified in-browser across all 34 players with zero page errors, and
+the empty, failed-read and no-events states were each exercised for real rather
+than reasoned about.
+
+New module `assets/js/journeyView.js` is pure and Node-testable. Tests hold
+that the journey's last point equals the Power Rating for every player, that
+each event starts where the previous one finished, that same-day state events
+precede that day's matches exactly as the engine applies them, that tier events
+carry **zero** rating and **zero** reliability movement, and that April/May can
+never enter a journey.
+
+Three presentation rules worth recording, because they are the difference
+between a truthful screen and a plausible one:
+* A tier change is drawn as a dashed annotation on the line, never a plotted
+  point, and states "Power Rating unchanged at N". A promotion must never read
+  as points earned.
+* A club reassessment is a distinct marker and names itself a club decision,
+  with its reliability change shown. It must never pass as match play.
+* Match rows say "performance score 0.29 against 0.33 expected" rather than a
+  percentage of games. The score is 80% games won + 20% the result — a different
+  quantity from the game-share figures on the cards below. The first draft said
+  "delivered 29%" directly above a card reading "actually took 36%"; both were
+  correct and the screen still read as a contradiction. Changed before shipping.
+
+Per-match rating changes on profile cards are now the engine's own per-player
+delta, keyed by match id. The month-scoped variant is gone: the rating is
+continuous, so a match moved it by exactly one amount.
+
+**No extra Firestore read was needed.** The brief anticipated targeted player
+reads; `V3_JOURNEY` is already resident for the monthly views, so the profile
+journey costs nothing. Open Question 1a's review trigger is unchanged.
+
+**Two findings raised, not fixed — Open Questions 6 and 7.** Question 6 is a
+conflict with a standing constraint (expectations recomputed in the browser on
+every match card) and carries a product question CCode should not answer alone:
+in v3 a match moves each of four players by a different amount, so the card's
+"+X for winners · −X for losers" line has no v3 equivalent and the card needs
+redesigning. Question 7 is the last remaining reconstruction. Both were left out
+of this task deliberately: each spans screens outside the Rating Journey, and a
+half-fix would put two different expectation figures on screen at once.
+
+**Baton → CGPT.** Requested: a view on whether Questions 6 and 7 are scheduled
+ahead of Kings of Tiers, given that 6 breaches a standing constraint. CCode will
+otherwise take NEXT #1 (Kings of Tiers) on the next `Ledger CCode`.
 
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
@@ -404,6 +481,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `bd47757` | Real Rating Journey UI: persisted events replace the reconstruction; "story estimate" disclaimer deleted |
 | `707f6e8` | Monthly acceptance: tier-change rank guard, inactive boundary state, fallers/slides, stale methodology copy removed |
 | `05f6cd4` | Monthly UI: four views presented; stale mini-season copy corrected |
 | `717e9b4` | Legacy monthly solver retired; `monthlyViews.js` builds all four monthly views from the real trajectory |
@@ -427,12 +505,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Real Rating Journey UI.** Replace `computePlayerJourney` and its "story
-   estimate" disclaimer with persisted chronological events. Use targeted
-   player reads where sufficient; retain truthful empty/error states and the
-   display-only exclusion of April/May data.
-2. Kings of Tiers on historical tier — the monthly data layer already exposes
+1. Kings of Tiers on historical tier — the monthly data layer already exposes
    historical tier per row, so this is presentation.
+2. **Retire the last two reconstructions — Open Questions 6 and 7.** Swap the
+   browser-recomputed match expectations for the persisted
+   `preMatchExpectedScore`/`ratingDelta` (Q6, a standing-constraint conflict,
+   and it requires a card redesign because K is per-player), and replace
+   `computeMonthlyJourney` in the Monthly Rating breakdown modal and the
+   head-to-head month view (Q7). **Sequencing against item 1 is CGPT's call.**
 3. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
 4. Beta diagnostics and beta reset workflow.
 5. Replay-forward — **required before any historical editing UI is exposed.**
