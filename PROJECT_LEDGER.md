@@ -16,8 +16,11 @@ truth → this Ledger for coordination state → individual AI chat memory.
 If remembered context conflicts with this Ledger, **investigate — never
 silently overwrite either version.**
 
-**Reading this file is not an instruction to start coding.** `SYNC` = read and
-reconcile · `REVIEW` = analyse or challenge · `WORK` = make changes.
+**Shorthand** (full semantics in `CLAUDE.md`): `Ledger CCode` is a **go
+command** — CCode reads, reconciles and starts the first approved, unblocked
+item in NEXT without further authorisation. `Ledger Sync` is read/reconcile
+only. `Ledger CChat` and `Ledger CGPT` address those agents. Shaun does not need
+to type `WORK`, task numbers or commit references.
 
 ---
 
@@ -30,7 +33,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `e8d21f4` |
+| Last verified implementation commit | `717e9b4` |
 | Tests | **122 / 122 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
@@ -287,6 +290,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `717e9b4` | Legacy monthly solver retired; `monthlyViews.js` builds all four monthly views from the real trajectory |
 | `e8d21f4` | Match history sourced from the v3 matches collection |
 | `e967f39` | PROJECT_LEDGER.md migrated into the repository |
 | `7e47fb9` | CLAUDE.md coordination protocol |
@@ -315,7 +319,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    - existing League Table remains the results/points view.
    Monthly Performance drives podium/Kings; movement views are complementary.
    **Do not create another monthly rating solver.** Historical state should use
-   a bounded month-filtered `ratingJourney` query, never a full collection scan.
+   a bounded month-filtered `ratingJourney` query, never a full collection scan
+   — **except** that Ranking Movement provably cannot, and as shipped does one
+   cached whole-journey read per session. See Open Question 1a, which must be
+   decided before the Ranking Movement portion of this UI is built.
 2. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
    estimate" disclaimer).
 3. Kings of Tiers on historical tier.
