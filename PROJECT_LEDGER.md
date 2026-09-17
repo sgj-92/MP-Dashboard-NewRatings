@@ -83,6 +83,24 @@ expectation). 1–2 matches provisional · 3+ table and Kings eligible · 5+ pod
 Kings of Tiers require a positive result and use the historical tier of the
 month. Eligibility is match-count based — a different concept from the bands.
 
+**Monthly story retains rating progress as a separate concept.** Retiring the
+legacy `computeMonthlyRating` means retiring a separately solved monthly rating,
+not hiding how the real Power Rating changed during a month. The monthly UI
+should expose four distinct views without conflating them:
+
+- **Monthly Performance:** who most exceeded pre-match expectation.
+- **Rating Movement:** each player's real Sequential-v1 Power Rating at the
+  start of the month → end of the month, with points gained/lost.
+- **Ranking Movement:** overall and within-tier rank at month start → month end,
+  including meaningful player crossovers where practical.
+- **League Table:** results/league points accumulated during the month.
+
+Rating Movement and Ranking Movement must be derived from the actual
+chronological Sequential-v1 rating state, not from a new monthly solver.
+Monthly Performance remains the basis for the monthly performance podium and
+Kings of Tiers; rating/rank movement is complementary context, not an award
+substitute.
+
 **Club reassessment:** forward-only and audited; never rewrites history. Two
 modes — recommended statistical reassessment, and explicit club override of
 rating *and* reliability. Promotion/demotion and rating reassessment are
@@ -113,6 +131,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Reassessment α ships at 0.25 | Below the best-performing 0.50, pending real reviews. |
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
+| Monthly Rating is replaced, not monthly rating progress | Monthly Performance becomes the performance metric, while real Power Rating movement, rank movement/crossovers and League Table remain visible as separate monthly stories. No new monthly rating solver. |
 
 ---
 
@@ -125,6 +144,11 @@ next item in NEXT.
 v3 `matches` collection; record and rating now derive from one history,
 verified in-browser and by regression test.
 
+**Next approved product scope** (CGPT/Shaun): the Monthly Performance pass also
+preserves monthly Rating Movement and Ranking Movement/crossovers from the real
+Sequential-v1 trajectory, alongside the existing League Table. This is not
+permission to recreate `computeMonthlyRating` or another monthly solver.
+
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -133,9 +157,8 @@ verified in-browser and by regression test.
    are no longer applied, because v3 match documents are already the edited
    truth and re-applying an overlay would desync a match from the rating
    computed for it. Consistent with historical editing being unavailable until
-   replay-forward exists, but it means the admin edit controls currently have
-   no effect on the match history. *Decision needed: hide those controls, or
-   leave them until replay-forward lands?*
+   replay-forward exists. **Shaun/CGPT decision: hide the inert controls for
+   now; restore them only once replay-forward makes historical editing real.**
 2. **Production snapshot does not reconcile.** 149 matches vs v3's 150;
    17 players' counts disagree, six of them negatively. Not explained by draws.
    Treat as an approximate reference, not a reconcilable truth.
@@ -149,6 +172,17 @@ verified in-browser and by regression test.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 17 Sep 2026 (latest)
+Shaun confirmed that replacing Monthly Power Rating must not remove the monthly
+progress story. Added the four-part monthly model: Monthly Performance (versus
+expectation), Rating Movement (real Power Rating start→end and points change),
+Ranking Movement (overall/tier rank start→end plus crossovers), and League Table
+(results/points). Monthly Performance remains the podium/Kings basis. Rating and
+rank movement come from the actual Sequential-v1 trajectory; **no separate
+monthly rating solver is to be recreated.** Also resolved the inert historical
+Edit/Delete controls: hide until replay-forward exists. **Baton → Shaun/CCode
+when Shaun issues `Ledger CCode`.**
 
 ### CCode — 17 Sep 2026 (latest)
 Switched `ALL_MATCHES` to the v3 `matches` collection, closing the 127-vs-150
@@ -170,7 +204,7 @@ errors — and the failure path confirmed working when Firebase is unreachable.
 Commit `7e47fb9`, 104/104 tests. **Discovered:** open questions 1–3 above.
 **Baton → Shaun.**
 
-### CGPT — 17 Sep 2026
+### CGPT — 17 Sep 2026 (previous)
 Issued the UI integration brief: engine frozen, no production runtime
 connection, no silent legacy fallback, no browser-side recomputation of
 historical expectations. Defined the narrow scope for this pass (read layer and
@@ -206,10 +240,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. Monthly Performance from persisted expectations; retire `computeMonthlyRating`.
+1. Monthly Performance from persisted expectations; retire
+   `computeMonthlyRating`. In the same pass, preserve the monthly progress story:
+   - real Power Rating start → end and points gained/lost;
+   - overall and within-tier rank start → end;
+   - meaningful player crossovers where practical;
+   - existing League Table remains the results/points view.
+   Monthly Performance drives podium/Kings; movement views are complementary.
+   **Do not create another monthly rating solver.**
 2. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
    estimate" disclaimer).
 3. Kings of Tiers on historical tier.
 4. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
 5. Beta diagnostics and beta reset workflow.
-6. Replay-forward — **required before any historical editing UI is exposed.**
+6. Replay-forward — **required before any historical editing UI is exposed; hide
+   inert Edit/Delete Match controls until then.**
