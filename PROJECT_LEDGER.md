@@ -33,7 +33,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `4cf819e` |
+| Last verified implementation commit | `05f6cd4` |
 | Tests | **122 / 122 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
@@ -170,24 +170,27 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code.** NEXT #1 Monthly UI presentation is approved and
-unblocked; its data layer is built and tested. **Open Question 1a is resolved**
-by Shaun/CGPT: accept the current session-cached cumulative read for Ranking
-Movement while the journey remains small, under Section 2's narrow exception
-and future review trigger. No further Shaun decision is needed for this scope.
-On `Ledger CCode`, reconcile repository state and start NEXT #1 immediately.
+**Owner / baton: Claude Code.** Complete the remaining monthly presentation
+acceptance gap in NEXT #1, then proceed to the real Rating Journey UI.
+On `Ledger CCode`, reconcile repository state and start the first approved,
+unblocked item without another Shaun decision.
 
-This coordination update changes only the Ledger; no application implementation
-has been performed as part of this decision.
+**Progress reconciled by CGPT:** the monthly stories panel and rating/rank
+movement rows shipped on `main` in `05f6cd4`. CCode reports browser verification,
+zero page errors and 122/122 tests; CGPT has inspected the commit and relevant
+source, but has not independently rerun those checks.
 
-**Completion of the previous task** (Claude Code): `ALL_MATCHES` switched to the
-v3 `matches` collection; record and rating now derive from one history,
-verified in-browser and by regression test.
+**Remaining gap:** `assets/js/app.js` populates `month_rank_change_tier` but
+does not render it. The stories panel shows start/end ratings only for the top
+positive risers, and start/end overall ranks only for the top climbers; individual
+rows show month-end rating, points movement and an overall rank arrow. Finish
+the already-agreed player-level start/end rating and overall/within-tier rank
+presentation, including declines and meaningful inactive-player boundary state.
+The highlights can remain, but do not substitute for the agreed movement views.
 
-**Next approved product scope** (CGPT/Shaun): the Monthly Performance pass also
-preserves monthly Rating Movement and Ranking Movement/crossovers from the real
-Sequential-v1 trajectory, alongside the existing League Table. This is not
-permission to recreate `computeMonthlyRating` or another monthly solver.
+Open Question 1a remains resolved. Preserve the small-journey session cache
+exception and review trigger, the frozen engine, and all four distinct monthly
+concepts. This CGPT pass changes coordination only, not application code.
 
 ---
 
@@ -234,6 +237,26 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 17 Sep 2026 (latest, monthly presentation reconciliation)
+Read CCode's monthly UI handoff and inspected the published commit/source.
+The implementation is on `main` at `05f6cd4`; the Ledger's `4cf819e` reference
+does not resolve through GitHub. Corrected the active commit references without
+changing historical handoffs. CCode's 122/122 and browser results remain reported
+verification, not a fresh CGPT test run.
+
+The monthly presentation is substantially built, but within-tier movement is
+assigned to a row field without being displayed. Start/end ratings and overall
+ranks appear only in positive-mover highlights, so the full agreed per-player
+movement presentation still needs completion. NEXT now distinguishes that
+bounded finish from rebuilding the monthly UI.
+
+**Baton → Claude Code:** finish NEXT #1, verify the agreed monthly views, then
+take the real Rating Journey UI. No new product decision from Shaun is required.
+Keep the already-approved hiding of inert Edit/Delete controls in the queue;
+historical editing remains unavailable until replay-forward. No application
+changes or new release-scope decisions were made in this CGPT pass.
+
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
 On Shaun's behalf, accepted the current once-per-session cumulative
@@ -350,7 +373,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
-| `4cf819e` | Monthly UI: four views presented; stale mini-season copy corrected |
+| `05f6cd4` | Monthly UI: four views presented; stale mini-season copy corrected |
 | `717e9b4` | Legacy monthly solver retired; `monthlyViews.js` builds all four monthly views from the real trajectory |
 | `e8d21f4` | Match history sourced from the v3 matches collection |
 | `e967f39` | PROJECT_LEDGER.md migrated into the repository |
@@ -372,25 +395,26 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Monthly UI presentation.** The data layer for all four views is built and
-   tested (`monthlyViews.js`); what remains is showing it. Original scope:
-   - real Power Rating start → end and points gained/lost;
-   - overall and within-tier rank start → end;
-   - meaningful player crossovers where practical;
-   - existing League Table remains the results/points view.
-   Monthly Performance drives podium/Kings; movement views are complementary.
-   **Owner: Claude Code. Approved and unblocked, including Ranking Movement.**
-   **Do not create another monthly rating solver.** Preserve `players` for
-   normal current state and bounded historical reads where sufficient. Open
-   Question 1a is resolved: retain the current once-per-session cumulative
-   `ratingJourney` read, cached for the session, for Ranking Movement while
-   small. No snapshot collection yet. Apply Section 2's future review trigger
-   when journey size, read cost or latency becomes material.
-1. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
-   estimate" disclaimer).
-2. Kings of Tiers on historical tier — the monthly data layer already exposes
+1. **Finish monthly presentation acceptance — Claude Code, approved and
+   unblocked.** Preserve the shipped monthly stories panel and League Table.
+   Expose real Power Rating start → end and points gained/lost, and overall
+   plus within-tier rank start → end for the selected player's/month's movement,
+   including negative movement, not only top positive highlights. Show
+   inactive-player boundary state where applicable; handle tier changes and
+   missing ranks explicitly rather than inventing a rank change. Retain
+   meaningful crossovers where practical. Verify these against `monthlyViews.js`
+   in the browser, including a tier-change month and a player whose rating and
+   rank move in different directions. Monthly Performance remains the
+   podium/Kings basis; no new monthly solver. Preserve Section 2's read strategy
+   and future review trigger. Record completion and actual published commit.
+2. **Real Rating Journey UI.** Replace `computePlayerJourney` and its "story
+   estimate" disclaimer with persisted chronological events. Use targeted
+   player reads where sufficient; retain truthful empty/error states and the
+   display-only exclusion of April/May data.
+3. Kings of Tiers on historical tier — the monthly data layer already exposes
    historical tier per row, so this is presentation.
-3. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-4. Beta diagnostics and beta reset workflow.
-5. Replay-forward — **required before any historical editing UI is exposed; hide
-   inert Edit/Delete Match controls until then.**
+4. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
+5. Beta diagnostics and beta reset workflow.
+6. Replay-forward — **required before any historical editing UI is exposed.**
+   Hiding inert Edit/Delete Match controls is already approved and must not
+   wait for replay-forward; restore them only when historical editing works.
