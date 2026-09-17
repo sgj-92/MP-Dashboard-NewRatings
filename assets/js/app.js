@@ -2861,43 +2861,41 @@ function displayDeltaFromOverperf(overperf){
   return Math.round(DISPLAY_MATCH_WEIGHT * overperf * 10) / 10;
 }
 
-function computePlayerJourney(name){
-  const indexed = MATCHES.map((m, idx) => ({ ...m, _idx: idx })).filter(m => m.winners.includes(name) || m.losers.includes(name));
-  if(indexed.length === 0) return null;
-
-  indexed.sort((a,b)=>{
-    if(a.date !== b.date) return a.date < b.date ? -1 : 1;
-    return a._idx - b._idx; // stable tie-break for same-day matches
-  });
-
-  const tier = STARTING_TIER_MAP[name] || TIER_MAP[name] || 'B';
-  let running = TIER_SEED[tier];
-  const journey = [{ type:'start', date: null, rating: running, label: `Tier ${tier} starting point` }];
-
-  indexed.forEach(m=>{
-    const won = m.winners.includes(name);
-    // Same basis as the "favored/expected/actual/over-under-performed" text shown alongside this:
-    // both now come from this one overperformance value, so they can never contradict each other.
-    const overperf = won ? m.overperformance_winner : -m.overperformance_winner;
-    const delta = displayDeltaFromOverperf(overperf);
-    running = Math.round((running + delta) * 10) / 10;
-    journey.push({
-      type: 'match', _idx: m._idx, date: m.date, rating: running, delta, won,
-      overperfPts: Math.round(overperf*1000)/10,
-    });
-  });
-
-  return journey;
+// The player's real Rating Journey, read straight back from the persisted
+// ratingJourney events. Nothing here is reconstructed: every rating, delta,
+// expectation and K-factor below was written by the engine at the moment it
+// happened. That is why the old "story estimate" disclaimer is gone -- there
+// is no second calculation left that could disagree with the Power Rating.
+//
+// This costs no extra Firestore read: V3_JOURNEY is already in memory for the
+// monthly views. It never falls back to a reconstruction; if the journey did
+// not load, the UI says so.
+function playerJourney(name){
+  if(typeof JourneyView === 'undefined') return { error: 'journeyView.js did not load.' };
+  if(!V3_STATE.loaded) return { error: String(V3_STATE.error || 'v3 state is not loaded.') };
+  if(!V3_JOURNEY.length) return { error: 'The Rating Journey did not load.' };
+  const journey = JourneyView.forPlayer(V3_JOURNEY, name);
+  if(!journey) return { empty: true };
+  return { journey };
 }
 
-// Same idea as computePlayerJourney, but for one specific month, and built to guarantee it
-// actually reconciles with the Month Rating headline figure once all that month's games are in --
-// each checkpoint re-runs the real engine on the whole month's network up to that point (the same
-// growing-subset approach computeMonthlyRating itself uses), rather than a simplified formula.
-// The trade-off: because ratings are solved jointly across everyone in the month, a single game's
-// checkpoint-to-checkpoint step can very occasionally not match that game's own over/underperformed
-// label if another game elsewhere in the month shifted the equilibrium at the same point -- this is
-// rare in a single month's smaller network, and the final total is always correct either way.
+// Real per-match rating movement for one player, keyed by match id. Used by the
+// profile match cards so the figure on a card is the figure the engine applied
+// for that player in that match -- not a team-wide approximation.
+function journeyDeltasByMatchId(journey){
+  const out = {};
+  if(!journey) return out;
+  journey.entries.forEach(e=>{ if(e.kind === 'match' && e.matchId) out[e.matchId] = e.delta; });
+  return out;
+}
+
+// LEGACY, NOT v3. This re-solves a month's games with the old joint solver and
+// restarts every player from their tier seed, which v3 does not do: there is one
+// continuous rating and no monthly reset. It survives only because the Monthly
+// Rating breakdown modal and the head-to-head month view still call it. Those
+// two screens are the last places in the app still showing a reconstruction,
+// and they are recorded in PROJECT_LEDGER.md as outstanding work -- the player
+// Rating Journey above no longer reconstructs anything.
 function computeMonthlyJourney(name, month){
   const monthMatches = ALL_MATCHES.filter(m => m.date.slice(0,7) === month);
   if(monthMatches.length === 0) return null;
@@ -2973,23 +2971,178 @@ function buildJourneyChartSvg(journey){
   </svg>`;
 }
 
-function buildJourneySection(name, journey){
-  if(!journey || journey.length < 2) return '';
-  const start = Math.round(journey[0].rating);
-  const end = Math.round(journey[journey.length-1].rating);
-  const diff = end - start;
-  const diffLabel = diff >= 0 ? `+${diff}` : `${diff}`;
-  const diffClass = diff > 0 ? 'perf-pos' : (diff < 0 ? 'perf-neg' : '');
-  const startingTierOverride = STARTING_TIER_MAP[name];
-  const currentTier = TIER_MAP[name];
-  const tierNote = (startingTierOverride && startingTierOverride !== currentTier)
-    ? ` ${name} started at Tier ${startingTierOverride} and is now Tier ${currentTier} — the starting point reflects Tier ${startingTierOverride}, not the current tier, since that's what was true when they first played.`
-    : '';
+// ---- Rating journey rendering (all of it reads persisted events) ----
 
-  let html = `<div class="section-heading" style="margin-top:14px;">📈 Rating journey</div>`;
-  html += `<div class="section-sub">From tier starting point (${start}) to a rough ${end} today — <span class="${diffClass}">${diffLabel} pts</span>. Each dot is one game — green moved this estimate up, red moved it down, based on games won vs. what was expected, matching the same figures shown on each match below. This is a readable breakdown of your results, not the official calculation — the real rating is solved jointly across everyone's games at once, so this total won't always land exactly on the Power Rating shown above, but the direction and shape of the trend will match your actual results.${tierNote}</div>`;
-  html += `<div class="matchup-vs" style="padding:8px;">${buildJourneyChartSvg(journey)}</div>`;
+const JOURNEY_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function journeyDateLabel(iso){
+  if(!iso) return '';
+  const parts = String(iso).split('-');
+  if(parts.length < 3) return String(iso);
+  return `${Number(parts[2])} ${JOURNEY_MONTH_ABBR[Number(parts[1])-1] || parts[1]}`;
+}
+function journeyPct(v){ return (v === null || v === undefined) ? '—' : `${Math.round(v*100)}%`; }
+function journeySigned(v){
+  if(v === null || v === undefined) return '';
+  const r = Math.round(v*10)/10;
+  return r > 0 ? `+${r}` : `${r}`;
+}
+function journeyDeltaHtml(v){
+  if(v === null || v === undefined) return '';
+  const cls = v > 0 ? 'perf-pos' : (v < 0 ? 'perf-neg' : '');
+  return `<span class="${cls}" style="font-weight:700;">${journeySigned(v)} pts</span>`;
+}
+
+// The chart. A reassessment and a tier change are drawn differently from a
+// match on purpose: one is a club decision, the other moves no rating at all,
+// and neither should read as a result on court.
+function buildV3JourneyChartSvg(journey){
+  const series = JourneyView.chartSeries(journey);
+  const w = 320, h = 110, padX = 8, padY = 14;
+  const ratings = series.map(s=>s.rating);
+  const minR = Math.min(...ratings), maxR = Math.max(...ratings);
+  const range = (maxR - minR) || 1;
+  const stepX = series.length > 1 ? (w - padX*2) / (series.length - 1) : 0;
+  const xy = (s,i) => [padX + i*stepX, padY + (h - padY*2) * (1 - (s.rating - minR)/range)];
+  const points = series.map((s,i)=> xy(s,i).map(v=>v.toFixed(1)).join(',')).join(' ');
+
+  const marks = series.map((s,i)=>{
+    const [x,y] = xy(s,i);
+    if(s.isAnnotation){
+      // Annotated, not plotted as movement: the rating did not change here.
+      return `<line x1="${x.toFixed(1)}" y1="${(padY-8).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(h-padY+8).toFixed(1)}" stroke="#c8a96a" stroke-width="1" stroke-dasharray="2,3" opacity="0.75"/>`
+        + `<rect x="${(x-2.8).toFixed(1)}" y="${(y-2.8).toFixed(1)}" width="5.6" height="5.6" fill="var(--bg, #14120f)" stroke="#c8a96a" stroke-width="1.3"/>`;
+    }
+    if(s.isJump){
+      return `<polygon points="${x.toFixed(1)},${(y-4.4).toFixed(1)} ${(x+4.4).toFixed(1)},${y.toFixed(1)} ${x.toFixed(1)},${(y+4.4).toFixed(1)} ${(x-4.4).toFixed(1)},${y.toFixed(1)}" fill="#7ba7d4"/>`;
+    }
+    const color = s.kind === 'match'
+      ? (s.delta > 0 ? '#5a9c5a' : (s.delta < 0 ? '#b5453f' : '#a89c82'))
+      : '#a89c82';
+    const r = (i === series.length-1) ? 4 : 2.3;
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${color}"/>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%; height:${h}px; display:block;">
+    <polyline points="${points}" fill="none" stroke="#a89c82" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" opacity="0.45"/>
+    ${marks}
+  </svg>`;
+}
+
+function journeyMatchDescription(name, matchId){
+  const m = MATCHES.find(x => x.id === matchId);
+  if(!m) return null;
+  const won = m.winners.includes(name);
+  const myTeam = won ? m.winners : m.losers;
+  const oppTeam = won ? m.losers : m.winners;
+  const partner = myTeam.filter(n => n !== name)[0] || null;
+  return {
+    won, partner, opponents: oppTeam.join(' & '),
+    resultWord: m.isDraw ? 'Drew' : (won ? 'Beat' : 'Lost to'),
+    score: m.score || '',
+  };
+}
+
+// One row per event. Every row states what kind of event it was, because the
+// kinds are not interchangeable: only a match is a result.
+function buildJourneyEventRowHtml(name, e){
+  const after = Math.round(e.rating);
+  const date = journeyDateLabel(e.date);
+  const row = (tag, title, detail) => `<div class="matchup-vs" style="margin-top:6px; padding:8px;">
+      <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em;">${date}${tag ? ` · ${tag}` : ''}</div>
+      <div style="font-weight:700; color:var(--text); margin-top:2px;">${title}</div>
+      <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-top:2px;">${detail}</div>
+    </div>`;
+
+  if(e.kind === 'initialised'){
+    return row('Joined', `Entered at Tier ${e.tier || '—'} — starting Power Rating ${after}`,
+      `Reliability 0% — no evidence yet. Everything after this point was earned.`);
+  }
+  if(e.kind === 'tier'){
+    const title = e.eventType === 'PROMOTION' ? `Promoted to Tier ${e.tier}`
+      : (e.eventType === 'DEMOTION' ? `Moved down to Tier ${e.tier}`
+      : `Stayed in Tier ${e.tier}`);
+    return row('Tier change', title,
+      `Power Rating unchanged at <b>${after}</b>, reliability unchanged at ${journeyPct(e.reliability)}. A tier change moves neither — it changes who ${name} is ranked against, not what the rating says.`);
+  }
+  if(e.kind === 'correction'){
+    return row('Classification corrected', `Initial tier corrected: Tier ${e.previousTier || '—'} → Tier ${e.tier || '—'}`,
+      `Power Rating unchanged at <b>${after}</b>, reliability unchanged at ${journeyPct(e.reliability)}. The starting tier was wrong; the evidence gathered since was not, so none of it was discarded.`);
+  }
+  if(e.kind === 'reassessment'){
+    const before = e.previousRating === null ? null : Math.round(e.previousRating);
+    return row('Club decision', `Club rating reassessment`,
+      `Power Rating ${before === null ? '—' : before} → <b>${after}</b> (${journeyDeltaHtml(e.delta)}), reliability ${journeyPct(e.previousReliability)} → ${journeyPct(e.reliability)}. A club decision recorded against ${name}'s record, not a result on court.${e.notes ? ` ${e.notes}` : ''}`);
+  }
+  if(e.kind === 'match'){
+    const d = journeyMatchDescription(name, e.matchId);
+    const title = d ? `${d.resultWord} ${d.opponents}${d.partner ? ` (with ${d.partner})` : ''}` : `Match ${e.matchId}`;
+    // Deliberately NOT called a share of games. The performance score is
+    // 80% games won + 20% the result, so it is a different quantity from the
+    // game-share figures on the match cards below and must not borrow their
+    // wording -- two near-identical labels on one screen read as a
+    // contradiction even when both numbers are right.
+    const score = (v) => (v === null || v === undefined) ? '—' : v.toFixed(2);
+    return row('Match', title,
+      `${journeyDeltaHtml(e.delta)} → <b>${after}</b>. Performance score ${score(e.actual)} against ${score(e.expected)} expected${d && d.score ? ` (${d.score})` : ''}. Weighting K ${Math.round(e.kUsed)} · reliability ${journeyPct(e.previousReliability)} → ${journeyPct(e.reliability)}.`);
+  }
+  return row('', e.eventType, `Power Rating ${after}.`);
+}
+
+const JOURNEY_METHODOLOGY_TEXT = `Every point below is the number the engine recorded at the time, replayed back in order — not a re-estimate. Each match compares what was expected of you before the ball was struck with the performance score you actually delivered. That score runs 0 to 1 and is 80% the share of games you won plus 20% the result itself, so it is deliberately not the same figure as the game percentages shown on the match cards. The gap between expected and delivered is multiplied by a weighting that starts high while your rating is new and falls as evidence builds, so early matches move you further than late ones. A tier change moves no points and no reliability at all. A club reassessment does move points, and is shown as its own event so it can never be mistaken for a result.`;
+
+function buildJourneyLegendHtml(journey){
+  const bits = [`<span style="color:#5a9c5a;">●</span> match gained · <span style="color:#b5453f;">●</span> match lost ground`];
+  if(journey.reassessmentCount) bits.push(`<span style="color:#7ba7d4;">◆</span> club reassessment`);
+  if(journey.tierChangeCount) bits.push(`<span style="color:#c8a96a;">▫</span> tier change (no rating movement)`);
+  return `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px;">${bits.join(' &nbsp;·&nbsp; ')}</div>`;
+}
+
+// Shared by the legacy profile sheet and the premium profile so the two can
+// never drift into showing different journeys.
+// `showHeadline` is false where the caller already prints the start/end figure
+// above the body, so the same number is never printed twice.
+function buildJourneyBodyHtml(name, journey, showHeadline){
+  const start = Math.round(journey.startRating);
+  const end = Math.round(journey.endRating);
+  const diff = end - start;
+  const diffClass = diff > 0 ? 'perf-pos' : (diff < 0 ? 'perf-neg' : '');
+  const notable = journey.entries.filter(e => e.kind !== 'match');
+
+  const counts = [`${journey.matchCount} match${journey.matchCount === 1 ? '' : 'es'}`];
+  if(journey.tierChangeCount) counts.push(`${journey.tierChangeCount} tier change${journey.tierChangeCount === 1 ? '' : 's'}`);
+  if(journey.reassessmentCount) counts.push(`${journey.reassessmentCount} club reassessment${journey.reassessmentCount === 1 ? '' : 's'}`);
+
+  const lead = showHeadline === false
+    ? `Across ${counts.join(', ')}`
+    : `${start} → <b>${end}</b> <span class="${diffClass}">(${diff >= 0 ? '+' : ''}${diff} pts)</span> across ${counts.join(', ')}`;
+  let html = `<div class="section-sub">${lead}, from ${journeyDateLabel(journey.firstDate)} to ${journeyDateLabel(journey.lastDate)}. This is the recorded journey: the last point is the Power Rating.</div>`;
+  html += `<div class="matchup-vs" style="padding:8px;">${buildV3JourneyChartSvg(journey)}</div>`;
+  html += buildJourneyLegendHtml(journey);
+
+  if(notable.length){
+    html += `<div class="section-heading" style="margin-top:12px;">Milestones</div>`;
+    html += notable.map(e => buildJourneyEventRowHtml(name, e)).join('');
+  }
+
+  html += `<details style="margin-top:10px;"><summary class="explainer-toggle" style="padding-left:0; cursor:pointer;">Every event (${journey.entries.length}) ›</summary>`;
+  html += journey.entries.slice().reverse().map(e => buildJourneyEventRowHtml(name, e)).join('');
+  html += `</details>`;
+
+  html += `<details style="margin-top:8px;"><summary class="explainer-toggle" style="padding-left:0; cursor:pointer;">How your rating moves ›</summary>
+    <div class="section-sub">${JOURNEY_METHODOLOGY_TEXT}</div></details>`;
   return html;
+}
+
+// `result` is whatever playerJourney() returned. No silent fallback: a failed
+// read says so, and a player with no recorded events says that instead of
+// inventing a starting point.
+function buildJourneySection(name, result){
+  let body;
+  if(!result) body = `<div class="section-sub">Rating journey unavailable.</div>`;
+  else if(result.error) body = `<div class="section-sub" style="color:var(--red);">Rating journey unavailable — ${result.error} Reload to try again.</div>`;
+  else if(result.empty) body = `<div class="section-sub">No rating events recorded for ${name} yet.</div>`;
+  else body = buildJourneyBodyHtml(name, result.journey);
+  return `<div class="section-heading" style="margin-top:14px;">📈 Rating journey</div>` + body;
 }
 
 function buildRecentFormSection(name){
@@ -3262,21 +3415,18 @@ function openSheet(name, matchFilter){
     <div><b>${p.wins}-${p.losses}</b>Record</div>
     <div><b>${p.upset_wins}-${p.upset_losses}</b>Upset W-L</div>
   `;
-  const journey = computePlayerJourney(name);
-  const deltaByIdx = {};
-  if(journey) journey.forEach(j=>{ if(j.type==='match') deltaByIdx[j._idx] = j.delta; });
+  const journeyResult = playerJourney(name);
+  // The rating change shown on each match card is the figure the engine
+  // actually applied to THIS player in that match. K is per-player, so two
+  // players in the same match move by different amounts; this is their own
+  // recorded number, not a team-wide estimate.
+  //
+  // There is no month-scoped variant any more. The rating is continuous and
+  // never resets, so a match moved it by exactly one amount whichever month
+  // filter happens to be active.
+  const deltaByMatchId = journeyDeltasByMatchId(journeyResult.journey);
 
-  // If a month is active, the match cards below get filtered to just that month -- so the points
-  // shown on each of those cards should come from that same month's own engine (every game counts,
-  // no neutral band), not the season-long journey's hard-cliff rule. Otherwise a real, active month
-  // with only a handful of games could show "0 pts" on most of them just because they were close to
-  // the season-long expectation, even though the month's own rating moved on every one of them.
-  if(selectedMonth !== 'all'){
-    const monthJourneyForDelta = computeMonthlyJourney(name, selectedMonth);
-    if(monthJourneyForDelta) monthJourneyForDelta.forEach(j=>{ if(j.type==='match') deltaByIdx[j._idx] = j.delta; });
-  }
-
-  document.getElementById('sheetProfile').innerHTML = `<div class="profile-box">${buildProfileText(p)}</div>` + buildDevAreasSection(name) + buildGameRequestsForPlayerSection(name) + buildRecentFormSection(name) + buildMonthlyRatingSection(name) + buildJourneySection(name, journey) + buildRankingNeighborsSection(name) + buildCallOutSection(name) + buildDifficultySection(name);
+  document.getElementById('sheetProfile').innerHTML = `<div class="profile-box">${buildProfileText(p)}</div>` + buildDevAreasSection(name) + buildGameRequestsForPlayerSection(name) + buildRecentFormSection(name) + buildMonthlyRatingSection(name) + buildJourneySection(name, journeyResult) + buildRankingNeighborsSection(name) + buildCallOutSection(name) + buildDifficultySection(name);
   let ms = MATCHES.map((m, idx)=>({...m, _idx: idx})).filter(m => m.winners.includes(name) || m.losers.includes(name));
   ms.sort((a,b)=> a.date < b.date ? 1 : -1);
 
@@ -3368,7 +3518,7 @@ function openSheet(name, matchFilter){
     const namesWithRatings = myTeam.map(n => `${n} (${ratingOf(n)})`).join(' &amp; ');
     const oppWithRatings = oppTeam.map(n => `${n} (${ratingOf(n)})`).join(' &amp; ');
 
-    const delta = deltaByIdx[m._idx];
+    const delta = deltaByMatchId[m.id];
     let deltaLabel = '';
     if(delta !== undefined){
       const deltaClass = delta > 0 ? 'perf-pos' : (delta < 0 ? 'perf-neg' : '');

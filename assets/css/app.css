@@ -1087,11 +1087,6 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 
 /* Rating journey */
 .pp-journey-headline{ font-family: var(--font-interface); font-weight: 700; font-size: 18px; color: var(--text); }
-.pp-journey-disclaimer{
-  font-family: var(--font-interface); font-size: 11px; color: var(--gold-dim);
-  margin-top: 4px; margin-bottom: 4px;
-}
-.pp-journey-disclaimer b{ color: var(--gold-bright); }
 
 /* Viewer-relative grid */
 .pp-viewer-rel-grid{ display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }

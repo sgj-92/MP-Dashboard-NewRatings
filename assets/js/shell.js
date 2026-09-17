@@ -1625,8 +1625,8 @@ function showFullMonthlyReview(){
 // ==========================================================================
 // PLAYER PROFILE -- premium dossier redesign
 // Reuses every existing calculation (PLAYERS fields, BEST_PARTNER, H2H,
-// WITHIN_TIER_GAMES/BOUNDARY_TESTS/CALIBRATION_GAMES, computePlayerJourney,
-// buildJourneyChartSvg, computeRecentForm) -- no parallel rating/stat logic.
+// WITHIN_TIER_GAMES/BOUNDARY_TESTS/CALIBRATION_GAMES, playerJourney,
+// buildJourneyBodyHtml, computeRecentForm) -- no parallel rating/stat logic.
 // Strategy: let the legacy openSheet() run fully first (unchanged), which
 // still does all data prep AND wires every interactive element (match
 // edit/delete, dev-area add/delete). Then physically restructure the DOM --
@@ -1772,28 +1772,32 @@ function renderPremiumProfile(name, matchFilter){
     </div>
   ` : '';
 
-  // ---- Rating journey (compact headline; chart reused verbatim) ----
-  const journey = computePlayerJourney(name);
+  // ---- Rating journey (the real, persisted one) ----
+  // There is no disclaimer here any more. The journey is replayed from the
+  // events the engine wrote, so its last point IS the Power Rating shown above
+  // -- they cannot disagree, and there is no second estimate to caveat. If the
+  // journey could not be read, that is said plainly rather than patched over.
+  const journeyResult = playerJourney(name);
   let journeyHtml = '';
-  if(journey && journey.length > 1){
-    const start = Math.round(journey[0].rating), end = Math.round(journey[journey.length-1].rating);
+  if(journeyResult.journey){
+    const j = journeyResult.journey;
+    const start = Math.round(j.startRating), end = Math.round(j.endRating);
     const diff = end - start;
     const diffClass = diff > 0 ? 'perf-pos' : (diff < 0 ? 'perf-neg' : '');
-    const officialRating = Math.round(p.rating);
-    // The journey is a readable story reconstruction (sequential, with a
-    // neutral band for near-expected results) -- not the real engine, which
-    // solves every player's rating jointly at once. The two can genuinely
-    // land on different numbers; rather than silently disagree or force
-    // them to match, the gap is stated plainly whenever it's non-trivial.
-    const journeyDisagreesWithOfficial = Math.abs(end - officialRating) >= 1;
     journeyHtml = `
       <div class="pp-section">
         <div class="pp-section-label">Rating Journey</div>
         <div class="pp-journey-headline">${start} → ${end} <span class="${diffClass}" style="font-size:14px;">(${diff>=0?'+':''}${diff} pts)</span></div>
-        ${journeyDisagreesWithOfficial ? `<div class="pp-journey-disclaimer">Story estimate — official Power Rating is <b>${officialRating}</b></div>` : ''}
-        <div class="matchup-vs" style="padding:8px;">${buildJourneyChartSvg(journey)}</div>
-        <button class="explainer-toggle" id="ppJourneyInfoToggle" style="padding-left:0;">How ratings work ›</button>
-        <div class="section-sub" id="ppJourneyInfoBody" style="display:none;">This is a readable story of your results, not the official calculation — the real rating is solved jointly across everyone's games at once, using every match together rather than one result at a time, and close-to-expected results here are shown as no change to keep the story focused on what actually moved the needle. That's why this total won't always land exactly on the Power Rating shown above, even though the direction and shape of the trend reflects your actual results.</div>
+        ${buildJourneyBodyHtml(name, j, false)}
+      </div>
+    `;
+  } else {
+    journeyHtml = `
+      <div class="pp-section">
+        <div class="pp-section-label">Rating Journey</div>
+        ${journeyResult.error
+          ? `<div class="section-sub" style="color:var(--red);">Unavailable — ${journeyResult.error} Reload to try again.</div>`
+          : `<div class="section-sub">No rating events recorded for ${name} yet.</div>`}
       </div>
     `;
   }
@@ -1885,13 +1889,6 @@ function renderPremiumProfile(name, matchFilter){
     const open = body.style.display !== 'none';
     body.style.display = open ? 'none' : 'block';
     fa.textContent = open ? 'Full analysis ›' : 'Full analysis ⌄';
-  };
-  const ji = document.getElementById('ppJourneyInfoToggle');
-  if(ji) ji.onclick = ()=>{
-    const body = document.getElementById('ppJourneyInfoBody');
-    const open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : 'block';
-    ji.textContent = open ? 'How ratings work ›' : 'How ratings work ⌄';
   };
   const piBtn = document.getElementById('ppProveItBtn');
   if(piBtn) piBtn.onclick = ()=>{ closeSheet(); goToSection('play'); };
