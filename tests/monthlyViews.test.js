@@ -145,3 +145,82 @@ test('monthly views read the journey, never rebuild it from matches', () => {
   assert.ok(!mv.includes('processMatch'), 'the engine must not be re-run to build a monthly view');
   assert.ok(mv.includes('postMatchRating'), 'movement comes from persisted journey ratings');
 });
+
+// ---------- acceptance: no invented movement, no missing boundary state ----------
+
+function tierChangeFixture() {
+  const ev = [
+    { playerId: 'X', eventType: Engine.EVENT.PLAYER_INITIALISED, effectiveDate: '2026-06-01', newPowerRating: 1100 },
+    { playerId: 'A', eventType: Engine.EVENT.PLAYER_INITIALISED, effectiveDate: '2026-06-01', newPowerRating: 1050 },
+    { playerId: 'B', eventType: Engine.EVENT.PLAYER_INITIALISED, effectiveDate: '2026-06-01', newPowerRating: 1400 },
+    { playerId: 'X', eventType: Engine.EVENT.MATCH_UPDATE, effectiveDate: '2026-06-10', matchId: 'm1', preMatchRating: 1100, postMatchRating: 1120, preMatchExpectedScore: 0.5, actualScore: 0.6 },
+    { playerId: 'X', eventType: Engine.EVENT.MATCH_UPDATE, effectiveDate: '2026-07-10', matchId: 'm2', preMatchRating: 1120, postMatchRating: 1130, preMatchExpectedScore: 0.5, actualScore: 0.6 },
+    { playerId: 'A', eventType: Engine.EVENT.MATCH_UPDATE, effectiveDate: '2026-07-11', matchId: 'm3', preMatchRating: 1050, postMatchRating: 1060, preMatchExpectedScore: 0.5, actualScore: 0.6 },
+  ];
+  // X is promoted C -> B partway through July.
+  const tierAsOf = (n, d) => (n === 'X' ? (d >= '2026-07-15' ? 'B' : 'C') : (n === 'B' ? 'B' : 'C'));
+  return MV.build(ev, { tierAsOf });
+}
+
+test('a tier change never invents a within-tier rank movement', () => {
+  const r = MV.playerMonth(tierChangeFixture(), '2026-07', 'X');
+  assert.strictEqual(r.tierChanged, true);
+  assert.strictEqual(r.tierAtMonthStart, 'C');
+  assert.strictEqual(r.tierAtMonthEnd, 'B');
+  assert.strictEqual(r.rankChangeInTier, null,
+    'a rank in Tier C cannot be subtracted from a rank in Tier B');
+  // The boundary ranks themselves are still reported, just not differenced.
+  assert.ok(r.startRankInTier !== null && r.endRankInTier !== null);
+  // Overall rank remains comparable across a tier change.
+  assert.ok(r.rankChangeOverall !== null);
+});
+
+test('a player who did not play still gets their boundary state', () => {
+  const v = tierChangeFixture();
+  const idle = v.byMonth['2026-07'].inactiveRows.find((r) => r.playerId === 'B');
+  assert.ok(idle, 'B sat July out and must still appear');
+  assert.strictEqual(idle.played, false);
+  assert.strictEqual(idle.matches, 0);
+  assert.strictEqual(idle.ratingChange, 0, 'sitting out does not move a rating');
+  assert.ok(idle.startRankOverall !== null && idle.endRankOverall !== null);
+  assert.strictEqual(idle.monthlyPerformance, null, 'no games means no performance figure, not zero');
+});
+
+test('an idle player can still move rank when others move around them', () => {
+  const ev = [
+    { playerId: 'Idle', eventType: Engine.EVENT.PLAYER_INITIALISED, effectiveDate: '2026-06-01', newPowerRating: 1200 },
+    { playerId: 'Riser', eventType: Engine.EVENT.PLAYER_INITIALISED, effectiveDate: '2026-06-01', newPowerRating: 1100 },
+    { playerId: 'Riser', eventType: Engine.EVENT.MATCH_UPDATE, effectiveDate: '2026-06-02', matchId: 'a', preMatchRating: 1100, postMatchRating: 1150, preMatchExpectedScore: 0.5, actualScore: 0.9 },
+    { playerId: 'Riser', eventType: Engine.EVENT.MATCH_UPDATE, effectiveDate: '2026-07-02', matchId: 'b', preMatchRating: 1150, postMatchRating: 1300, preMatchExpectedScore: 0.5, actualScore: 0.9 },
+  ];
+  const idle = MV.playerMonth(MV.build(ev, { tierAsOf: () => 'B' }), '2026-07', 'Idle');
+  assert.strictEqual(idle.ratingChange, 0);
+  assert.strictEqual(idle.startRankOverall, 1);
+  assert.strictEqual(idle.endRankOverall, 2, 'overtaken while sitting out');
+  assert.strictEqual(idle.rankChangeOverall, -1);
+});
+
+test('playerMonth finds both active and inactive players, and nothing else', () => {
+  const v = tierChangeFixture();
+  assert.ok(MV.playerMonth(v, '2026-07', 'X').played);
+  assert.strictEqual(MV.playerMonth(v, '2026-07', 'B').played, false);
+  assert.strictEqual(MV.playerMonth(v, '2026-07', 'Nobody'), null);
+  assert.strictEqual(MV.playerMonth(v, '2099-01', 'X'), null);
+});
+
+test('the real dataset reports fallers as well as risers', () => {
+  const { v } = views();
+  const moves = MV.ratingMovementTable(v, '2026-08');
+  assert.ok(moves.some((r) => r.ratingChange > 0), 'risers exist');
+  assert.ok(moves.some((r) => r.ratingChange < 0), 'fallers exist and must be reportable');
+  const ranked = v.byMonth['2026-08'].rows.filter((r) => r.rankChangeOverall !== null);
+  assert.ok(ranked.some((r) => r.rankChangeOverall < 0), 'rank slides exist and must be reportable');
+});
+
+test('no user-facing copy still describes the retired monthly solver', () => {
+  ['app.js', 'shell.js'].forEach((f) => {
+    const src = fs.readFileSync(path.join(ROOT, 'assets', 'js', f), 'utf8');
+    assert.ok(!/mini-season/i.test(src), f + ' still describes a monthly mini-season');
+    assert.ok(!/tier-seeded rating using only/i.test(src), f + ' still describes a monthly re-solve');
+  });
+});

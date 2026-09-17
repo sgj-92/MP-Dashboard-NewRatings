@@ -104,10 +104,16 @@
         const perfRow = perf.find((x) => x.playerId === name && x.month === month);
         const rOpen = openRatings[name] !== undefined && tierOpen ? rank(openRatings, tierOpen, name) : null;
         const rClose = tierClose ? rank(closeRatings, tierClose, name) : null;
+        // A player who changed tier during the month has no comparable
+        // within-tier rank: their opening rank was measured against a different
+        // field. Report the change as unavailable rather than subtracting a
+        // rank in one tier from a rank in another.
+        const tierChanged = !!(rOpen && rClose && rOpen.tier !== rClose.tier);
         return {
           playerId: name,
           month,
           matches: p.matches,
+          played: true,
           startRating: start,
           endRating: end,
           ratingChange: Math.round((end - start) * 10) / 10,
@@ -116,7 +122,9 @@
           rankChangeOverall: rOpen && rClose ? rOpen.overall - rClose.overall : null,
           startRankInTier: rOpen ? rOpen.inTier : null,
           endRankInTier: rClose ? rClose.inTier : null,
-          rankChangeInTier: rOpen && rClose ? rOpen.inTier - rClose.inTier : null,
+          rankChangeInTier: (rOpen && rClose && !tierChanged) ? rOpen.inTier - rClose.inTier : null,
+          tierChanged: tierChanged,
+          tierAtMonthStart: rOpen ? rOpen.tier : null,
           tierAtMonthEnd: rClose ? rClose.tier : null,
           monthlyPerformance: perfRow ? perfRow.monthlyPerformance : null,
           performancePct: perfRow ? perfRow.displayPct : null,
@@ -126,9 +134,39 @@
         };
       });
 
+      // A player who sat the month out still has a boundary story: their rating
+      // did not move (unless the club reassessed them) but their rank can, and
+      // does, because others moved around them.
+      const inactiveRows = Object.keys(closeRatings)
+        .filter((n) => !played[n] && openRatings[n] !== undefined)
+        .sort()
+        .map((name) => {
+          const rOpen = tierOpen ? rank(openRatings, tierOpen, name) : null;
+          const rClose = tierClose ? rank(closeRatings, tierClose, name) : null;
+          const tierChanged = !!(rOpen && rClose && rOpen.tier !== rClose.tier);
+          return {
+            playerId: name, month, matches: 0, played: false,
+            startRating: openRatings[name],
+            endRating: closeRatings[name],
+            ratingChange: Math.round((closeRatings[name] - openRatings[name]) * 10) / 10,
+            startRankOverall: rOpen ? rOpen.overall : null,
+            endRankOverall: rClose ? rClose.overall : null,
+            rankChangeOverall: rOpen && rClose ? rOpen.overall - rClose.overall : null,
+            startRankInTier: rOpen ? rOpen.inTier : null,
+            endRankInTier: rClose ? rClose.inTier : null,
+            rankChangeInTier: (rOpen && rClose && !tierChanged) ? rOpen.inTier - rClose.inTier : null,
+            tierChanged: tierChanged,
+            tierAtMonthStart: rOpen ? rOpen.tier : null,
+            tierAtMonthEnd: rClose ? rClose.tier : null,
+            monthlyPerformance: null, performancePct: null,
+            tableEligible: false, podiumEligible: false, provisional: true,
+          };
+        });
+
       byMonth[month] = {
         month,
         rows,
+        inactiveRows,
         closingRatings: closeRatings,
         crossovers: crossovers(openRatings, closeRatings),
       };
@@ -162,6 +200,15 @@
     return m ? { ...m.closingRatings } : {};
   }
 
+  // The movement row for one player in one month, whether or not they played.
+  function playerMonth(views, month, playerId) {
+    const m = views.byMonth[month];
+    if (!m) return null;
+    return m.rows.find((r) => r.playerId === playerId)
+        || m.inactiveRows.find((r) => r.playerId === playerId)
+        || null;
+  }
+
   function performanceTable(views, month, { minMatches = 3 } = {}) {
     const m = views.byMonth[month];
     if (!m) return [];
@@ -175,5 +222,5 @@
     return [...m.rows].sort((a, b) => b.ratingChange - a.ratingChange);
   }
 
-  return { build, buildSnapshots, monthEndRatings, performanceTable, ratingMovementTable, crossovers, monthOf };
+  return { build, buildSnapshots, monthEndRatings, performanceTable, ratingMovementTable, playerMonth, crossovers, monthOf };
 });

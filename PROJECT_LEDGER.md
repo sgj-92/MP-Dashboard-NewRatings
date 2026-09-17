@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `05f6cd4` |
-| Tests | **122 / 122 passing** |
+| Last verified implementation commit | `707f6e8` |
+| Tests | **128 / 128 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -276,7 +276,38 @@ reported 122/122 test result remain those of the last verified CCode work.
 Earlier handoffs below are historical; this decision supersedes their pending
 1a blocker and absolute prohibition on cumulative historical reads.
 
-### CCode — 17 Sep 2026 (latest, monthly UI)
+### CCode — 17 Sep 2026 (latest, monthly acceptance)
+Closed the acceptance gaps on the monthly presentation and fixed two defects
+found doing it.
+
+**Invented rank movement.** A player who changed tier mid-month had their
+within-tier rank change computed by subtracting a rank in one tier from a rank
+in another. Now reported as not comparable, with both boundary ranks and the
+tier change shown instead. The live dataset never hit this — the §5.3
+promotions all fall on the 1st, so they align with month boundaries — but a
+mid-month review would have produced a fabricated number.
+
+**Missing boundary state.** Players who sat a month out had no row at all, yet
+their rank moves when others move around them. `inactiveRows` now carries their
+boundary state with rating change 0 and performance null (not zero). August has
+5 such players, 1 of whom moved rank.
+
+Presentation now shows fallers as well as risers, rank slides as well as climbs,
+a "moved without playing" section, and a per-player monthly panel with rating
+start→end, overall rank, within-tier rank, and performance — negative movement
+rendered identically to positive.
+
+**Two more stale labels removed.** The per-player section and
+`MONTHLY_RATING_METHODOLOGY_TEXT` both still described the retired mini-season
+solver, the latter telling players their rating resets to their tier seed each
+month — the exact thing v3 abolished. A test now fails if that language returns.
+
+Verified in-browser: Shaun July +37.3 pts while falling 4 places overall
+(rating and rank diverging), June showing "not ranked at both ends" for his
+first month, Fatch +15.9 pts falling a place, KC −1 pt gaining one. Zero page
+errors, 128/128 tests. **Baton → Shaun.**
+
+### CCode — 17 Sep 2026 (previous, monthly UI)
 Monthly UI presentation built on the existing Rankings screen — no redesign, no
 new nav destination. A monthly stories panel separates the four measures under
 their own headings with a plain-English line each, and the ranking rows now carry
@@ -373,6 +404,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `707f6e8` | Monthly acceptance: tier-change rank guard, inactive boundary state, fallers/slides, stale methodology copy removed |
 | `05f6cd4` | Monthly UI: four views presented; stale mini-season copy corrected |
 | `717e9b4` | Legacy monthly solver retired; `monthlyViews.js` builds all four monthly views from the real trajectory |
 | `e8d21f4` | Match history sourced from the v3 matches collection |
@@ -395,26 +427,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Finish monthly presentation acceptance — Claude Code, approved and
-   unblocked.** Preserve the shipped monthly stories panel and League Table.
-   Expose real Power Rating start → end and points gained/lost, and overall
-   plus within-tier rank start → end for the selected player's/month's movement,
-   including negative movement, not only top positive highlights. Show
-   inactive-player boundary state where applicable; handle tier changes and
-   missing ranks explicitly rather than inventing a rank change. Retain
-   meaningful crossovers where practical. Verify these against `monthlyViews.js`
-   in the browser, including a tier-change month and a player whose rating and
-   rank move in different directions. Monthly Performance remains the
-   podium/Kings basis; no new monthly solver. Preserve Section 2's read strategy
-   and future review trigger. Record completion and actual published commit.
-2. **Real Rating Journey UI.** Replace `computePlayerJourney` and its "story
+1. **Real Rating Journey UI.** Replace `computePlayerJourney` and its "story
    estimate" disclaimer with persisted chronological events. Use targeted
    player reads where sufficient; retain truthful empty/error states and the
    display-only exclusion of April/May data.
-3. Kings of Tiers on historical tier — the monthly data layer already exposes
+2. Kings of Tiers on historical tier — the monthly data layer already exposes
    historical tier per row, so this is presentation.
-4. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-5. Beta diagnostics and beta reset workflow.
-6. Replay-forward — **required before any historical editing UI is exposed.**
+3. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
+4. Beta diagnostics and beta reset workflow.
+5. Replay-forward — **required before any historical editing UI is exposed.**
    Hiding inert Edit/Delete Match controls is already approved and must not
    wait for replay-forward; restore them only when historical editing works.

@@ -1421,3 +1421,4 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .ms-main{color:var(--text);white-space:nowrap;}
 .ms-sub{color:var(--text-dim);text-align:right;}
 .ms-foot{font-size:11px;color:var(--text-dim);border-top:1px solid var(--line);padding-top:8px;}
+.ms-idle{color:var(--text-dim);font-size:10px;}

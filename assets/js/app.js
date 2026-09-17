@@ -1109,7 +1109,7 @@ function computeMonthlyStats(month){
 }
 
 // A genuine tier-seeded rating computed from ONLY the given month's matches -- as if that month
-// were its own mini-season. Uses the exact same engine as the official Power Rating, just on a
+// were its own month-end snapshot of the one continuous rating. (The former
 // restricted match set. Players with no games that month simply won't appear in the result.
 // The real Power Rating each player held at that month's close, taken from the
 // chronological Sequential-v1 trajectory. This REPLACES the retired
@@ -1134,10 +1134,17 @@ function buildMonthlyStoriesHtml(month){
   if(month === 'all' || !MONTHLY_VIEWS || !MONTHLY_VIEWS.byMonth[month]) return '';
   const label = monthLabel(month);
   const perf = MonthlyViews.performanceTable(MONTHLY_VIEWS, month).slice(0,3);
-  const risers = MonthlyViews.ratingMovementTable(MONTHLY_VIEWS, month).filter(r=>r.ratingChange>0).slice(0,3);
-  const climbers = MONTHLY_VIEWS.byMonth[month].rows
-    .filter(r=>r.rankChangeOverall !== null && r.rankChangeOverall > 0)
-    .sort((a,b)=>b.rankChangeOverall-a.rankChangeOverall).slice(0,3);
+  const moves = MonthlyViews.ratingMovementTable(MONTHLY_VIEWS, month);
+  const risers = moves.filter(r=>r.ratingChange>0).slice(0,3);
+  const fallers = moves.filter(r=>r.ratingChange<0).slice(-3).reverse();
+  const all = MONTHLY_VIEWS.byMonth[month].rows.concat(MONTHLY_VIEWS.byMonth[month].inactiveRows);
+  const ranked = all.filter(r=>r.rankChangeOverall !== null && r.rankChangeOverall !== 0)
+    .sort((a,b)=>b.rankChangeOverall-a.rankChangeOverall);
+  const climbers = ranked.filter(r=>r.rankChangeOverall>0).slice(0,3);
+  const sliders = ranked.filter(r=>r.rankChangeOverall<0).slice(-3).reverse();
+  const idleMovers = MONTHLY_VIEWS.byMonth[month].inactiveRows
+    .filter(r=>r.rankChangeOverall !== null && r.rankChangeOverall !== 0)
+    .sort((a,b)=>Math.abs(b.rankChangeOverall)-Math.abs(a.rankChangeOverall)).slice(0,3);
   const crossovers = MONTHLY_VIEWS.byMonth[month].crossovers.slice(0,3);
 
   const line = (main, sub) => `<div class="ms-line"><span class="ms-main">${main}</span><span class="ms-sub">${sub}</span></div>`;
@@ -1146,17 +1153,21 @@ function buildMonthlyStoriesHtml(month){
 
   const perfBody = perf.map(r=>line(r.playerId,
     `<span class="${r.monthlyPerformance>0?'perf-pos':'perf-neg'}">${r.performancePct>0?'+':''}${r.performancePct}%</span> vs expectation · ${r.matches} games`)).join('');
-  const riseBody = risers.map(r=>line(r.playerId,
-    `${Math.round(r.startRating)} → ${Math.round(r.endRating)} · <span class="perf-pos">+${r.ratingChange} pts</span>`)).join('');
-  const climbBody = climbers.map(r=>line(r.playerId,
-    `#${r.startRankOverall} → #${r.endRankOverall} · <span class="perf-pos">▲${r.rankChangeOverall}</span>`)).join('');
+  const moveLine = r => line(r.playerId,
+    `${Math.round(r.startRating)} → ${Math.round(r.endRating)} · <span class="${r.ratingChange>=0?'perf-pos':'perf-neg'}">${r.ratingChange>0?'+':''}${r.ratingChange} pts</span>`);
+  const rankLine = r => line(r.playerId + (r.played ? '' : ' <span class="ms-idle">(no games)</span>'),
+    `#${r.startRankOverall} → #${r.endRankOverall} · <span class="${r.rankChangeOverall>0?'perf-pos':'perf-neg'}">${r.rankChangeOverall>0?'▲':'▼'}${Math.abs(r.rankChangeOverall)}</span>`);
+  const riseBody = risers.map(moveLine).join('') + fallers.map(moveLine).join('');
+  const climbBody = climbers.map(rankLine).join('') + sliders.map(rankLine).join('');
+  const idleBody = idleMovers.map(rankLine).join('');
   const crossBody = crossovers.map(c=>line(`${c.overtook} passed ${c.overtaken}`, '')).join('');
 
   return `<div class="monthly-stories">
     <div class="ms-head">${label} — the month in four parts</div>
     ${block('Monthly Performance', 'Who most beat their pre-match expectation. This is what drives the podium and Kings of Tiers.', perfBody)}
-    ${block('Rating Movement', 'How far the real Power Rating actually moved. Not the same question as performance.', riseBody)}
-    ${block('Ranking Movement', 'Where they climbed to overall.', climbBody)}
+    ${block('Rating Movement', 'How far the real Power Rating actually moved — risers and fallers. Not the same question as performance.', riseBody)}
+    ${block('Ranking Movement', 'Overall rank at the start and end of the month — climbs and slides both.', climbBody)}
+    ${block('Moved without playing', 'Rank can move while a player sits out, because others moved around them. Their rating did not change.', idleBody)}
     ${block('Crossovers', 'Who overtook whom during the month.', crossBody)}
     <div class="ms-foot">League points are a separate record — see the League tab.</div>
   </div>`;
@@ -3026,35 +3037,50 @@ function buildDevAreasSection(name){
   return html;
 }
 
+// One player's movement through the selected month: where their real Power
+// Rating started and finished, how far it moved, and how their rank moved both
+// overall and within their tier. Negative movement is shown exactly like
+// positive; a player who sat the month out still gets their boundary state.
 function buildMonthlyRatingSection(name){
-  if(selectedMonth === 'all') return '';
-  const monthlyRatings = monthEndRatings(selectedMonth);
-  const p = PLAYERS.find(x=>x.name===name);
+  if(selectedMonth === 'all' || !MONTHLY_VIEWS) return '';
   const label = monthLabel(selectedMonth);
-  if(!(name in monthlyRatings)){
-    return `<div class="section-heading" style="margin-top:14px;">📅 ${label} rating</div>
-      <div class="section-sub">No games for ${name} in ${label}.</div>`;
+  const r = MonthlyViews.playerMonth(MONTHLY_VIEWS, selectedMonth, name);
+  const p = PLAYERS.find(x=>x.name===name);
+  if(!r){
+    return `<div class="section-heading" style="margin-top:14px;">📅 ${label}</div>
+      <div class="section-sub">${name} has no rating history in ${label}.</div>`;
   }
-  const rating = Math.round(monthlyRatings[name]*10)/10;
-  const gamesThisMonth = MATCHES.filter(m => (m.winners.includes(name) || m.losers.includes(name)) && m.date.slice(0,7)===selectedMonth).length;
-  return `<div class="section-heading" style="margin-top:14px;">📅 ${label} rating</div>
-    <div class="matchup-vs"><b style="font-size:15px;">${Math.round(rating)}</b> <span style="color:var(--text-dim); font-size:11.5px;">— a tier-seeded rating using only ${gamesThisMonth} game${gamesThisMonth===1?'':'s'} from ${label}, as if that month were its own mini-season. Overall rating (${Math.round(p.rating)}) stays the official number.</span></div>`;
+
+  const sign = v => (v > 0 ? '+' : '');
+  const cls = v => (v > 0 ? 'perf-pos' : (v < 0 ? 'perf-neg' : ''));
+  const rankCell = (from, to, change, changed, fromTier, toTier) => {
+    if(from === null || to === null) return '<span style="color:var(--text-dim);">not ranked at both ends</span>';
+    if(changed) return `#${from} in Tier ${fromTier} → #${to} in Tier ${toTier} <span style="color:var(--text-dim);">— not comparable across a tier change</span>`;
+    const arrow = change === 0 ? '' : ` · <span class="${cls(change)}">${change>0?'▲':'▼'}${Math.abs(change)}</span>`;
+    return `#${from} → #${to}${arrow}`;
+  };
+
+  const row = (k,v) => `<div class="ms-line"><span class="ms-main">${k}</span><span class="ms-sub">${v}</span></div>`;
+  const played = r.played
+    ? `${r.matches} game${r.matches===1?'':'s'}`
+    : '<span style="color:var(--text-dim);">no games — rating unchanged, rank moved around them</span>';
+
+  const perf = (r.performancePct === null)
+    ? '<span style="color:var(--text-dim);">n/a — no games</span>'
+    : `<span class="${cls(r.monthlyPerformance)}">${sign(r.performancePct)}${r.performancePct}%</span> vs expectation`
+      + (r.provisional ? ' <span style="color:var(--text-dim);">(provisional)</span>' : '');
+
+  return `<div class="section-heading" style="margin-top:14px;">📅 ${label}</div>
+    <div class="monthly-stories" style="margin:6px 0 0;">
+      ${row('Played', played)}
+      ${row('Power Rating', `${Math.round(r.startRating)} → ${Math.round(r.endRating)} · <span class="${cls(r.ratingChange)}">${sign(r.ratingChange)}${r.ratingChange} pts</span>`)}
+      ${row('Rank overall', rankCell(r.startRankOverall, r.endRankOverall, r.rankChangeOverall, false))}
+      ${row('Rank in tier', rankCell(r.startRankInTier, r.endRankInTier, r.rankChangeInTier, r.tierChanged, r.tierAtMonthStart, r.tierAtMonthEnd))}
+      ${row('Monthly Performance', perf)}
+      <div class="ms-foot">This is the one continuous Power Rating, not a separate monthly score. Today it stands at ${Math.round(p ? p.rating : r.endRating)}.</div>
+    </div>`;
 }
 
-// ===================== MONTHLY RATING BREAKDOWN =====================
-// A dedicated, auditable "why is this rating X" view -- deliberately
-// separate from the general Player Profile (openSheet): this is a
-// historical/month-specific inspection, not an ongoing profile. Every
-// number here comes from the exact same engine as the Power Rankings list
-// itself (computeMonthlyRating / computeElo / computeMonthlyJourney /
-// buildMatchDetailBlock) -- nothing here is a simplified parallel formula,
-// so it always reconciles with what's shown on screen.
-
-// Within-tier monthly standings using the identical filter/sort the real
-// Power Rankings monthly list already applies (tier match, current
-// min-games threshold, must have actually played that month) -- so "#2"
-// here is guaranteed to be the same #2 shown in the list, never a second
-// opinion computed differently.
 function computeMonthlyTierStandings(month, tier){
   if(month === 'all') return [];
   const monthlyRatings = monthEndRatings(month);
@@ -3091,7 +3117,7 @@ function getMonthlyRatingContext(name, month){
   };
 }
 
-const MONTHLY_RATING_METHODOLOGY_TEXT = `Each month is scored as its own mini-season, not a running total. Every player starts the month at their tier's starting point (S 2000, A 1700, B 1400, C 1100) — not last month's rating, and not their overall rating. From there, the same engine that produces the main Power Rating (games won within each match count, not just who won) solves everyone's ratings for that month jointly — checking every game against everyone else's current estimate and adjusting in small steps, repeated until it settles — the same method as the season-long rating, just run fresh each month on a smaller set of games. That's why two players can start level and finish apart: the gap comes entirely from that month's results, nothing carried over from before.`;
+const MONTHLY_RATING_METHODOLOGY_TEXT = `There is one continuous Power Rating and it never resets. The monthly number is simply where that rating stood at the end of the month — not a separate score solved from that month's games, and not a fresh start from your tier's seed. Each match moves it by how much you beat or fell short of what was expected of you, weighted by how established your rating already is, and the month's figure is wherever that sequence had reached. "Points moved" is the distance travelled during the month, and rank movement is where that left you against everyone else. Monthly Performance answers a different question again: how far above or below pre-match expectation you actually played, regardless of how many rating points that happened to be worth.`;
 
 function buildMonthlyReconciliationText(ctx){
   const matchCount = ctx.journey ? ctx.journey.filter(j=>j.type==='match').length : 0;
