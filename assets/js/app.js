@@ -836,12 +836,67 @@ function buildDifficultySuggestions(allPlayers, activePlayers){
   return diff;
 }
 
+// ===================== v3 APPLICATION STATE =====================
+// V3_STATE is loaded once at start-up from the beta `players` collection and is
+// the source of every Power Rating the application shows. The legacy solver is
+// still present for beta diagnostics but no longer feeds the UI.
+let V3_STATE = (typeof V3Bridge !== 'undefined') ? V3Bridge.createState() : { loaded:false, error:'v3Bridge.js did not load', players:{} };
+let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
+  ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
+
+async function loadV3State(){
+  if(!db){ V3_STATE = {loaded:false, error:'No database connection.', players:{}}; }
+  else V3_STATE = await V3Bridge.load(RatingStore.firestoreCompatBackend(db));
+  if(!V3_STATE.loaded) console.error('v3 state failed to load:', V3_STATE.error);
+  renderV3StatusBanner();
+  return V3_STATE;
+}
+
+// Without this the app just renders "No players match that filter", which reads
+// as a filter problem rather than a failed rating load. A beta comparing two
+// rating systems cannot afford an ambiguous empty state.
+function renderV3StatusBanner(){
+  const id = 'v3StatusBanner';
+  document.getElementById(id)?.remove();
+  if(V3_STATE.loaded) return;
+  const el = document.createElement('div');
+  el.id = id;
+  el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#5b1a17;color:#ffd9d6;'
+    + 'padding:10px 14px;font-size:13px;line-height:1.4;border-bottom:1px solid #8a2a25;';
+  el.innerHTML = '<b>Power Ratings unavailable.</b> v3 player state could not be loaded, so no rating is shown. '
+    + 'The legacy rating has deliberately not been substituted.<br><span style="opacity:.8;font-size:12px;">'
+    + String(V3_STATE.error || 'Unknown error') + '</span>';
+  document.body.appendChild(el);
+}
+
 function recomputeAll(){
   rebuildMapsFromState();
   ALL_MATCHES = getEffectiveMatches();
-  const ratings = computeElo(ALL_MATCHES, TIER_MAP, STARTING_TIER_MAP);
+
+  // If v3 state is unavailable the application shows nothing rather than
+  // something plausible. It must never quietly fall back to the legacy solver,
+  // to a tier seed, or to 1400 -- a believable wrong number is the worst
+  // outcome for a beta whose entire purpose is comparing two rating systems.
+  if(!V3_STATE.loaded){
+    PLAYERS = []; MATCHES = []; H2H = {}; PARTNERSHIPS = []; BEST_PARTNER = {};
+    BOUNDARY_TESTS = []; CALIBRATION_GAMES = []; WITHIN_TIER_GAMES = []; DIFFICULTY_SUGGESTIONS = {};
+    INACTIVE_PLAYERS = new Set();
+    return;
+  }
+
+  const ratings = V3Bridge.ratingsMap(V3_STATE);
+  // Tier comes from v3 too, so a rating and the tier shown beside it always
+  // describe the same state.
+  const v3Tiers = V3Bridge.tierMap(V3_STATE);
+  Object.keys(v3Tiers).forEach(n=>{ TIER_MAP[n] = v3Tiers[n]; });
+
+  // NOTE (migration task): enrichMatches recomputes expectations from CURRENT
+  // ratings. Those values are legacy-derived and are NOT v3 pre-match
+  // expectations, which live in ratingJourney. They must not be presented as
+  // such, and this function is scheduled for replacement.
   MATCHES = enrichMatches(ALL_MATCHES, ratings);
   PLAYERS = buildPlayers(MATCHES, ratings, TIER_MAP, ACTIVE_MAP);
+  PLAYERS.forEach(p=>V3Bridge.decoratePlayer(p, V3_STATE, PRODUCTION_SNAPSHOT_INDEX));
   PLAYERS.forEach(p=>{
     const form = computeRecentForm(p.name, 10);
     p.recent_form = form ? form.avgPct : null;
@@ -968,7 +1023,10 @@ function computeMonthlyStats(month){
   function ratingFor(name){
     if(name in monthlyRatings) return monthlyRatings[name];
     const p = PLAYERS.find(x=>x.name===name);
-    return p ? p.rating : 1400; // fallback should never actually trigger for a match within this month
+    // No silent 1400. A missing player is a real fault and must surface as one
+    // rather than as a plausible-looking rating.
+    if(!p) throw new Error(`No rating available for ${name} — v3 state is missing this player.`);
+    return p.rating;
   }
   const agg = {};
   function A(name){
@@ -5202,6 +5260,9 @@ function wireEditForm(id){
 
 
 async function init(){
+  // v3 state must be in place before the first recomputeAll, because the
+  // application has no rating without it and will not invent one.
+  await loadV3State();
   const stored = await loadStoredData();
   extraMatchesState = stored.extraMatches;
   tagOverridesState = stored.tagOverrides;

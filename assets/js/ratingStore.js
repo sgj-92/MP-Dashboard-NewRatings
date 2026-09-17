@@ -226,6 +226,19 @@
   // Firestore REST, so the seed can run from Node with no SDK install. The beta
   // project has open rules and no auth, which is why no token is attached; this
   // must never be pointed at a project that holds real credentials.
+  // Browser path. The compat SDK returns a whole QuerySnapshot and handles its
+  // own paging, so there is no nextPageToken to follow here.
+  function firestoreCompatBackend(db) {
+    return {
+      name: 'firestore-compat',
+      async set(collection, id, doc) { await db.collection(collection).doc(id).set(doc); },
+      async getAll(collection) {
+        const snap = await db.collection(collection).get();
+        return snap.docs.map((d) => d.data());
+      },
+    };
+  }
+
   function firestoreRestBackend({ projectId, fetchImpl }) {
     const doFetch = fetchImpl || globalThis.fetch;
     const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
@@ -301,6 +314,6 @@
     COLLECTIONS, SCHEMA_VERSION, JOURNEY_FIELDS, MATCH_EVENT_FIELDS,
     eventId, toJourneyDoc, toMatchDoc, matchFromDoc, toPlayerDoc, assertFirestoreSafe,
     buildWritePlan, summarisePlan, writePlan, limitPlan,
-    memoryBackend, firestoreRestBackend, toFirestoreFields, fromFirestoreFields,
+    memoryBackend, firestoreRestBackend, firestoreCompatBackend, toFirestoreFields, fromFirestoreFields,
   };
 });
