@@ -137,8 +137,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner: Shaun.** No implementation work in progress. Awaiting direction on the
-next item in NEXT.
+**Owner: Shaun.** No implementation work in progress. **NEXT #1 is blocked** on
+Open Question 1 — the read-strategy decision for month-boundary ratings.
 
 **Completion of the previous task** (Claude Code): `ALL_MATCHES` switched to the
 v3 `matches` collection; record and rating now derive from one history,
@@ -153,18 +153,41 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
 
 ## 5. OPEN QUESTIONS / DECISIONS
 
-1. **Match edits and deletions are inert.** The legacy edit/deletion overlays
+1. **BLOCKING NEXT #1 — monthly Rating/Ranking Movement cannot come from
+   `players`.** The approved scope requires each player's Power Rating and rank
+   at month start → month end. The `players` collection holds only *current*
+   state: one rating per player. Month boundaries exist nowhere except
+   `ratingJourney`, which carries `preMatchRating`/`postMatchRating` per event.
+   So the new scope necessarily reads `ratingJourney`, while Section 2 and the
+   original UI brief both state that normal rendering reads `players` and that
+   `ratingJourney` is for journey views only.
+
+   This is a conflict between an approved product scope and a standing
+   architectural constraint, not an implementation detail. Two sound routes:
+
+   - **Filtered query** — read `ratingJourney` where `effectiveDate` falls in
+     the month. Not the full-collection scan the constraint was written to
+     prevent; needs a Firestore index on `effectiveDate`; read cost scales with
+     matches per month (~120), not total history. *Claude Code recommends this.*
+   - **Precomputed monthly snapshots** — e.g. `monthlySnapshots/{playerId}__{YYYY-MM}`
+     holding start rating, end rating and rank, written during seed/backfill.
+     Fixed tiny reads, but adds derived state that must be rebuilt on every
+     replay.
+
+   *Decision needed from Shaun/CGPT before NEXT #1 starts: which route, and
+   confirmation that Section 2's constraint is amended to permit it.*
+2. **Match edits and deletions are inert.** The legacy edit/deletion overlays
    are no longer applied, because v3 match documents are already the edited
    truth and re-applying an overlay would desync a match from the rating
    computed for it. Consistent with historical editing being unavailable until
    replay-forward exists. **Shaun/CGPT decision: hide the inert controls for
    now; restore them only once replay-forward makes historical editing real.**
-2. **Production snapshot does not reconcile.** 149 matches vs v3's 150;
+3. **Production snapshot does not reconcile.** 149 matches vs v3's 150;
    17 players' counts disagree, six of them negatively. Not explained by draws.
    Treat as an approximate reference, not a reconcilable truth.
-3. **Snapshot join key is fragile.** Every `player_id` in the export is `null`,
+4. **Snapshot join key is fragile.** Every `player_id` in the export is `null`,
    so name is the only join. 34/34 map today; a rename breaks it silently.
-4. **Drift figure unresolved.** The specification states ~1.8 points of drift
+5. **Drift figure unresolved.** The specification states ~1.8 points of drift
    over 144 matches; measured is −42.8 (Stage 1) / −39.1 (Stage 2). Every other
    figure reproduces exactly, so this is most likely a different metric —
    recorded rather than quietly reconciled.
@@ -185,6 +208,19 @@ Edit/Delete controls: hide until replay-forward exists. **Baton → Shaun/CCode
 when Shaun issues `Ledger CCode`.**
 
 ### CCode — 17 Sep 2026 (latest)
+**Blocker raised against NEXT #1 before starting** — see Open Question 1.
+Monthly Rating Movement and Ranking Movement need month-boundary ratings, which
+exist only in `ratingJourney`; the approved scope therefore conflicts with the
+Section 2 constraint that normal rendering reads `players` only. Recommend a
+month-filtered `ratingJourney` query over precomputed snapshots. Needs a
+Shaun/CGPT decision plus an amendment to Section 2 before work begins.
+
+Also corrected the CLAUDE.md protocol: it required conflicts to be "reported"
+without saying where, and only triggered a Ledger update *after* an
+implementation task. Conflicts and blockers now go into Open Questions the
+moment they are found, since chat is invisible to CGPT and CChat.
+
+### CCode — 17 Sep 2026 (previous, match source)
 Switched `ALL_MATCHES` to the v3 `matches` collection, closing the 127-vs-150
 divergence. September is now in the app (28 matches; history runs 2026-06-02 to
 2026-09-15) and the five draws are carried as draws. Verified in-browser: 150
@@ -194,7 +230,7 @@ previously showed 56. Zero page errors. 110/110 tests.
 **Discovered:** legacy match edit/deletion overlays are now inert — see open
 question 1. **Baton → Shaun.**
 
-### CCode — 17 Sep 2026 (previous)
+### CCode — 17 Sep 2026 (earlier, read layer)
 Built the v3 read layer (`v3Bridge.js`) and switched the `recomputeAll`
 chokepoint: `PLAYERS[]` now hydrates from the persisted `players` collection.
 Integrated the dated production snapshot as structurally-excluded read-only

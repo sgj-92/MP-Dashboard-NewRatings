@@ -22,7 +22,10 @@ Authority: Shaun's explicit product decision → agreed architecture →
 repository + tests + `RATING_MODEL.md` for implementation truth →
 `PROJECT_LEDGER.md` for coordination state → individual AI chat memory.
 
-If these conflict, **STOP and report the conflict. Do not guess.**
+If these conflict, **STOP and record the conflict in the Ledger's Open
+Questions / Decisions section, then report it here.** Chat is not a substitute:
+ChatGPT and Claude Chat cannot read this conversation, so a conflict raised only
+in chat is invisible to them and dies with the session. Write it down first.
 
 **Reading the Ledger is not an instruction to start coding.** Distinguish
 `SYNC` (read and reconcile), `REVIEW` (analyse or challenge) and `WORK` (make
@@ -34,6 +37,14 @@ implementation task, update Current State / Current Task / Recently Completed /
 Next, refresh the CCode handoff, record the commit hash, and commit the Ledger
 with the work where sensible. Record decisions and state changes — not a
 development diary.
+
+Updating the Ledger is **not** limited to finished implementation work. Write to
+Open Questions / Decisions as soon as any of these appear, before or instead of
+coding: a blocker, a conflict between an approved scope and a standing
+constraint, a discovery that changes what a planned task requires, or a decision
+needed from Shaun. These are exactly the things the other agents must see and
+cannot get from chat. If a finding would change what someone else plans or
+builds, it belongs in the Ledger the moment it is found.
 
 Condense ChatGPT and Claude Chat material into state, decisions, open questions
 or handoffs rather than pasting conversations.
