@@ -30,7 +30,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `e967f39` + this change |
+| Last verified implementation commit | `e8d21f4` |
 | Tests | **110 / 110 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
