@@ -108,12 +108,27 @@ substitute.
 collection. This constraint does **not** prohibit targeted historical reads.
 Monthly Performance, Rating Movement, Ranking Movement and the real Rating
 Journey may query `ratingJourney` when historical event state is intrinsically
-required. These must be bounded/filtered reads (for example by month and/or
-player), never a full 633-and-growing collection scan for ordinary page render.
-For the current monthly pass, use a month-filtered `ratingJourney` query and add
-the required Firestore index on `effectiveDate` if necessary. Do **not** add
-precomputed monthly snapshots yet; they duplicate derived state and would add
-replay maintenance before replay-forward exists.
+required. Use bounded/filtered reads (for example by month and/or player)
+where they suffice; ordinary current-state page rendering must not scan the
+whole journey. Use month-filtered queries and the required Firestore index on
+`effectiveDate` where appropriate.
+
+**Narrow exception — Ranking Movement (Open Question 1a resolved):** accept the
+current once-per-session cumulative `ratingJourney` read, cached for the session,
+while the journey remains small (633 events at the last verification). All-player
+rank at a historical boundary requires prior state for inactive players, which
+a month-only query cannot supply. This exception does not replace `players` as
+the normal current-state source or permit whole-journey reads per render.
+Retain Ranking Movement; do **not** add a snapshot collection yet.
+
+**Future review trigger:** Claude Code must reopen this read-strategy decision
+when journey growth makes a single session load material in document reads,
+read cost, or observed load latency, or when an import/backfill is expected to
+do so. Record event count, reads/cost per session and observed load latency in
+the Ledger at that review, and propose a scalable historical-boundary strategy
+(including snapshots if justified) before expanding reliance on cumulative
+reads. This is a temporary small-journey allowance, not permanent architecture;
+the review trigger is not a blocker for the current monthly UI pass.
 
 **Club reassessment:** forward-only and audited; never rewrites history. Two
 modes — recommended statistical reassessment, and explicit club override of
@@ -122,7 +137,8 @@ separate events.
 
 **Storage:** `matches/{matchId}` · `ratingJourney/{eventId}` · `players/{playerId}`.
 Normal current-state rendering reads `players`; historical views use targeted
-`ratingJourney` reads as defined above.
+`ratingJourney` reads, with only the session-cached Ranking Movement exception
+and future review trigger defined above.
 
 **Three corrections found in implementation, documented in `RATING_MODEL.md`
 and authoritative over older instructions:** Fatch seeded Tier C in *both*
@@ -147,15 +163,22 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
 | Monthly Rating is replaced, not monthly rating progress | Monthly Performance becomes the performance metric, while real Power Rating movement, rank movement/crossovers and League Table remain visible as separate monthly stories. No new monthly rating solver. |
-| Historical monthly reads use filtered `ratingJourney` queries | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Use bounded month/player queries; no full collection scans and no monthly snapshot collection for now. |
+| Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
+| Accept session-cached cumulative reads for Ranking Movement while the journey is small | Shaun/CGPT, 17 Sep 2026: resolve Open Question 1a by accepting the current once-per-session cumulative `ratingJourney` read, cached for the session. Historical all-player ranks need prior state for inactive players. Keep Ranking Movement; no snapshot collection yet. Reopen when journey size, read cost or latency becomes material, including anticipated import/backfill growth; see Section 2. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner: Shaun.** NEXT #1 data layer is built and tested. No implementation work
-in progress. **One open conflict with the agreed read strategy — see Open
-Question 1a.**
+**Owner / baton: Claude Code.** NEXT #1 Monthly UI presentation is approved and
+unblocked; its data layer is built and tested. **Open Question 1a is resolved**
+by Shaun/CGPT: accept the current session-cached cumulative read for Ranking
+Movement while the journey remains small, under Section 2's narrow exception
+and future review trigger. No further Shaun decision is needed for this scope.
+On `Ledger CCode`, reconcile repository state and start NEXT #1 immediately.
+
+This coordination update changes only the Ledger; no application implementation
+has been performed as part of this decision.
 
 **Completion of the previous task** (Claude Code): `ALL_MATCHES` switched to the
 v3 `matches` collection; record and rating now derive from one history,
@@ -175,24 +198,23 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
    is amended: `players` remains the normal current-state read source;
    `ratingJourney` is allowed for bounded historical views. No precomputed
    monthly snapshots for now.
-1a. **CONFLICT — Ranking Movement cannot be built from bounded reads.** The
-   agreed strategy is month-filtered `ratingJourney` queries with no snapshot
-   collection. Monthly Performance and Rating Movement satisfy that. **Ranking
-   Movement does not:** a rank at a month boundary needs *every* player's rating
-   at that instant, including players who did not play that month, and their
-   rating exists only in earlier events. A month-filtered query cannot return
-   it. The options are an unbounded (cumulative) read or the snapshot collection
-   that was excluded.
+1a. **RESOLVED — accept the current session-cached cumulative read for Ranking
+   Movement while the journey remains small.** Shaun/CGPT, 17 Sep 2026:
+   `monthlyViews.js` may retain its once-per-session cumulative `ratingJourney`
+   read, cached for the session (633 events at the last verification). Computing
+   all-player rank at a historical boundary requires earlier state for players
+   inactive in the selected month; a month-filtered query alone cannot supply it.
+   This is a deliberate narrow exception: `players` remains the normal
+   current-state source, and bounded historical reads remain required where
+   they suffice. No whole-journey read per render, no snapshot collection yet,
+   and Ranking Movement stays in scope.
 
-   As shipped, `monthlyViews.js` performs **one whole-journey read per session**
-   (633 docs, cached; ordinary page render never touches it). That is not a scan
-   per render, but it is not a bounded read either, so it does not match the
-   letter of the agreed decision.
-
-   *Decision needed: accept the once-per-session cumulative read, revisit
-   snapshots, or drop Ranking Movement from the monthly scope.* Claude Code
-   recommends accepting the cached read while the journey is small, and
-   revisiting when it outgrows a single load.
+   **Future review, not a current blocker:** reopen when journey size, read cost
+   or observed load latency becomes material, or before an import/backfill
+   expected to make it material. Claude Code owns recording the measurements
+   and raising the review in this Ledger as specified in Section 2; the
+   exception must not silently become permanent architecture.
+   **NEXT #1, including Ranking Movement, is unblocked. Baton → Claude Code.**
 2. **Match edits and deletions are inert.** The legacy edit/deletion overlays
    are no longer applied, because v3 match documents are already the edited
    truth and re-applying an overlay would desync a match from the rating
@@ -212,6 +234,24 @@ permission to recreate `computeMonthlyRating` or another monthly solver.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
+On Shaun's behalf, accepted the current once-per-session cumulative
+`ratingJourney` read, cached for the session, for Ranking Movement while the
+journey remains small. Historical all-player boundary ranks require prior state
+for inactive players. Keep `players` as the normal current-state source and use
+bounded historical reads where sufficient. Keep Ranking Movement; do not add a
+snapshot collection yet. Section 2 records the future review trigger and CCode's
+responsibility to raise it when size/read cost/latency becomes material.
+
+**Baton → Claude Code: NEXT #1 Monthly UI presentation is approved and
+unblocked, including Ranking Movement.** On `Ledger CCode`, reconcile and
+proceed without another architecture decision from Shaun. Preserve all four
+monthly stories and the existing performance/award rules; do not recreate a
+monthly rating solver. This handoff is Ledger-only; implementation and the
+reported 122/122 test result remain those of the last verified CCode work.
+Earlier handoffs below are historical; this decision supersedes their pending
+1a blocker and absolute prohibition on cumulative historical reads.
 
 ### CCode — 17 Sep 2026 (latest, monthly views)
 Retired the legacy monthly solver. `computeMonthlyRating` is gone; `monthEndRatings`
@@ -318,11 +358,13 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    - meaningful player crossovers where practical;
    - existing League Table remains the results/points view.
    Monthly Performance drives podium/Kings; movement views are complementary.
-   **Do not create another monthly rating solver.** Historical state should use
-   a bounded month-filtered `ratingJourney` query, never a full collection scan
-   — **except** that Ranking Movement provably cannot, and as shipped does one
-   cached whole-journey read per session. See Open Question 1a, which must be
-   decided before the Ranking Movement portion of this UI is built.
+   **Owner: Claude Code. Approved and unblocked, including Ranking Movement.**
+   **Do not create another monthly rating solver.** Preserve `players` for
+   normal current state and bounded historical reads where sufficient. Open
+   Question 1a is resolved: retain the current once-per-session cumulative
+   `ratingJourney` read, cached for the session, for Ranking Movement while
+   small. No snapshot collection yet. Apply Section 2's future review trigger
+   when journey size, read cost or latency becomes material.
 2. Real Rating Journey UI (replaces `computePlayerJourney` and its "story
    estimate" disclaimer).
 3. Kings of Tiers on historical tier.
