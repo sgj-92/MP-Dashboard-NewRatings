@@ -94,6 +94,19 @@
           played[e.playerId].last = e;
         });
 
+      // A club reassessment moves a rating without a ball being hit. Rolled up
+      // separately so no screen can present it as a month's play. Until the
+      // first decision is recorded this is 0 for everyone, which is why the
+      // distinction only became reachable when the write path shipped.
+      const decided = {};
+      events.filter((e) => e.eventType === Engine.EVENT.CLUB_RATING_REASSESSMENT
+        && monthOf(e.effectiveDate) === month
+        && typeof e.previousPowerRating === 'number' && typeof e.newPowerRating === 'number')
+        .forEach((e) => {
+          decided[e.playerId] = (decided[e.playerId] || 0) + (e.newPowerRating - e.previousPowerRating);
+        });
+      const decidedFor = (name) => Math.round((decided[name] || 0) * 10) / 10;
+
       const rows = Object.keys(played).sort().map((name) => {
         const p = played[name];
         // Month start is the previous close where it exists; for a player who
@@ -117,6 +130,8 @@
           startRating: start,
           endRating: end,
           ratingChange: Math.round((end - start) * 10) / 10,
+          // Of that change, how much came from a club decision rather than play.
+          reassessmentChange: decidedFor(name),
           startRankOverall: rOpen ? rOpen.overall : null,
           endRankOverall: rClose ? rClose.overall : null,
           rankChangeOverall: rOpen && rClose ? rOpen.overall - rClose.overall : null,
@@ -149,6 +164,8 @@
             startRating: openRatings[name],
             endRating: closeRatings[name],
             ratingChange: Math.round((closeRatings[name] - openRatings[name]) * 10) / 10,
+            // An inactive player's rating can still move, but only this way.
+            reassessmentChange: decidedFor(name),
             startRankOverall: rOpen ? rOpen.overall : null,
             endRankOverall: rClose ? rClose.overall : null,
             rankChangeOverall: rOpen && rClose ? rOpen.overall - rClose.overall : null,

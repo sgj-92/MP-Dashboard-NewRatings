@@ -1210,8 +1210,11 @@ function buildMonthlyStoriesHtml(month){
 
   const perfBody = perf.map(r=>line(r.playerId,
     `<span class="${r.monthlyPerformance>0?'perf-pos':'perf-neg'}">${r.performancePct>0?'+':''}${r.performancePct}%</span> vs expectation · ${r.matches} games`)).join('');
+  // A rating can move without anyone playing: a club reassessment does it by
+  // decision. Saying so here stops a decision reading as a month's form.
   const moveLine = r => line(r.playerId,
-    `${Math.round(r.startRating)} → ${Math.round(r.endRating)} · <span class="${r.ratingChange>=0?'perf-pos':'perf-neg'}">${r.ratingChange>0?'+':''}${r.ratingChange} pts</span>`);
+    `${Math.round(r.startRating)} → ${Math.round(r.endRating)} · <span class="${r.ratingChange>=0?'perf-pos':'perf-neg'}">${r.ratingChange>0?'+':''}${r.ratingChange} pts</span>`
+    + (r.reassessmentChange ? ` <span class="ms-idle">(${r.reassessmentChange>0?'+':''}${r.reassessmentChange} by club decision)</span>` : ''));
   const rankLine = r => line(r.playerId + (r.played ? '' : ' <span class="ms-idle">(no games)</span>'),
     `#${r.startRankOverall} → #${r.endRankOverall} · <span class="${r.rankChangeOverall>0?'perf-pos':'perf-neg'}">${r.rankChangeOverall>0?'▲':'▼'}${Math.abs(r.rankChangeOverall)}</span>`);
   const riseBody = risers.map(moveLine).join('') + fallers.map(moveLine).join('');
@@ -3645,6 +3648,307 @@ function allPlayerNames(){
   return [...PLAYERS].map(p=>p.name).sort((a,b)=>a.localeCompare(b));
 }
 
+// ===================== ADMIN MONTHLY REVIEW =====================
+// The club's decision surface, and the only place the application writes a
+// rating. Everything it can do goes through ClubDecision.prepare(), which
+// refuses anything that would leave the stored ratings not following from the
+// stored history -- so this screen shapes the request and shows exactly what
+// will be written, and never decides whether it is allowed.
+//
+// TRUST MODEL, stated plainly: `isUnlocked` is a UI gate, not a security
+// boundary. Beta Firestore has open rules and no auth by deliberate decision,
+// so anyone who can reach the database can write to it regardless of this
+// screen. What makes a decision safe here is that it is forward-only, fully
+// attributed, and undone by recording a reversal rather than by deleting
+// anything.
+
+let reviewDirection = 'promotion';
+let reviewSubject = null;      // player currently being reviewed
+let reviewPending = null;      // a prepared decision awaiting explicit confirmation
+let reviewMessage = '';
+
+const TIER_ABOVE = { C: 'B', B: 'A', A: 'S' };
+const TIER_BELOW = { S: 'A', A: 'B', B: 'C' };
+
+function reviewToday(){ return new Date().toISOString().slice(0,10); }
+
+// Candidates are the players the ratings themselves put near a boundary. It is
+// a prompt for a human look, never a queue of things to approve.
+function reviewCandidates(){
+  if(!V3_STATE.loaded) return [];
+  return PLAYERS
+    .filter(p => p.risk === 'promotion_watch' || p.risk === 'demotion_watch')
+    .map(p => ({
+      name: p.name,
+      risk: p.risk,
+      fromTier: p.tier,
+      toTier: p.risk === 'promotion_watch' ? TIER_ABOVE[p.tier] : TIER_BELOW[p.tier],
+      gap: p.risk === 'promotion_watch' ? p.promotion_gap : p.demotion_gap,
+    }))
+    .filter(c => !!c.toTier)
+    .sort((a,b)=> (a.gap ?? 1e9) - (b.gap ?? 1e9));
+}
+
+function reviewRecommendation(subject, fromTier, toTier, eventType){
+  try {
+    return Reassessment.getRecommendation({
+      state: V3_STATE.players,
+      tierOf: (n) => (V3_STATE.players[n] || {}).tier,
+      subject, fromTier, toTier, eventType,
+    });
+  } catch(e){
+    return { error: e.message };
+  }
+}
+
+function buildReviewSectionHtml(){
+  let html = `<div class="section-heading">⚖️ Admin monthly review</div>`;
+  if(!V3_STATE.loaded){
+    return html + `<div class="section-sub" style="color:var(--red);">Unavailable — ${String(V3_STATE.error || 'v3 state is not loaded.')} Nothing can be recorded until the record can be read.</div>`;
+  }
+  html += `<div class="section-sub">Where the club changes a rating or a tier. Every decision is recorded against the player with who made it and what the recommendation said, takes effect from today forward, and is undone by recording a reversal — never by deleting it. A tier move and a rating change are separate decisions on purpose: a promotion awards no points.</div>`;
+  html += `<div class="section-sub" style="font-size:10.5px;">The admin unlock controls what this screen shows, not who can write. Beta storage is deliberately open, so treat attribution as a record of intent, not proof of identity.</div>`;
+
+  if(reviewMessage) html += `<div class="section-sub" style="color:var(--gold-bright);">${reviewMessage}</div>`;
+
+  const cands = reviewCandidates();
+  html += `<div class="section-sub" style="margin-top:8px; font-weight:700; color:var(--text);">Near a tier boundary (${cands.length})</div>`;
+  if(cands.length === 0){
+    html += `<div class="section-sub">Nobody is close enough to a boundary to flag. Any player can still be reviewed below.</div>`;
+  } else {
+    html += cands.map(c=>`<div class="alpha-row">
+      <div class="alpha-name" style="font-size:13px;">${c.name} <span style="color:var(--text-dim); font-size:11px;">Tier ${c.fromTier} → ${c.toTier}, ${c.gap === null ? 'gap unknown' : `${Math.abs(c.gap)} pts away`}</span></div>
+      <button class="preset-btn review-pick" data-player="${c.name}" style="width:96px;">Review</button>
+    </div>`).join('');
+  }
+
+  html += `<div class="fg-controls" style="margin-top:8px;">
+    <div class="fg-row"><label class="fg-label">Review anyone</label>
+      <input id="reviewAnyName" list="playerNamesList" class="fg-select" placeholder="Player name" />
+    </div>
+    <div class="fg-row"><button class="preset-btn" id="reviewAnyBtn">Open review</button></div>
+  </div>`;
+
+  if(reviewSubject) html += buildReviewPanelHtml(reviewSubject);
+  return html;
+}
+
+function buildReviewPanelHtml(name){
+  const s = V3_STATE.players[name];
+  if(!s) return `<div class="section-sub" style="color:var(--red);">${name} has no v3 record.</div>`;
+  const rel = Math.round(s.reliability*100);
+  const last = ClubDecision.lastEventDate(V3_JOURNEY, name);
+
+  let html = `<div class="callout-card" style="padding:12px; margin-top:10px;">
+    <div style="font-weight:700; color:var(--text); font-size:14px;">${name}</div>
+    <div class="section-sub" style="margin-top:2px;">Tier ${s.tier} · Power Rating <b style="color:var(--text);">${Math.round(s.rating*10)/10}</b> · Reliability ${rel}% (${s.reliabilityBand}) · ${s.lifetimeMatches} rated matches · ${s.classificationStatus}</div>
+    <div class="section-sub" style="font-size:10.5px;">Last recorded event: ${last || 'none'}. A decision cannot be dated before that.</div>`;
+
+  // ---- Rating reassessment ----
+  const up = TIER_ABOVE[s.tier], down = TIER_BELOW[s.tier];
+  const dir = (reviewDirection === 'demotion' && down) ? 'demotion' : 'promotion';
+  const fromTier = s.tier;
+  const toTier = dir === 'promotion' ? up : down;
+  html += `<div class="section-heading" style="margin-top:12px;">Rating reassessment</div>`;
+  html += `<div class="difficulty-row" style="margin-top:4px;">
+    <button class="preset-btn review-dir ${dir==='promotion'?'active':''}" data-dir="promotion" style="flex:1;" ${up?'':'disabled'}>Toward Tier ${up || '—'}</button>
+    <button class="preset-btn review-dir ${dir==='demotion'?'active':''}" data-dir="demotion" style="flex:1;" ${down?'':'disabled'}>Toward Tier ${down || '—'}</button>
+  </div>`;
+
+  if(!toTier){
+    html += `<div class="section-sub">No tier in that direction, so no boundary to measure against.</div>`;
+  } else {
+    const rec = reviewRecommendation(name, fromTier, toTier, dir === 'promotion' ? 'PROMOTION' : 'DEMOTION');
+    if(rec.error){
+      html += `<div class="section-sub" style="color:var(--red);">Recommendation unavailable — ${rec.error}</div>`;
+    } else if(!rec.recommended){
+      html += `<div class="section-sub">${rec.reason}</div>`;
+    } else {
+      html += `<div class="section-sub">${rec.reason} Boundary T2 = ${rec.t2.toFixed(1)} (from ${rec.establishedFrom} established in ${fromTier}, ${rec.establishedTo} in ${toTier}). Recommended Power Rating <b style="color:var(--text);">${Math.round(rec.recommendationRating*10)/10}</b> (${rec.ratingDelta >= 0 ? '+' : ''}${Math.round(rec.ratingDelta*10)/10}).</div>`;
+      html += `<div class="section-sub" style="font-size:10.5px;">${rec.caveats.join(' ')}</div>`;
+      if(Math.abs(rec.ratingDelta) > 1e-9){
+        html += `<div class="difficulty-row" style="margin-top:6px;">
+          <button class="preset-btn review-accept" data-player="${name}" data-rating="${rec.recommendationRating}" data-dir="${dir}" style="flex:1;">Accept ${Math.round(rec.recommendationRating*10)/10}</button>
+        </div>`;
+      }
+    }
+    html += `<div class="fg-controls" style="margin-top:6px;">
+      <div class="fg-row"><label class="fg-label">Override Power Rating</label>
+        <input id="reviewOverrideRating" class="fg-select" placeholder="leave blank to keep ${Math.round(s.rating*10)/10}" />
+      </div>
+      <div class="fg-row"><label class="fg-label">Override Reliability %</label>
+        <input id="reviewOverrideRel" class="fg-select" placeholder="leave blank to keep ${rel}%" />
+      </div>
+      <div class="fg-row"><label class="fg-label">Note (recorded)</label>
+        <input id="reviewNote" class="fg-select" placeholder="Why the club decided this" />
+      </div>
+      <div class="fg-row"><button class="preset-btn" id="reviewOverrideBtn" data-player="${name}" data-dir="${dir}">Record override</button></div>
+    </div>`;
+  }
+
+  // ---- Tier move, deliberately separate ----
+  html += `<div class="section-heading" style="margin-top:12px;">Tier move</div>`;
+  html += `<div class="section-sub">Recorded on its own, and moves no points and no reliability.</div>`;
+  html += `<div class="difficulty-row" style="margin-top:4px;">
+    ${up ? `<button class="preset-btn review-tier" data-player="${name}" data-tier="${up}" data-type="PROMOTION" style="flex:1;">Promote to ${up}</button>` : ''}
+    ${down ? `<button class="preset-btn review-tier" data-player="${name}" data-tier="${down}" data-type="DEMOTION" style="flex:1;">Demote to ${down}</button>` : ''}
+    <button class="preset-btn review-tier" data-player="${name}" data-tier="${s.tier}" data-type="TIER_RETAINED" style="flex:1;">Retain ${s.tier}</button>
+  </div>`;
+
+  html += `<div style="margin-top:10px;"><button class="preset-btn" id="reviewCloseBtn" style="width:100%;">Close review</button></div>`;
+  html += `</div>`;
+
+  if(reviewPending) html += buildReviewConfirmHtml();
+  return html;
+}
+
+// Nothing is written until this is confirmed, and it states the exact document
+// id and the exact before/after rather than a reassuring summary.
+function buildReviewConfirmHtml(){
+  const p = reviewPending;
+  return `<div class="callout-card" style="padding:12px; margin-top:10px; border-color:var(--gold-dim);">
+    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this writes to the permanent record</div>
+    <div class="section-sub" style="margin-top:4px; color:var(--text);">${p.summary}</div>
+    <div class="section-sub" style="font-size:10.5px;">Event: ${p.event.eventType}, effective ${p.event.effectiveDate}, recorded as <code>${p.journeyDoc.id}</code>. Attributed to ${p.journeyDoc.createdBy}. It cannot be deleted; to undo it you record a reversal.</div>
+    <div class="difficulty-row" style="margin-top:8px;">
+      <button class="preset-btn" id="reviewConfirmBtn" style="flex:1;">Record it</button>
+      <button class="preset-btn" id="reviewCancelBtn" style="flex:1;">Cancel</button>
+    </div>
+  </div>`;
+}
+
+// Every button here only ever STAGES a decision. Nothing reaches the database
+// without a second, explicit confirmation showing the exact document.
+function wireReviewSection(){
+  document.querySelectorAll('.review-pick').forEach(el=>{
+    el.onclick = ()=>{ reviewSubject = el.dataset.player; reviewPending = null; reviewMessage = ''; renderManage(); };
+  });
+  const anyBtn = document.getElementById('reviewAnyBtn');
+  if(anyBtn) anyBtn.onclick = ()=>{
+    const raw = (document.getElementById('reviewAnyName').value || '').trim();
+    const match = Object.keys(V3_STATE.players || {}).find(n => n.toLowerCase() === raw.toLowerCase());
+    if(!match){ reviewMessage = raw ? `No v3 record for "${raw}".` : 'Enter a player name.'; }
+    else { reviewSubject = match; reviewPending = null; reviewMessage = ''; }
+    renderManage();
+  };
+  const closeBtn = document.getElementById('reviewCloseBtn');
+  if(closeBtn) closeBtn.onclick = ()=>{ reviewSubject = null; reviewPending = null; reviewMessage = ''; renderManage(); };
+
+  document.querySelectorAll('.review-dir').forEach(el=>{
+    el.onclick = ()=>{ reviewDirection = el.dataset.dir; reviewPending = null; renderManage(); };
+  });
+
+  document.querySelectorAll('.review-accept').forEach(el=>{
+    el.onclick = ()=> stageReviewDecision(buildReassessmentDecision(el.dataset.player, el.dataset.dir, {
+      rating: Number(el.dataset.rating), decisionType: 'ACCEPTED_RECOMMENDATION',
+      notes: (document.getElementById('reviewNote') || {}).value || null,
+    }));
+  });
+
+  const ovBtn = document.getElementById('reviewOverrideBtn');
+  if(ovBtn) ovBtn.onclick = ()=>{
+    const name = ovBtn.dataset.player;
+    const ratingRaw = (document.getElementById('reviewOverrideRating').value || '').trim();
+    const relRaw = (document.getElementById('reviewOverrideRel').value || '').trim();
+    if(!ratingRaw && !relRaw){
+      reviewMessage = 'An override needs a new Power Rating, a new Reliability, or both.';
+      renderManage(); return;
+    }
+    if(ratingRaw && !isFinite(Number(ratingRaw))){ reviewMessage = `"${ratingRaw}" is not a number.`; renderManage(); return; }
+    if(relRaw && !isFinite(Number(relRaw))){ reviewMessage = `"${relRaw}" is not a number.`; renderManage(); return; }
+    stageReviewDecision(buildReassessmentDecision(name, ovBtn.dataset.dir, {
+      rating: ratingRaw ? Number(ratingRaw) : null,
+      // Entered as a percentage because that is how the app shows it everywhere.
+      reliability: relRaw ? Number(relRaw) / 100 : null,
+      decisionType: 'OVERRIDE',
+      notes: (document.getElementById('reviewNote') || {}).value || null,
+    }));
+  };
+
+  document.querySelectorAll('.review-tier').forEach(el=>{
+    el.onclick = ()=> stageReviewDecision({
+      playerId: el.dataset.player,
+      eventType: el.dataset.type,
+      effectiveDate: reviewToday(),
+      newTier: el.dataset.tier,
+      decisionType: 'CLUB_DECISION',
+      reasonCode: 'MONTHLY_REVIEW',
+      notes: (document.getElementById('reviewNote') || {}).value || null,
+      createdBy: reviewActor(),
+    });
+  });
+
+  const confirmBtn = document.getElementById('reviewConfirmBtn');
+  if(confirmBtn) confirmBtn.onclick = commitReviewDecision;
+  const cancelBtn = document.getElementById('reviewCancelBtn');
+  if(cancelBtn) cancelBtn.onclick = ()=>{ reviewPending = null; reviewMessage = 'Cancelled — nothing was written.'; renderManage(); };
+}
+
+// Attribution is a record of intent, not proof of identity -- there is no login.
+// It is still required, so a decision always says who believed they were making it.
+function reviewActor(){
+  return (currentUserName && currentUserName.trim()) || 'Admin (unnamed)';
+}
+
+function buildReassessmentDecision(name, dir, { rating, reliability, decisionType, notes }){
+  const s = V3_STATE.players[name];
+  const toTier = dir === 'promotion' ? TIER_ABOVE[s.tier] : TIER_BELOW[s.tier];
+  const rec = toTier ? reviewRecommendation(name, s.tier, toTier, dir === 'promotion' ? 'PROMOTION' : 'DEMOTION') : null;
+  return {
+    playerId: name,
+    eventType: RatingEngine.EVENT.CLUB_RATING_REASSESSMENT,
+    effectiveDate: reviewToday(),
+    newPowerRating: (rating === null || rating === undefined) ? null : rating,
+    newReliability: (reliability === null || reliability === undefined) ? null : reliability,
+    recommendation: (rec && !rec.error && rec.recommended) ? rec : null,
+    decisionType,
+    reasonCode: 'MONTHLY_REVIEW',
+    notes: notes || null,
+    createdBy: reviewActor(),
+  };
+}
+
+// Builds a decision, runs it past ClubDecision, and holds it for confirmation.
+// A refusal is shown verbatim: these are the reasons the record would stop
+// being reconstructible, and softening them would defeat the point.
+function stageReviewDecision(decision){
+  try {
+    reviewPending = ClubDecision.prepare({
+      state: V3_STATE.players,
+      journey: V3_JOURNEY,
+      decision,
+      today: reviewToday(),
+      recordedAt: new Date().toISOString(),
+    });
+    reviewMessage = '';
+  } catch(e){
+    reviewPending = null;
+    reviewMessage = e.message;
+  }
+  renderManage();
+}
+
+async function commitReviewDecision(){
+  const p = reviewPending;
+  if(!p) return;
+  if(!db){ reviewMessage = 'No database connection — nothing was written.'; renderManage(); return; }
+  const btn = document.getElementById('reviewConfirmBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Recording…'; }
+  try {
+    await ClubDecision.commit(RatingStore.firestoreCompatBackend(db), p);
+    reviewPending = null;
+    // Re-read rather than patch local state: the screen must show what is
+    // actually stored, not what it believes it just stored.
+    await loadV3State();
+    recomputeAll();
+    reviewMessage = `Recorded. ${p.summary}`;
+  } catch(e){
+    reviewMessage = e.message;
+  }
+  render();
+  renderManage();
+}
+
 function renderManage(){
   const box = document.getElementById('manageView');
   if(!isUnlocked){
@@ -3692,6 +3996,8 @@ function renderManage(){
       <button class="preset-btn vis-toggle ${visibilityState[key]!==false?'active':''}" data-vis="${key}" style="width:100px;">${visibilityState[key]!==false?'Visible':'Admin only'}</button>
     </div>`).join('') + `<div id="visMessage" class="section-sub"></div></div>`;
 
+  html += buildReviewSectionHtml();
+
   html += `<div class="section-heading">🔑 Admin lock</div>`;
   html += `<div class="fg-controls">
     <div class="fg-row"><button class="preset-btn" id="lockNowBtn" style="width:100%;">🔒 Lock admin area</button></div>
@@ -3724,6 +4030,7 @@ function renderManage(){
   </div>`;
 
   box.innerHTML = html;
+  wireReviewSection();
 
   const today = new Date().toISOString().slice(0,10);
 
