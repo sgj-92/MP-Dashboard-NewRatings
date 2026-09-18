@@ -3516,10 +3516,10 @@ function openSheet(name, matchFilter){
     }
 
     const isArmed = armedDeleteId === m.id;
-    const adminButtons = isUnlocked ? `<div class="difficulty-row" style="margin-top:8px;">
-      <button class="preset-btn profile-edit-btn" data-match-id="${m.id}" style="flex:1;">Edit</button>
-      <button class="preset-btn profile-delete-btn" data-match-id="${m.id}" style="flex:1; ${isArmed?'color:#e8a5a1; border-color:var(--red);':''}">${isArmed ? 'Confirm delete?' : 'Delete'}</button>
-    </div>` : '';
+    // Deliberately absent. See MATCH_EDITING_UNAVAILABLE_NOTE.
+    const adminButtons = isUnlocked
+      ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>`
+      : '';
 
     return `<div class="match">
       <div class="top"><span>${m.date}${m.type==='singles' ? ' · Singles' : ''}</span><span style="color:${won?'var(--green)':'var(--red)'}">${won?'WIN':'LOSS'}</span></div>
@@ -4580,6 +4580,17 @@ function renderPlayerTagsList(){
 // ===================== INIT =====================
 
 // ===================== GAMES TAB =====================
+// Editing and deleting a rated game are not exposed. Both change the inputs to
+// every rating that followed, so they need the replay-forward review screen,
+// which is not built. The controls WERE here and were worse than missing: they
+// persisted an edit/deletion overlay that no v3 read has looked at since the
+// match source moved to the `matches` collection, so a confirmed delete left
+// the game in place, the rating unchanged, and a hidden record behind that
+// would desync a match from its rating if anything ever re-applied it.
+// Approved by Shaun/CGPT in PROJECT_LEDGER.md Open Question 2.
+const MATCH_EDITING_UNAVAILABLE_NOTE =
+  'Editing and deleting a rated game are not available yet — both change every rating that came after, and the screen that does that safely is still to come.';
+
 let editingMatchId = null;
 let armedDeleteId = null;
 let expandedGameId = null;
@@ -4830,11 +4841,9 @@ function renderH2H(){
       const bTeam = aWon ? m.losers : m.winners;
       const aPartner = aTeam.filter(n=>n!==h2hPlayerA)[0];
       const bPartner = bTeam.filter(n=>n!==h2hPlayerB)[0];
-      const isArmed = armedDeleteId === m.id;
-      const adminButtons = isUnlocked ? `<div class="difficulty-row" style="margin-top:8px;">
-        <button class="preset-btn h2h-edit-btn" data-match-id="${m.id}" style="flex:1;">Edit</button>
-        <button class="preset-btn h2h-delete-btn" data-match-id="${m.id}" style="flex:1; ${isArmed?'color:#e8a5a1; border-color:var(--red);':''}">${isArmed ? 'Confirm delete?' : 'Delete'}</button>
-      </div>` : '';
+      const adminButtons = isUnlocked
+        ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>`
+        : '';
       html += `<div class="callout-card">
         <div class="cc-title" style="color:${aWon?'var(--green)':'var(--red)'};">${aWon ? h2hPlayerA : h2hPlayerB} won</div>
         <div class="cc-detail">${m.date} · ${aPartner?`${h2hPlayerA} &amp; ${aPartner}`:h2hPlayerA} vs ${bPartner?`${h2hPlayerB} &amp; ${bPartner}`:h2hPlayerB}<br/>${m.score}</div>
@@ -4856,11 +4865,9 @@ function renderH2H(){
     teammateMatches.forEach(m=>{
       const won = m.winners.includes(h2hPlayerA);
       const oppTeam = won ? m.losers : m.winners;
-      const isArmed = armedDeleteId === m.id;
-      const adminButtons = isUnlocked ? `<div class="difficulty-row" style="margin-top:8px;">
-        <button class="preset-btn h2h-edit-btn" data-match-id="${m.id}" style="flex:1;">Edit</button>
-        <button class="preset-btn h2h-delete-btn" data-match-id="${m.id}" style="flex:1; ${isArmed?'color:#e8a5a1; border-color:var(--red);':''}">${isArmed ? 'Confirm delete?' : 'Delete'}</button>
-      </div>` : '';
+      const adminButtons = isUnlocked
+        ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>`
+        : '';
       html += `<div class="callout-card">
         <div class="cc-title" style="color:${won?'var(--green)':'var(--red)'};">${won?'WIN':'LOSS'}</div>
         <div class="cc-detail">${m.date} · vs ${oppTeam.join(' &amp; ')}<br/>${m.score}</div>
@@ -5567,7 +5574,8 @@ Player C &amp; Player D"></textarea>
 
   if(pendingFiltered.length > 0){
     html += `<div class="section-heading">⏳ Pending approval (${pendingFiltered.length})</div>`;
-    html += `<div class="section-sub">Submitted but not yet counted in any rating.</div>`;
+    html += `<div class="section-sub">Submitted but not yet counted in any rating. Approving a game rates it: it joins the record and moves the four players' ratings.</div>`;
+    if(approvalMessage) html += `<div class="section-sub" style="color:var(--gold-bright);">${approvalMessage}</div>`;
     pendingFiltered.forEach(m=>{
       const titleText = m.isDraw
         ? `${m.winners.join(' & ')} vs ${m.losers.join(' & ')} <span class="strength-pill" style="margin-left:6px;">DRAW</span>`
@@ -5587,13 +5595,14 @@ Player C &amp; Player D"></textarea>
           <button class="preset-btn" data-reject="${m.id}" style="flex:1; color:#e8a5a1; border-color:var(--red);">Reject</button>
           <button class="preset-btn" data-edit="${m.id}" style="flex:1;">Edit</button>
         </div>` : `<div class="section-sub" style="margin-top:6px;">🔒 Unlock above to approve, reject, or edit</div>`}
+        ${approvalPlan && approvalPlan.submissionId === m.id ? buildApprovalConfirmHtml() : ''}
       </div>`;
     });
   }
 
   const gamesHeading = selectedGamesPlayer === 'all' ? `📋 All games (${display.length})` : `📋 ${selectedGamesPlayer}'s games (${display.length})`;
   html += `<div class="section-heading">${gamesHeading}</div>`;
-  html += `<div class="section-sub">Newest first, grouped by day. Tap a game to see the full breakdown.${isUnlocked ? ' Editing or deleting recalculates every rating immediately.' : ''}</div>`;
+  html += `<div class="section-sub">Newest first, grouped by day. Tap a game to see the full breakdown.</div>`;
   const idToIdx = {};
   ALL_MATCHES.forEach((m,i)=>{ idToIdx[m.id] = i; });
   let lastDate = null;
@@ -5636,10 +5645,7 @@ Player C &amp; Player D"></textarea>
         <div class="cc-detail">${m.sets.map(s=>s.join('-')).join(', ')}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
         ${detailContent}
       </div>
-      ${isUnlocked ? `<div class="difficulty-row" style="margin-top:8px;">
-        <button class="preset-btn" data-edit="${m.id}" style="flex:1;">Edit</button>
-        <button class="preset-btn" data-delete="${m.id}" style="flex:1; ${isArmed?'color:#e8a5a1; border-color:var(--red);':''}">${isArmed ? 'Confirm delete?' : 'Delete'}</button>
-      </div>` : ''}
+      ${isUnlocked ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>` : ''}
     </div>`;
   });
 
@@ -5775,8 +5781,12 @@ Player C &amp; Player D"></textarea>
   };
 
   box.querySelectorAll('[data-approve]').forEach(btn=>{
-    btn.onclick = ()=> approveMatch(btn.dataset.approve);
+    btn.onclick = ()=> prepareApproval(btn.dataset.approve);
   });
+  const approveConfirm = document.getElementById('approveConfirmBtn');
+  if(approveConfirm) approveConfirm.onclick = commitApproval;
+  const approveCancel = document.getElementById('approveCancelBtn');
+  if(approveCancel) approveCancel.onclick = ()=>{ approvalPlan = null; approvalMessage = 'Cancelled — nothing was rated.'; renderGamesTab(); };
   box.querySelectorAll('[data-reject]').forEach(btn=>{
     btn.onclick = ()=> rejectMatch(btn.dataset.reject);
   });
@@ -5793,18 +5803,118 @@ Player C &amp; Player D"></textarea>
   if(editingMatchId) wireEditForm(editingMatchId);
 }
 
-async function approveMatch(id){
+// Approving a game means RATING it: it joins the v3 record, the four players'
+// ratings move, and it appears in the history like any other match.
+//
+// It used to mean setting status='approved' in browser storage, which no
+// v3 read has looked at since the match source moved to the `matches`
+// collection. The game did not enter the record, was never rated, and dropped
+// out of the pending list -- so it vanished. Approving is now a real write.
+//
+// Appending is forward-only: a match at the end of the sequence extends it and
+// touches nothing before it. That is why this needs no replay of history, even
+// though it goes through the same module that does.
+let approvalPlan = null;   // a prepared append awaiting confirmation
+let approvalMessage = '';
+
+function nextMatchIdFor(date){
+  const sameDay = V3_MATCHES.filter(m => m.date === date);
+  const used = sameDay.map(m => {
+    const n = Number(String(m.id).slice(date.length + 1));
+    return Number.isFinite(n) ? n : 0;
+  });
+  return `${date}-${(used.length ? Math.max(...used) : 0) + 1}`;
+}
+
+// The pending submission in the engine's own shape. Team A is the winning side
+// for a decided match, which is the convention the whole record uses.
+function pendingToEngineMatch(m, id){
+  return {
+    id,
+    date: m.date,
+    sourceIndex: Number(id.slice(m.date.length + 1)),
+    teamA: m.winners,
+    teamB: m.losers,
+    sets: m.sets,
+    outcome: m.isDraw ? RatingEngine.OUTCOME.DRAW : RatingEngine.OUTCOME.A_WINS,
+    type: m.type || 'doubles',
+    drawSideAssignmentArbitrary: !!m.isDraw,
+  };
+}
+
+async function readStoredRecord(backend){
+  const [matches, journey, players] = await Promise.all([
+    backend.getAll(RatingStore.COLLECTIONS.matches),
+    backend.getAll(RatingStore.COLLECTIONS.journey),
+    backend.getAll(RatingStore.COLLECTIONS.players),
+  ]);
+  return { matches, journey, players };
+}
+
+// Plans the append and holds it. Nothing is written here: the operator sees
+// which players move, and by how much, before agreeing to it.
+async function prepareApproval(id){
+  approvalPlan = null; approvalMessage = '';
   const name = requireName();
   if(!name) return;
   const m = extraMatchesState.find(x=>x.id===id);
-  if(!m) return;
-  m.status = 'approved';
-  m.approvedBy = name;
-  m.approvedAt = new Date().toISOString();
-  const ok = await saveExtraMatches(extraMatchesState);
-  if(!ok){ document.getElementById('gamesMessage').textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage. Open the actual published/shared claude.ai link, not a downloaded file.`;; return; }
-  recomputeAll();
+  if(!m){ approvalMessage = 'That submission is no longer there.'; renderGamesTab(); return; }
+  if(!db){ approvalMessage = 'No database connection — nothing can be rated.'; renderGamesTab(); return; }
+
+  approvalMessage = 'Reading the record…';
   renderGamesTab();
+  try {
+    const backend = RatingStore.firestoreCompatBackend(db);
+    const stored = await readStoredRecord(backend);
+    const matchId = nextMatchIdFor(m.date);
+    const planned = ReplayForward.plan({
+      stored,
+      change: { type: 'append', match: pendingToEngineMatch(m, matchId) },
+      provenance: { createdBy: name, recordedAt: new Date().toISOString(), source: 'Approved from a submission' },
+    });
+    approvalPlan = { submissionId: id, matchId, planned, approvedBy: name };
+    approvalMessage = '';
+  } catch(e){
+    approvalMessage = e.message;
+  }
+  renderGamesTab();
+}
+
+async function commitApproval(){
+  const a = approvalPlan;
+  if(!a) return;
+  approvalMessage = 'Rating it…';
+  renderGamesTab();
+  try {
+    await ReplayForward.commit(RatingStore.firestoreCompatBackend(db), a.planned);
+    // Only once it is safely in the record: the submission has served its
+    // purpose and must not linger as a second copy of the same game.
+    extraMatchesState = extraMatchesState.filter(x => x.id !== a.submissionId);
+    await saveExtraMatches(extraMatchesState);
+    approvalPlan = null;
+    await loadV3State();
+    recomputeAll();
+    approvalMessage = `Rated as ${a.matchId}. ${a.planned.playersMoved.map(p=>`${p.playerId} ${p.delta>0?'+':''}${p.delta}`).join(', ')}.`;
+  } catch(e){
+    approvalMessage = 'Nothing was rated: ' + e.message;
+  }
+  render();
+  renderGamesTab();
+}
+
+function buildApprovalConfirmHtml(){
+  const a = approvalPlan;
+  if(!a) return '';
+  return `<div class="callout-card" style="padding:12px; margin-top:8px; border-color:var(--gold-dim);">
+    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this rates the game</div>
+    <div class="section-sub" style="margin-top:4px;">It joins the record as <code>${a.matchId}</code> and moves these ratings:</div>
+    <div class="section-sub" style="color:var(--text);">${a.planned.playersMoved.map(p=>`${p.playerId} <span class="${p.delta>0?'perf-pos':'perf-neg'}">${p.delta>0?'+':''}${p.delta}</span> → ${Math.round(p.to*10)/10}`).join(' &nbsp;·&nbsp; ')}</div>
+    <div class="section-sub" style="font-size:10.5px;">${a.planned.documentsToWrite} documents. Nothing already in the record is rewritten — a new game only extends the sequence.</div>
+    <div class="difficulty-row" style="margin-top:8px;">
+      <button class="preset-btn" id="approveConfirmBtn" style="flex:1;">Rate it</button>
+      <button class="preset-btn" id="approveCancelBtn" style="flex:1;">Cancel</button>
+    </div>
+  </div>`;
 }
 
 async function rejectMatch(id){
@@ -5817,23 +5927,24 @@ async function rejectMatch(id){
   renderGamesTab();
 }
 
+// Deleting a PENDING submission is real: it is not in the record, so removing
+// it removes it. Deleting a RATED game is refused rather than recorded -- the
+// old path pushed an id into deletedIdsState, saved it, and changed nothing,
+// which looked exactly like success.
 async function deleteMatch(id){
   const name = requireName();
   if(!name) return;
   const pendingMatch = extraMatchesState.find(x=>x.id===id && x.status==='pending');
-  if(pendingMatch){
-    extraMatchesState = extraMatchesState.filter(x=>x.id!==id);
-    await saveExtraMatches(extraMatchesState);
-  } else {
-    deletedIdsState.push(id);
-    const ok = await saveDeletedIds(deletedIdsState);
-    if(!ok){
-      const msg = document.getElementById('gamesMessage');
-      const text = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage. Open the actual published/shared claude.ai link, not a downloaded file.`;
-      if(msg) msg.textContent = text; else alert(text);
-      deletedIdsState.pop(); return;
-    }
+  if(!pendingMatch){
+    const msg = document.getElementById('gamesMessage');
+    const text = MATCH_EDITING_UNAVAILABLE_NOTE + ' Nothing was changed.';
+    if(msg) msg.textContent = text; else alert(text);
+    armedDeleteId = null;
+    if(document.getElementById('gamesView')) renderGamesTab();
+    return;
   }
+  extraMatchesState = extraMatchesState.filter(x=>x.id!==id);
+  await saveExtraMatches(extraMatchesState);
   armedDeleteId = null;
   recomputeAll();
   if(document.getElementById('gamesView')) renderGamesTab();
@@ -5965,9 +6076,12 @@ function wireEditForm(id){
       const ok = await saveExtraMatches(extraMatchesState);
       if(!ok){ msg.textContent='Save failed.'; return; }
     } else {
-      matchEditsState[id] = editedFields;
-      const ok = await saveMatchEdits(matchEditsState);
-      if(!ok){ msg.textContent='Save failed.'; return; }
+      // Same refusal as deleteMatch: editing a rated game changes the inputs to
+      // every rating after it. The old path saved an overlay no v3 read has
+      // looked at since the match source moved, so it reported success and did
+      // nothing.
+      msg.textContent = MATCH_EDITING_UNAVAILABLE_NOTE + ' Nothing was changed.';
+      return;
     }
     editingMatchId = null;
     recomputeAll();
