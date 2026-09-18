@@ -39,7 +39,13 @@
     if (!event.effectiveDate) {
       throw new Error(`${event.eventType} for ${event.playerId} has no effectiveDate`);
     }
-    return assertUsableId(`${event.effectiveDate}__${event.playerId}__${event.eventType}`, event);
+    const base = `${event.effectiveDate}__${event.playerId}__${event.eventType}`;
+    // A revision is how a superseding correction sits BESIDE the decision it
+    // replaces instead of overwriting it. Without it the two share an id and
+    // the earlier one silently disappears, which is exactly what an audited
+    // record must never do.
+    const id = event.revision ? `${base}__r${event.revision}` : base;
+    return assertUsableId(id, event);
   }
 
   // §11: the full record. Absent optional fields are written as null rather
@@ -55,6 +61,10 @@
     'lifetimeMatchesAtEvent',
     'recommendationRating', 'recommendationReliability', 'recommendationMethodVersion',
     'decisionType', 'reasonCode', 'notes',
+    // `supersedes` names the event this one replaces; `revision` keeps their
+    // ids distinct. Both stay in the record and the replay honours only the
+    // latest.
+    'supersedes', 'revision',
     'createdBy', 'recordedAt',
     'ratingModelVersion', 'source',
   ];

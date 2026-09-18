@@ -3655,6 +3655,247 @@ function allPlayerNames(){
   return [...PLAYERS].map(p=>p.name).sort((a,b)=>a.localeCompare(b));
 }
 
+// ===================== HISTORICAL CLUB ADJUSTMENT (screen) =====================
+// Admin-only. Records a club decision at a date that has already passed: a
+// board decision entered late, a factual correction, or the repair of a
+// mistake. Separate from historical MATCH correction, which repairs what
+// happened on court -- one is a fact about a result, the other a judgement
+// about a player's level, and merging them would let a rating be changed under
+// cover of fixing a score.
+//
+// Everything downstream of the date is re-derived, so the blast radius is shown
+// in full before anything is written, and nothing earlier is ever deleted.
+
+let histAdj = null;      // the adjustment being composed
+let histCtx = null;      // reconstructed state before the chosen date
+let histPlan = null;     // the replayed consequence, awaiting confirmation
+let histMessage = '';
+let histBusy = false;
+
+function histReset(){ histAdj = null; histCtx = null; histPlan = null; histMessage = ''; }
+
+async function histLoadContext(){
+  const name = (document.getElementById('histPlayer') || {}).value || '';
+  const date = (document.getElementById('histDate') || {}).value || '';
+  const player = Object.keys(V3_STATE.players || {}).find(n => n.toLowerCase() === name.trim().toLowerCase());
+  if(!player){ histMessage = name ? `No v3 record for "${name}".` : 'Enter a player name.'; renderManage(); return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ histMessage = 'Enter an effective date as YYYY-MM-DD.'; renderManage(); return; }
+
+  histAdj = { playerId: player, effectiveDate: date, tierEvent: null, newTier: null,
+    ratingDecision: null, overrideRating: null, overrideReliability: null,
+    correctedRating: null, correctedReliability: null, reason: '', createdBy: reviewActor() };
+  histPlan = null; histMessage = '';
+  try {
+    histCtx = HistoricalAdjustment.context({ journey: V3_JOURNEY, playerId: player, effectiveDate: date, toTier: null });
+  } catch(e){ histCtx = null; histMessage = e.message; }
+  renderManage();
+}
+
+// Folds whatever is typed into the open fields into the draft. A field that is
+// not on screen keeps whatever the draft already holds -- reading a missing
+// input as empty would silently erase a value the moment the panel re-rendered
+// without it.
+function histDraft(){
+  if(!histAdj) return null;
+  const el = (id) => document.getElementById(id);
+  const num = (id, fallback) => { const e = el(id); if(!e) return fallback;
+    const v = e.value.trim(); return (v === '' || !isFinite(Number(v))) ? null : Number(v); };
+  const pct = (id, fallback) => { const e = el(id); if(!e) return fallback;
+    const v = e.value.trim(); return (v === '' || !isFinite(Number(v))) ? null : Number(v) / 100; };
+  const text = (id, fallback) => { const e = el(id); return e ? e.value.trim() : fallback; };
+  return {
+    ...histAdj,
+    overrideRating: num('histOverrideRating', histAdj.overrideRating),
+    overrideReliability: pct('histOverrideRel', histAdj.overrideReliability),
+    correctedRating: num('histCorrectedRating', histAdj.correctedRating),
+    correctedReliability: pct('histCorrectedRel', histAdj.correctedReliability),
+    reason: text('histReason', histAdj.reason) || histAdj.reason,
+    createdBy: reviewActor(),
+  };
+}
+
+// Reconstructs the context for the chosen tier so the recommendation is drawn
+// from that historical date -- never from today's pools.
+function histRefreshContext(toTier){
+  histCtx = HistoricalAdjustment.context({
+    journey: V3_JOURNEY, playerId: histAdj.playerId,
+    effectiveDate: histAdj.effectiveDate, toTier,
+  });
+}
+
+async function histPreview(){
+  histAdj = histDraft();
+  histBusy = true; histMessage = 'Replaying…'; renderManage();
+  try {
+    const backend = RatingStore.firestoreCompatBackend(db);
+    const stored = await readStoredRecord(backend);
+    histPlan = HistoricalAdjustment.plan({
+      stored, adjustment: histAdj,
+      provenance: { createdBy: histAdj.createdBy, recordedAt: new Date().toISOString(), source: 'Historical Club Adjustment' },
+    });
+    histMessage = '';
+  } catch(e){
+    histPlan = null;
+    histMessage = e.message;
+  }
+  histBusy = false;
+  renderManage();
+}
+
+async function histCommit(){
+  if(!histPlan) return;
+  histBusy = true; histMessage = 'Writing…'; renderManage();
+  try {
+    await ReplayForward.commit(RatingStore.firestoreCompatBackend(db), histPlan);
+    const summary = histPlan.summary;
+    histReset();
+    await loadV3State();
+    recomputeAll();
+    histMessage = 'Recorded and replayed. ' + summary;
+  } catch(e){
+    histMessage = 'Write failed: ' + e.message;
+  }
+  histBusy = false;
+  render();
+  renderManage();
+}
+
+function buildHistoricalAdjustmentHtml(){
+  let html = `<div class="section-heading">🕰️ Historical club adjustment</div>`;
+  if(!V3_STATE.loaded){
+    return html + `<div class="section-sub" style="color:var(--red);">Unavailable — the record could not be read.</div>`;
+  }
+  html += `<div class="section-sub">For a board decision entered late, a factual correction, or repairing a mistake. This is <b>not</b> for fixing a match result — that changes what happened on court, this records what the club decided about a player's level. Everything after the date is re-derived, nothing earlier is ever deleted, and you see the full consequence before anything is written.</div>`;
+
+  if(histMessage) html += `<div class="section-sub" style="color:${/failed|cannot|No v3|Enter an/.test(histMessage)?'var(--red)':'var(--gold-bright)'};">${histMessage.replace(/\n/g,'<br/>')}</div>`;
+
+  html += `<div class="fg-controls">
+    <div class="fg-row"><label class="fg-label">Player</label><input id="histPlayer" list="playerNamesList" class="fg-select" value="${histAdj ? histAdj.playerId : ''}" placeholder="Player name" /></div>
+    <div class="fg-row"><label class="fg-label">Effective date</label><input id="histDate" class="fg-select" value="${histAdj ? histAdj.effectiveDate : ''}" placeholder="YYYY-MM-DD" /></div>
+    <div class="fg-row"><button class="preset-btn" id="histLoadBtn" ${histBusy?'disabled':''}>Reconstruct that date</button></div>
+  </div>`;
+
+  if(!histAdj || !histCtx) return html;
+
+  const b = histCtx.before;
+  if(!b) return html + `<div class="section-sub" style="color:var(--red);">${histAdj.playerId} has no recorded state before ${histAdj.effectiveDate}.</div>`;
+
+  html += `<div class="callout-card" style="padding:12px; margin-top:8px;">
+    <div style="font-weight:700; color:var(--text);">${histAdj.playerId} immediately before ${histAdj.effectiveDate}</div>
+    <div class="section-sub" style="margin-top:2px;">Tier ${b.tier} · Power Rating <b style="color:var(--text);">${(Math.round(b.rating*10)/10).toFixed(1)}</b> · Reliability ${Math.round(Engine_reliability(b.effectiveEvidence)*100)}% (${b.effectiveEvidence} evidence, ${b.lifetimeMatches} matches) · ${b.classificationStatus || 'status unknown'}</div>
+    <div class="section-sub" style="font-size:10.5px;">Last event before that date: ${b.asOfDate}. Measured against the ${histCtx.snapshotSize} players who had a record by then, not today's.</div>`;
+
+  if(histCtx.existing.length){
+    html += `<div class="section-sub" style="margin-top:6px; font-weight:700; color:var(--text);">Already recorded on this date</div>`;
+    html += histCtx.existing.map(e=>`<div class="section-sub" style="font-size:10.5px;">• ${e.eventType}${e.superseded?' <i>(already superseded)</i>':''} — ${e.previousTier||'—'}→${e.newTier||'—'}, rating ${e.previousPowerRating==null?'—':(Math.round(e.previousPowerRating*10)/10).toFixed(1)}→${e.newPowerRating==null?'—':(Math.round(e.newPowerRating*10)/10).toFixed(1)}, by ${e.createdBy||'unknown'}</div>`).join('');
+    html += `<div class="section-sub" style="font-size:10.5px;">A decision of the same type will <b>supersede</b> the live one above. Both stay in the record; only the newer is replayed.</div>`;
+  }
+
+  // Tier
+  const up = TIER_ABOVE[b.tier], down = TIER_BELOW[b.tier];
+  html += `<div class="section-heading" style="margin-top:12px;">1 · Tier as at ${histAdj.effectiveDate}</div>
+    <div class="difficulty-row" style="margin-top:4px;">
+      ${up ? `<button class="preset-btn hist-tier ${histAdj.tierEvent==='PROMOTION'?'active':''}" data-event="PROMOTION" data-tier="${up}" style="flex:1;">Promote to ${up}</button>` : ''}
+      ${down ? `<button class="preset-btn hist-tier ${histAdj.tierEvent==='DEMOTION'?'active':''}" data-event="DEMOTION" data-tier="${down}" style="flex:1;">Demote to ${down}</button>` : ''}
+      <button class="preset-btn hist-tier ${histAdj.tierEvent==='TIER_RETAINED'?'active':''}" data-event="TIER_RETAINED" data-tier="${b.tier}" style="flex:1;">Retain ${b.tier}</button>
+    </div>`;
+
+  if(histAdj.tierEvent){
+    const rec = histCtx.recommendation;
+    html += `<div class="section-heading" style="margin-top:12px;">2 · Rating decision — required</div>`;
+    if(histCtx.recommendationAbsent){
+      html += `<div class="section-sub" style="color:var(--gold-bright);">No statistical recommendation is available at this date: ${histCtx.recommendationAbsentReason}</div>`;
+      html += `<div class="section-sub" style="font-size:10.5px;">That is an absence, not an answer. It does not mean the board decided to keep the rating — choose keep-current or an override deliberately.</div>`;
+    } else if(rec && rec.recommended){
+      html += `<div class="section-sub">Recommendation at this date: <b style="color:var(--text);">${(Math.round(rec.recommendationRating*10)/10).toFixed(1)}</b> (${rec.ratingDelta>=0?'+':''}${Math.round(rec.ratingDelta*10)/10}). ${rec.reason}</div>`;
+    }
+
+    const opt = (key, label, enabled, why) => `<div class="alpha-row">
+      <div class="alpha-name" style="font-size:12.5px;">${label}${why?`<div style="font-size:10px; color:var(--text-dim);">${why}</div>`:''}</div>
+      <button class="preset-btn hist-decision ${histAdj.ratingDecision===key?'active':''}" data-decision="${key}" style="width:104px;" ${enabled?'':'disabled'}>${histAdj.ratingDecision===key?'Chosen':'Choose'}</button>
+    </div>`;
+    const canAccept = !!(rec && rec.recommended);
+    const provisional = b.classificationStatus === 'PROVISIONAL';
+    html += opt('ACCEPT_RECOMMENDATION', 'Accept the statistical recommendation', canAccept, canAccept ? '' : 'No recommendation exists at this date');
+    html += opt('CLUB_OVERRIDE', 'Club override', true, 'The board sets the rating and/or reliability');
+    html += opt('KEEP_CURRENT_RATING', 'Keep the rating as it stood', true, 'An explicit decision, recorded as one');
+    html += opt('CORRECT_INITIAL_CLASSIFICATION', 'Correct the initial classification', provisional,
+      provisional ? 'The initial estimate was wrong' : `${histAdj.playerId} was already established by this date`);
+
+    if(histAdj.ratingDecision === 'CLUB_OVERRIDE'){
+      html += `<div class="fg-controls" style="margin-top:6px;">
+        <div class="fg-row"><label class="fg-label">Power Rating</label><input id="histOverrideRating" class="fg-select" value="${histAdj.overrideRating ?? ''}" placeholder="leave blank to keep ${(Math.round(b.rating*10)/10).toFixed(1)}" /></div>
+        <div class="fg-row"><label class="fg-label">Reliability %</label><input id="histOverrideRel" class="fg-select" value="${histAdj.overrideReliability!=null?Math.round(histAdj.overrideReliability*100):''}" placeholder="leave blank to keep ${Math.round(Engine_reliability(b.effectiveEvidence)*100)}%" /></div>
+      </div>`;
+    }
+    if(histAdj.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION'){
+      html += `<div class="fg-controls" style="margin-top:6px;">
+        <div class="fg-row"><label class="fg-label">Corrected Power Rating</label><input id="histCorrectedRating" class="fg-select" value="${histAdj.correctedRating ?? ''}" placeholder="the rating the club believes was right" /></div>
+        <div class="fg-row"><label class="fg-label">Reliability % (optional)</label><input id="histCorrectedRel" class="fg-select" value="${histAdj.correctedReliability!=null?Math.round(histAdj.correctedReliability*100):''}" placeholder="leave blank to keep the evidence earned" /></div>
+      </div>`;
+    }
+
+    html += `<div class="fg-controls" style="margin-top:6px;">
+      <div class="fg-row"><label class="fg-label">Reason — required</label><input id="histReason" class="fg-select" value="${histAdj.reason || ''}" placeholder="Why this is being recorded now" /></div>
+    </div>`;
+    html += `<div class="section-sub" style="font-size:10.5px;">Recorded as ${reviewActor()}.</div>`;
+
+    html += `<div class="difficulty-row" style="margin-top:8px;">
+      <button class="preset-btn" id="histPreviewBtn" style="flex:1;" ${histBusy?'disabled':''}>Preview the full consequence</button>
+      <button class="preset-btn" id="histCancelBtn" style="flex:1;">Cancel</button>
+    </div>`;
+  }
+  html += `</div>`;
+
+  if(histPlan) html += buildHistPlanHtml();
+  return html;
+}
+
+function buildHistPlanHtml(){
+  const p = histPlan;
+  const moved = p.playersMoved;
+  return `<div class="callout-card" style="padding:12px; margin-top:10px; border-color:var(--gold-dim);">
+    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this rewrites every rating after ${histAdj.effectiveDate}</div>
+    <div class="section-sub" style="margin-top:4px; color:var(--text);">${p.summary}</div>
+    <div class="section-sub" style="font-size:10.5px;">${p.events.map(e=>`${e.eventType}${e.supersedes?` (supersedes <code>${e.supersedes}</code>, revision ${e.revision})`:''}`).join('; ')}. ${p.documentsToWrite} documents rewritten, ${p.documentsToDelete} removed.</div>
+    <div class="section-sub" style="margin-top:6px; font-weight:700; color:var(--text);">${moved.length} player${moved.length===1?'':'s'} end on a different rating</div>
+    <div class="section-sub" style="font-size:10.5px; max-height:180px; overflow:auto;">${moved.map(m=>`${m.playerId} ${m.delta>0?'+':''}${m.delta} → ${Math.round(m.to*10)/10}`).join(' &nbsp;·&nbsp; ')}</div>
+    <div class="difficulty-row" style="margin-top:8px;">
+      <button class="preset-btn" id="histCommitBtn" style="flex:1;" ${histBusy?'disabled':''}>Record and replay</button>
+      <button class="preset-btn" id="histAbandonBtn" style="flex:1;">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function wireHistoricalAdjustment(){
+  const load = document.getElementById('histLoadBtn');
+  if(load) load.onclick = histLoadContext;
+  const cancel = document.getElementById('histCancelBtn');
+  if(cancel) cancel.onclick = ()=>{ histReset(); renderManage(); };
+  const abandon = document.getElementById('histAbandonBtn');
+  if(abandon) abandon.onclick = ()=>{ histPlan = null; histMessage = 'Cancelled — nothing was written.'; renderManage(); };
+
+  document.querySelectorAll('.hist-tier').forEach(el=>{
+    el.onclick = ()=>{
+      histAdj = { ...histDraft(), tierEvent: el.dataset.event, newTier: el.dataset.tier, ratingDecision: null };
+      histPlan = null; histMessage = '';
+      histRefreshContext(el.dataset.tier);
+      renderManage();
+    };
+  });
+  document.querySelectorAll('.hist-decision').forEach(el=>{
+    el.onclick = ()=>{
+      histAdj = { ...histDraft(), ratingDecision: el.dataset.decision };
+      histPlan = null; histMessage = '';
+      renderManage();
+    };
+  });
+  const prev = document.getElementById('histPreviewBtn');
+  if(prev) prev.onclick = histPreview;
+  const commit = document.getElementById('histCommitBtn');
+  if(commit) commit.onclick = histCommit;
+}
+
 // ===================== BETA DIAGNOSTICS (screen) =====================
 // Reads the three collections itself, on demand, and checks them against each
 // other and against what the application is currently showing. Deliberately not
@@ -3800,16 +4041,20 @@ function reviewSnapshot(){
 // typed into the open fields folded in.
 function reviewDraftForCheck(){
   if(!reviewDraft) return { playerId: reviewSubject, effectiveDate: reviewToday() };
-  const read = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  const num = (v) => (v === '' || !isFinite(Number(v))) ? null : Number(v);
-  const pct = (v) => { const n = num(v); return n === null ? null : n / 100; };
+  // A field that is not on screen keeps whatever the draft already holds.
+  const el = (id) => document.getElementById(id);
+  const num = (id, fallback) => { const e = el(id); if(!e) return fallback;
+    const v = e.value.trim(); return (v === '' || !isFinite(Number(v))) ? null : Number(v); };
+  const pct = (id, fallback) => { const e = el(id); if(!e) return fallback;
+    const v = e.value.trim(); return (v === '' || !isFinite(Number(v))) ? null : Number(v) / 100; };
+  const text = (id, fallback) => { const e = el(id); return e ? e.value.trim() : fallback; };
   return {
     ...reviewDraft,
-    overrideRating: reviewDraft.ratingDecision === 'CLUB_OVERRIDE' ? num(read('reviewOverrideRating')) : reviewDraft.overrideRating,
-    overrideReliability: reviewDraft.ratingDecision === 'CLUB_OVERRIDE' ? pct(read('reviewOverrideRel')) : reviewDraft.overrideReliability,
-    correctedRating: reviewDraft.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION' ? num(read('reviewCorrectedRating')) : reviewDraft.correctedRating,
-    correctedReliability: reviewDraft.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION' ? pct(read('reviewCorrectedRel')) : reviewDraft.correctedReliability,
-    notes: read('reviewNote') || reviewDraft.notes || null,
+    overrideRating: num('reviewOverrideRating', reviewDraft.overrideRating),
+    overrideReliability: pct('reviewOverrideRel', reviewDraft.overrideReliability),
+    correctedRating: num('reviewCorrectedRating', reviewDraft.correctedRating),
+    correctedReliability: pct('reviewCorrectedRel', reviewDraft.correctedReliability),
+    notes: text('reviewNote', reviewDraft.notes) || reviewDraft.notes || null,
     createdBy: reviewActor(),
   };
 }
@@ -4174,6 +4419,7 @@ function renderManage(){
     </div>`).join('') + `<div id="visMessage" class="section-sub"></div></div>`;
 
   html += buildReviewSectionHtml();
+  html += buildHistoricalAdjustmentHtml();
   html += buildDiagnosticsSectionHtml();
 
   html += `<div class="section-heading">🔑 Admin lock</div>`;
@@ -4209,6 +4455,7 @@ function renderManage(){
 
   box.innerHTML = html;
   wireReviewSection();
+  wireHistoricalAdjustment();
 
   const today = new Date().toISOString().slice(0,10);
 

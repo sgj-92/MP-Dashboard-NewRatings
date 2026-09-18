@@ -67,8 +67,15 @@
     // decision that accompanies it. Sorting by event type alphabetically put
     // CLUB_RATING_REASSESSMENT before PROMOTION -- backwards from how a board
     // makes the decision, and enough to stop the record reproducing itself.
+    // A superseded decision stays in the record -- deleting it would destroy
+    // the audit trail of what the club originally decided -- but it is not
+    // replayed. Only the event that replaced it is.
+    const superseded = {};
+    (journey || []).forEach((e) => { if (e.supersedes) superseded[e.supersedes] = true; });
+
     const events = (journey || [])
       .filter((e) => e.eventType !== INIT && e.eventType !== MATCH)
+      .filter((e) => !superseded[e.id])
       .sort((a, b) => {
         if (a.effectiveDate !== b.effectiveDate) return a.effectiveDate < b.effectiveDate ? -1 : 1;
         const ra = Review.eventRank(a.eventType), rb = Review.eventRank(b.eventType);
@@ -90,6 +97,8 @@
           recommendationReliability: e.recommendationReliability ?? null,
           recommendationMethodVersion: e.recommendationMethodVersion ?? null,
         };
+        input.revision = e.revision ?? null;
+        input.supersedes = e.supersedes ?? null;
         if (e.newTier !== null && e.newTier !== undefined) input.newTier = e.newTier;
         // Only when the event actually moved it -- see the note at the top.
         if (typeof e.newPowerRating === 'number' && e.newPowerRating !== e.previousPowerRating) {
@@ -120,7 +129,20 @@
   }
 
   // change: { type: 'append' | 'edit' | 'delete', match?, matchId? }
+  //       or: { type: 'clubDecision', events: [...] } -- one or more state
+  //           events inserted at a historical date, after which everything that
+  //           followed is re-derived.
   function applyChange(inputs, change) {
+    if (change.type === 'clubDecision') {
+      if (!change.events || !change.events.length) throw new Error('No club decision to apply.');
+      const superseded = {};
+      change.events.forEach((e) => { if (e.supersedes) superseded[e.supersedes] = true; });
+      const kept = inputs.events.filter((e) => {
+        const id = Store.eventId(e);
+        return !superseded[id];
+      });
+      return { ...inputs, events: kept.concat(change.events) };
+    }
     const matches = inputs.matches.slice();
     if (change.type === 'append') {
       if (matches.some((m) => m.id === change.match.id)) {
@@ -199,6 +221,33 @@
   // -- which also made every document differ, so every edit looked like a full
   // rebuild.
   function docsOf(inputs, replay, provenance, keepProvenanceFrom) {
+    // applyStateEvent builds its own return shape and does not carry `revision`
+    // or `supersedes` through. Without re-attaching them the superseding
+    // correction is written with the BASE id and overwrites the very decision
+    // it was supposed to sit beside -- silently destroying the audit trail the
+    // supersession model exists to protect. The engine is frozen, so the fields
+    // are restored here from the inputs that produced each event.
+    const pending = {};
+    (inputs.events || []).forEach((e) => {
+      if (e.revision === null && e.supersedes === null) return;
+      if (e.revision === undefined && e.supersedes === undefined) return;
+      const key = `${e.playerId}|${e.effectiveDate}|${e.eventType}`;
+      (pending[key] = pending[key] || []).push(e);
+    });
+    const taken = {};
+    (replay.journey || []).forEach((ev) => {
+      if (ev.eventType === MATCH || ev.eventType === INIT) return;
+      const key = `${ev.playerId}|${ev.effectiveDate}|${ev.eventType}`;
+      const list = pending[key];
+      if (!list || !list.length) return;
+      const i = taken[key] || 0;
+      const src = list[i];
+      if (!src) return;
+      taken[key] = i + 1;
+      if (src.revision) ev.revision = src.revision;
+      if (src.supersedes) ev.supersedes = src.supersedes;
+    });
+
     const plan = Store.buildWritePlan({
       matches: inputs.matches,
       journey: replay.journey,
@@ -253,9 +302,18 @@
       [Store.COLLECTIONS.players]: stored.players || [],
     };
     const d = diffDocs(storedDocs, rebuilt);
+    // A superseded decision is stored but not replayed, so it is absent from a
+    // rebuild by design. Counting it as a difference would mean any record
+    // containing a correction could never verify again.
+    const supersededIds = {};
+    (stored.journey || []).forEach((e) => { if (e && e.supersedes) supersededIds[e.supersedes] = true; });
+
     const differences = [];
     Object.entries(d.writes).forEach(([c, docs]) => docs.forEach((doc) => differences.push(`${c}/${doc.id} differs`)));
-    Object.entries(d.deletes).forEach(([c, ids]) => ids.forEach((id) => differences.push(`${c}/${id} would disappear`)));
+    Object.entries(d.deletes).forEach(([c, ids]) => ids.forEach((id) => {
+      if (supersededIds[id]) return;
+      differences.push(`${c}/${id} would disappear`);
+    }));
     return { identical: differences.length === 0, differences: differences.slice(0, 40), count: differences.length };
   }
 
@@ -289,6 +347,17 @@
     const afterReplay = replayInputs(changed);
     const afterDocs = docsOf(changed, afterReplay, provenance, stored.journey);
     const d = diffDocs(beforeDocs, afterDocs);
+
+    // A superseded decision is deliberately not replayed, which makes it look
+    // orphaned to the diff. It must NOT be deleted: the whole point of
+    // superseding rather than overwriting is that what the club originally
+    // decided stays in the record. Only the replay stops honouring it.
+    const supersededIds = {};
+    [].concat(stored.journey || [], afterDocs[Store.COLLECTIONS.journey] || [])
+      .forEach((e) => { if (e && e.supersedes) supersededIds[e.supersedes] = true; });
+    d.deletes[Store.COLLECTIONS.journey] = (d.deletes[Store.COLLECTIONS.journey] || [])
+      .filter((id) => !supersededIds[id]);
+    d.removed = Object.values(d.deletes).reduce((n, ids) => n + ids.length, 0);
 
     // Who this actually moves, and by how much. An edit to one June match can
     // reach dozens of people through later pairings, and the operator should
