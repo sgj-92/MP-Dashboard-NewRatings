@@ -33,10 +33,11 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `e0fdcbc` |
-| Tests | **242 / 242 passing** (21 of them drive a real browser) |
+| Last verified implementation commit | `__COMMIT__` |
+| Tests | **255 / 255 passing** (21 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
-| Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
+| Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
+| Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
 | Production | never touched; comparison is a dated static snapshot |
 
 **Wired to v3:** `recomputeAll` hydrates `PLAYERS[]` from the compact `players`
@@ -520,6 +521,101 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 18 Sep 2026 (production match-facts import: 7 new matches applied)
+
+**Shaun approved the dry run and the write is applied and verified.** Full
+record in [`PRODUCTION_IMPORT.md`](./PRODUCTION_IMPORT.md).
+
+Match facts only. Production ratings, rankings, tiers and reliability were never
+read. Production's winner/draw flag was treated as authoritative and was never
+inferred from the orientation of the set scores. Score arrays carried across
+exactly as stored. The 50 pre-June records were excluded — that block stays
+display-only and cannot enter a rating calculation.
+
+| | |
+|---|---|
+| Records in the export | 207 |
+| Pre-June, excluded (display-only) | 50 |
+| Eligible | 157 |
+| Already present (deduplicated) | 150 |
+| **Imported** | **7** |
+| Conflicts | 0 |
+| In v3 but absent from the export | 0 |
+| Documents written / deleted | 49 / 0 |
+
+**The seven**, all production submissions with status `approved`, 16–17 Sep:
+
+| v3 id | match | score |
+|---|---|---|
+| `2026-09-16-1` | Osh & PDM def KC & Jams | 6-1, 6-2 |
+| `2026-09-16-2` | KC & PDM def Osh & Jams | 7-5, 6-3 |
+| `2026-09-16-3` | Stormzy & Omar def Max & Jords | 6-2, 6-3 |
+| `2026-09-16-4` | Tom & Rishi def Jords & Eli | 6-4, 2-6, 6-3 |
+| `2026-09-17-1` | Eli & Len vs Kaz & Rishi — **draw** | 4-6, 6-3 |
+| `2026-09-17-2` | Osh & Rishi def Ant Slice & Eli | 6-2, 6-3, 6-0 |
+| `2026-09-17-3` | Eli & Len def Osh & Rishi | 6-3, 6-1, 6-8 |
+
+**Fourteen players moved**, every one matching the approved plan to the tenth of
+a point: Ant Slice 1636.5→1625.1 (−11.3), Eli 1652.5→1641.5 (−11.1), Rishi
+1454.1→1462.9 (+8.8), Osh 1705.5→1713.8 (+8.3), Jords 1336.1→1328.2 (−7.9),
+Omar 1403.4→1409.5 (+6.1), Tom 1345.9→1351.0 (+5.1), Stormzy 1384.3→1389.3
+(+5.0), Max 1410.6→1407.1 (−3.5), KC 1711.5→1708.7 (−2.8), Jams 1116.0→1113.3
+(−2.7), PDM 1446.1→1447.6 (+1.6), Kaz 1731.2→1732.7 (+1.4), Len 1675.8→1675.9
+(+0.1). The other 20 players did not move, which the no-op replay confirms
+rather than assumes.
+
+**Verification, from a fresh re-read of the live record rather than from what
+the importer said about itself:**
+
+| | |
+|---|---|
+| Live Firestore | **157 matches · 666 journey events · 34 players = 857 docs** |
+| Replay-to-self | **0 differences** |
+| Diagnostics | **9 / 9 pass, 0 warnings** |
+| Tests | **255 / 255** (21 in a real browser) |
+| Earliest match / event | 2026-06-02 — the pre-June rule holds |
+| Draws | 6 (5 + the imported one) |
+| Re-running the importer | 157 already present, **0 new** — idempotent |
+
+**The importer is reusable and idempotent.**
+`scripts/import-production-matches.js --file <export.json>` dry-runs by default
+and reports everything before it can write: export integrity, pre-June
+exclusions, already-present count, new matches in full, conflicts, unknown
+names, the replay plan and every projected rating change. `--write` applies it
+and then re-reads and proves the record still replays to itself.
+
+Identity is **factual**, because production ids (`base_79`, `sub_1758…`,
+`early_0`) and v3 ids (`YYYY-MM-DD-N`) share no namespace. A match is identified
+by its **fixture** — date plus the two rosters as an unordered pair — which is
+deliberately narrower than "everything about the match": an identity that
+included the score could never detect a *changed* score, it would simply look
+like a different match and be appended. Fixtures do repeat, so a fixture
+addresses a group and records inside it are paired by full facts; leftovers on
+both sides are a **conflict**, which stops the import rather than appending a
+near-duplicate or silently overwriting. It also refuses on a malformed export,
+or on a player with no v3 record — a starting tier is a club decision, not
+something an importer may invent.
+
+`replayForward` gained `appendMany`, so an import replays once. Appending one
+plan at a time would have reported each match's blast radius against a record
+the previous append had already moved, so the numbers shown would not have been
+the numbers written.
+
+**A discrepancy worth fixing at the production end.** The accompanying
+`validation-summary.json` says "all 42 currently-submitted matches have status
+'approved'". The export carries **41** records with `_origin: "submission"`, all
+approved. Nothing in the import depends on it — dedupe is by match facts, not by
+origin or id — but the summary and the file it describes disagree by one. Also
+noted: production reports 12 matches excluded as deleted; none of them were ever
+in v3, which the `in v3 but not in export: 0` result confirms.
+
+**One thing production should know.** Production genuinely stores decided
+matches whose first-listed side has the losing scoreline — 14 in this export,
+12 pre-June and 2 in the rated range. The clearest is 2026-07-02, Len & Eli beat
+Shaun & Osh 0-6, 6-3, 6-4, having taken 12 games to 13. v3 already recorded both
+correctly, and the importer preserves them rather than "fixing" them. There is a
+test for exactly this case.
 
 ### CGPT — 18 Sep 2026 (Power Rating Guide)
 Shaun's remaining concern is player trust: movements now look relatively small
@@ -1462,6 +1558,8 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `__COMMIT__` | Production match-facts import applied: 7 new matches, 14 players moved, verified against a fresh re-read |
+| `f974fea` | Reusable, idempotent production match-facts importer; `appendMany` on replay-forward |
 | `e0fdcbc` | CGPT visual acceptance: all eight presentation fixes, plus a stored-vs-displayed score-orientation defect the new browser test caught |
 | `7178544` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
 | `0f7c2ed` | Three authorised historical club decisions applied to the beta; four defects fixed en route |
@@ -1499,6 +1597,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
+0. ~~Import the production match-facts export~~ — **done** (`__COMMIT__`).
+   7 new matches, 0 conflicts, 50 pre-June rows excluded, 14 players moved
+   exactly as planned. Live record 157 · 666 · 34; replay-to-self 0 differences;
+   diagnostics 9/9; 255/255 tests. Re-running imports nothing. See
+   `PRODUCTION_IMPORT.md` and the CCode handoff of 18 Sep.
 1. **Build `More → Power Rating Guide`** with summary, detailed formula, worked
    example, FAQ, and the five-concept distinction in Section 4.
 2. Add match-level **Why your rating moved** copy driven by persisted
