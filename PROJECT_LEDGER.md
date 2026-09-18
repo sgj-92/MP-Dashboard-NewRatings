@@ -33,7 +33,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `__COMMIT__` |
+| Last verified implementation commit | `94c3983` |
 | Tests | **255 / 255 passing** (21 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
@@ -1558,7 +1558,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
-| `__COMMIT__` | Production match-facts import applied: 7 new matches, 14 players moved, verified against a fresh re-read |
+| `94c3983` | Production match-facts import applied: 7 new matches, 14 players moved, verified against a fresh re-read |
 | `f974fea` | Reusable, idempotent production match-facts importer; `appendMany` on replay-forward |
 | `e0fdcbc` | CGPT visual acceptance: all eight presentation fixes, plus a stored-vs-displayed score-orientation defect the new browser test caught |
 | `7178544` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
@@ -1597,7 +1597,7 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-0. ~~Import the production match-facts export~~ — **done** (`__COMMIT__`).
+0. ~~Import the production match-facts export~~ — **done** (`94c3983`).
    7 new matches, 0 conflicts, 50 pre-June rows excluded, 14 players moved
    exactly as planned. Live record 157 · 666 · 34; replay-to-self 0 differences;
    diagnostics 9/9; 255/255 tests. Re-running imports nothing. See
