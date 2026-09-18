@@ -135,7 +135,7 @@
     return Object.entries(missing).map(([playerId, firstDate]) => ({ playerId, firstDate }));
   }
 
-  // change: { type: 'append' | 'edit' | 'delete', match?, matchId? }
+  // change: { type: 'append' | 'appendMany' | 'edit' | 'delete', match?, matches?, matchId? }
   //       or: { type: 'clubDecision', events: [...] } -- one or more state
   //           events inserted at a historical date, after which everything that
   //           followed is re-derived.
@@ -156,6 +156,20 @@
         throw new Error(`Match ${change.match.id} is already in the record.`);
       }
       matches.push(change.match);
+    } else if (change.type === 'appendMany') {
+      // An import adds many matches at once. Appending them one plan at a time
+      // would replay the season once per match and, worse, would report each
+      // one's blast radius against a record the previous append had already
+      // moved -- so the numbers shown would not be the numbers written. They
+      // go in together and are replayed once.
+      if (!change.matches || !change.matches.length) throw new Error('No matches to append.');
+      const seen = {};
+      matches.forEach((m) => { seen[m.id] = true; });
+      change.matches.forEach((m) => {
+        if (seen[m.id]) throw new Error(`Match ${m.id} is already in the record.`);
+        seen[m.id] = true;
+        matches.push(m);
+      });
     } else if (change.type === 'edit') {
       const i = matches.findIndex((m) => m.id === change.match.id);
       if (i === -1) throw new Error(`Match ${change.match.id} is not in the record.`);
