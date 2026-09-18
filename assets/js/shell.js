@@ -809,7 +809,9 @@ function computeRankingsPodiumTop3(){
   const defaultMinGames = selectedMonth === 'all' ? 10 : 5;
   if(minGames !== defaultMinGames) return null;
 
-  let rows = PLAYERS.filter(p => activeTier==='All' || p.tier===activeTier);
+  // Tier is scope-relative: in a month view this is the tier held at that
+  // month's close, so the podium's "Tier B · June 2026" caption is true.
+  let rows = PLAYERS.filter(matchesActiveTier);
   const inMonthView = selectedMonth !== 'all';
   if(inMonthView){
     const monthly = computeMonthlyStats(selectedMonth);
@@ -914,14 +916,19 @@ function computeKingsOfTiers(){
 
   const kings = {};
   ['A','B','C'].forEach(tier=>{
-    const tierRows = rows.filter(p=>p.tier===tier).sort((a,b)=>{
+    // Historical tier, not today's. Without this, June's Tier C king vanishes
+    // the moment he is promoted in July and reappears in Tier B's June board.
+    const tierRows = rows.filter(p=>tierInScope(p)===tier).sort((a,b)=>{
       const av = inMonthView ? a.month_rating : a.rating;
       const bv = inMonthView ? b.month_rating : b.rating;
       return bv - av;
     });
     if(tierRows.length){
       const p = tierRows[0];
-      kings[tier] = { name: p.name, rating: Math.round(inMonthView ? p.month_rating : p.rating) };
+      kings[tier] = { name: p.name, rating: Math.round(inMonthView ? p.month_rating : p.rating),
+        // Carried so the panel can say why a past king sits in a tier they are
+        // no longer in, rather than leaving it looking like a bug.
+        currentTier: p.tier };
     }
   });
   if(!kings.A && !kings.B && !kings.C) return null;
@@ -940,6 +947,11 @@ function renderKingsOfTiersPanel(){
 
   const periodLabel = selectedMonth === 'all' ? 'All Time' : monthLabel(selectedMonth);
   const tierNames = { A: 'Tier A', B: 'Tier B', C: 'Tier C' };
+  // A king of Tier C in June who is Tier B today is not a mistake, and the
+  // panel says so rather than leaving the reader to assume it is one.
+  const movedSince = ['A','B','C']
+    .filter(t => kings[t] && kings[t].currentTier && kings[t].currentTier !== t)
+    .map(t => `${kings[t].name} is Tier ${kings[t].currentTier} now.`);
 
   const panel = document.createElement('div');
   panel.className = 'kings-panel';
@@ -965,6 +977,7 @@ function renderKingsOfTiersPanel(){
         </div>`;
       }).join('')}
     </div>
+    ${movedSince.length ? `<div class="kings-panel-note">Tiers as they stood in ${periodLabel}. ${movedSince.join(' ')}</div>` : ''}
   `;
 
   // Above the podium (if any), otherwise straight before the column

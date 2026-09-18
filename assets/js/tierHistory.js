@@ -44,7 +44,15 @@
     Object.entries(byPlayer).forEach(([playerId, list]) => {
       initial[playerId] = list[0].fromTier;
       const last = list[list.length - 1];
-      if (currentTiers[playerId] !== undefined && currentTiers[playerId] !== last.toTier) {
+      // A player who changed tier but is absent from the current tiers cannot
+      // be cross-checked. Treating that as "no opinion" is how an empty map
+      // once passed validation while answering `undefined` for everyone else.
+      if (currentTiers[playerId] === undefined) {
+        throw new Error(
+          `${playerId} has a recorded tier change but no current tier. ` +
+          'The current tiers are incomplete -- do not guess.');
+      }
+      if (currentTiers[playerId] !== last.toTier) {
         throw new Error(
           `Tier history for ${playerId} ends at ${last.toTier} but the current tier is ` +
           `${currentTiers[playerId]}. One of them is wrong -- do not guess.`);
@@ -54,6 +62,12 @@
   }
 
   function create({ currentTiers, changes = AUTHORITATIVE_TIER_CHANGES }) {
+    // A tier history built on no current tiers answers `undefined` for every
+    // player and looks like it worked. That is exactly how the application
+    // shipped with every historical tier missing, so it is refused here.
+    if (!currentTiers || Object.keys(currentTiers).length === 0) {
+      throw new Error('TierHistory.create requires currentTiers; an empty map silently erases every historical tier.');
+    }
     const ordered = sortChanges(changes);
     const initialTiers = deriveInitialTiers(currentTiers, ordered);
 

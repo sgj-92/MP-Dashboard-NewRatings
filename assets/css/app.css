@@ -615,6 +615,10 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   text-transform: uppercase; color: var(--gold-bright);
 }
 .kings-panel-period{ font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); }
+.kings-panel-note{
+  font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim);
+  line-height: 1.45; padding: var(--space-2) var(--space-1) 0;
+}
 
 .kings-row{ display: flex; gap: var(--space-2); }
 .kings-card{

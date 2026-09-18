@@ -860,8 +860,15 @@ async function loadV3State(){
         // Loaded at start-up rather than lazily because the app opens on a
         // monthly view, so a lazy read would fire immediately anyway.
         V3_JOURNEY = await V3Bridge.loadJourney(backend);
+        // Tiers come from v3 state, NOT from TIER_MAP. TIER_MAP is still {} at
+        // this point -- rebuildMapsFromState() has not run yet -- and an empty
+        // map made tierAsOf() answer `undefined` for every player who was not
+        // in the authoritative change list, which silently emptied every
+        // historical tier, within-tier rank and tierChanged flag in the app.
+        // TierHistory.create() now rejects an empty map so this cannot recur
+        // quietly, but the right source was always v3's own tiers.
         MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, {
-          tierAsOf: TierHistory.create({ currentTiers: TIER_MAP }).tierAsOf,
+          tierAsOf: TierHistory.create({ currentTiers: V3Bridge.tierMap(V3_STATE) }).tierAsOf,
         });
       }
       catch(e){
@@ -1115,6 +1122,25 @@ function computeMonthlyStats(month){
 // chronological Sequential-v1 trajectory. This REPLACES the retired
 // computeMonthlyRating, which solved a separate monthly rating of its own.
 // There is no monthly solver any more and there must not be one again.
+// Which tier a player was in for the scope currently on screen. In a month view
+// that is the tier they held at that month's close -- the same tier the monthly
+// within-tier ranks use -- never the tier they hold today. Promoting someone in
+// September must not rewrite them into Tier B's June honours board.
+//
+// Returns null when the selected month has no record of the player, which is
+// deliberate: they are then absent from a tier-filtered view rather than being
+// filed under a tier they did not hold.
+function tierInScope(player){
+  if(selectedMonth === 'all') return player.tier;
+  if(!MONTHLY_VIEWS) return null;
+  const row = MonthlyViews.playerMonth(MONTHLY_VIEWS, selectedMonth, player.name);
+  return row ? row.tierAtMonthEnd : null;
+}
+
+function matchesActiveTier(player){
+  return activeTier === 'All' || tierInScope(player) === activeTier;
+}
+
 // ---- Monthly stories -------------------------------------------------------
 // Three distinct measures, never merged: where the real Power Rating stood and
 // how far it moved, how the rank moved, and how far play beat expectation.
@@ -1164,7 +1190,7 @@ function buildMonthlyStoriesHtml(month){
 
   return `<div class="monthly-stories">
     <div class="ms-head">${label} — the month in four parts</div>
-    ${block('Monthly Performance', 'Who most beat their pre-match expectation. This is what drives the podium and Kings of Tiers.', perfBody)}
+    ${block('Monthly Performance', 'Who most beat their pre-match expectation. Its own measure: the podium and Kings of Tiers rank on rating, not on this.', perfBody)}
     ${block('Rating Movement', 'How far the real Power Rating actually moved — risers and fallers. Not the same question as performance.', riseBody)}
     ${block('Ranking Movement', 'Overall rank at the start and end of the month — climbs and slides both.', climbBody)}
     ${block('Moved without playing', 'Rank can move while a player sits out, because others moved around them. Their rating did not change.', idleBody)}
@@ -1520,7 +1546,7 @@ function render(){
     }
   }
 
-  let rows = PLAYERS.filter(p => activeTier==='All' || p.tier===activeTier);
+  let rows = PLAYERS.filter(matchesActiveTier);
   let monthlyRatings = {};
   if(selectedMonth !== 'all'){
     const monthly = computeMonthlyStats(selectedMonth);
