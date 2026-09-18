@@ -33,7 +33,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `__COMMIT__` |
+| Last verified implementation commit | `e0fdcbc` |
 | Tests | **242 / 242 passing** (21 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
@@ -1331,7 +1331,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
-| `__COMMIT__` | CGPT visual acceptance: all eight presentation fixes, plus a stored-vs-displayed score-orientation defect the new browser test caught |
+| `e0fdcbc` | CGPT visual acceptance: all eight presentation fixes, plus a stored-vs-displayed score-orientation defect the new browser test caught |
 | `7178544` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
 | `0f7c2ed` | Three authorised historical club decisions applied to the beta; four defects fixed en route |
 | `9cc3c13` | Historical Club Adjustment: Admin tool over replay-forward, superseding audited corrections |
@@ -1369,7 +1369,7 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 ## 8. NEXT
 
 1. ~~CGPT visual acceptance fixes — Section 4 items 1–8~~ — **done**
-   (`__COMMIT__`). All eight implemented; no Sequential-v1 mathematics touched.
+   (`e0fdcbc`). All eight implemented; no Sequential-v1 mathematics touched.
 2. ~~Regression coverage~~ — **done**. Eight browser tests added, covering
    stale `Monthly Rating` wording, score orientation on both a win and a loss,
    reliability and band on the profile hero, a disabled unavailable review
