@@ -22,13 +22,35 @@
     'DEMOTION',
   ];
 
-  // §5.3, authoritative. Confirmed complete: nobody else changed tier between
-  // June and September 2026. Do not infer additional dates.
+  // §5.3, authoritative, and the SEED's input. It is deliberately not the
+  // application's source of tier history: a list frozen at three entries stops
+  // being true the moment the club records a real promotion, and the
+  // consistency guard below then refuses to load the app at all. Reading
+  // changes from the journey instead makes tier history a function of the
+  // record, so a promotion recorded today simply appears.
   const AUTHORITATIVE_TIER_CHANGES = [
     { playerId: 'Shaun', effectiveDate: '2026-07-01', fromTier: 'C', toTier: 'B', eventType: 'INITIAL_CLASSIFICATION_CORRECTION', reasonCode: 'UNKNOWN_NEW_PLAYER' },
     { playerId: 'Tom', effectiveDate: '2026-07-01', fromTier: 'C', toTier: 'B', eventType: 'PROMOTION' },
     { playerId: 'Fatch', effectiveDate: '2026-08-01', fromTier: 'C', toTier: 'B', eventType: 'PROMOTION' },
   ];
+
+  // Every tier change the record actually contains. An event that names a new
+  // tier different from the previous one IS a tier change, whatever it is
+  // called -- a promotion, a demotion, or the correction of an initial
+  // estimate.
+  function changesFromJourney(journey) {
+    return (journey || [])
+      .filter((e) => TIER_CHANGE_EVENTS.includes(e.eventType)
+        && e.newTier && e.previousTier && e.newTier !== e.previousTier)
+      .map((e) => ({
+        playerId: e.playerId,
+        effectiveDate: e.effectiveDate,
+        fromTier: e.previousTier,
+        toTier: e.newTier,
+        eventType: e.eventType,
+        reasonCode: e.reasonCode || null,
+      }));
+  }
 
   function sortChanges(changes) {
     return [...changes].sort((a, b) =>
@@ -95,5 +117,5 @@
     };
   }
 
-  return { create, deriveInitialTiers, sortChanges, AUTHORITATIVE_TIER_CHANGES, TIER_CHANGE_EVENTS };
+  return { create, deriveInitialTiers, sortChanges, changesFromJourney, AUTHORITATIVE_TIER_CHANGES, TIER_CHANGE_EVENTS };
 });

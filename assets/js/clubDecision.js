@@ -89,7 +89,14 @@
     }
     if (RATING_ONLY.includes(d.eventType)) {
       if (movesTier) problems.push('A rating reassessment does not change tier. Record a separate promotion or demotion.');
-      if (!movesRating && !movesReliability) problems.push('A rating reassessment must change the Power Rating, the Reliability, or both.');
+      // `allowNoChange` is how the board records "we looked and chose to leave
+      // it". That is a decision, and it has to leave a trace: without one it is
+      // indistinguishable from a review nobody finished, which is exactly the
+      // gap that produces a request to backdate months later.
+      if (!movesRating && !movesReliability && !d.allowNoChange) {
+        problems.push('A rating reassessment must change the Power Rating, the Reliability, or both — '
+          + 'unless it is an explicit decision to keep the current rating.');
+      }
     }
     if (movesRating && !(typeof d.newPowerRating === 'number' && isFinite(d.newPowerRating))) {
       problems.push('The new Power Rating is not a number.');

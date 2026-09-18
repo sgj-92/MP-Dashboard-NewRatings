@@ -897,8 +897,15 @@ async function loadV3State(){
         // What the engine did in each match, so no screen has to re-derive an
         // expectation, a pre-match rating or a rating change from today's state.
         V3_MATCH_FACTS = MatchFacts.index(V3_JOURNEY);
+        // Tier changes come from the RECORD, not from the seed's frozen list.
+        // With the list, the first real promotion the club records makes the
+        // current tier disagree with the history and the consistency guard
+        // refuses to load the app at all.
         MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, {
-          tierAsOf: TierHistory.create({ currentTiers: V3Bridge.tierMap(V3_STATE) }).tierAsOf,
+          tierAsOf: TierHistory.create({
+            currentTiers: V3Bridge.tierMap(V3_STATE),
+            changes: TierHistory.changesFromJourney(V3_JOURNEY),
+          }).tierAsOf,
         });
       }
       catch(e){
@@ -3770,8 +3777,42 @@ function buildDiagnosticsSectionHtml(){
 // attributed, and undone by recording a reversal rather than by deleting
 // anything.
 
-let reviewDirection = 'promotion';
 let reviewSubject = null;      // player currently being reviewed
+let reviewDraft = null;        // the half-made decision on screen
+let reviewSnapshotCache = null; // one pre-review snapshot per effective date
+
+function Engine_reliability(evidence){ return RatingEngine.reliability(evidence); }
+
+// One snapshot for the whole review date. Every recommendation offered today
+// comes from it, so accepting one player's decision cannot move the boundary
+// used to recommend the next. Without this, reviewing Jams before Aubyn does
+// not merely shift Aubyn's number -- it can empty Tier C below the minimum pool
+// size and remove his recommendation altogether.
+function reviewSnapshot(){
+  const date = reviewToday();
+  if(!reviewSnapshotCache || reviewSnapshotCache.date !== date){
+    reviewSnapshotCache = { date, state: MonthlyReview.preReviewSnapshot(V3_JOURNEY, date) };
+  }
+  return reviewSnapshotCache.state;
+}
+
+// The draft in the shape MonthlyReview validates, with whatever the board has
+// typed into the open fields folded in.
+function reviewDraftForCheck(){
+  if(!reviewDraft) return { playerId: reviewSubject, effectiveDate: reviewToday() };
+  const read = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const num = (v) => (v === '' || !isFinite(Number(v))) ? null : Number(v);
+  const pct = (v) => { const n = num(v); return n === null ? null : n / 100; };
+  return {
+    ...reviewDraft,
+    overrideRating: reviewDraft.ratingDecision === 'CLUB_OVERRIDE' ? num(read('reviewOverrideRating')) : reviewDraft.overrideRating,
+    overrideReliability: reviewDraft.ratingDecision === 'CLUB_OVERRIDE' ? pct(read('reviewOverrideRel')) : reviewDraft.overrideReliability,
+    correctedRating: reviewDraft.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION' ? num(read('reviewCorrectedRating')) : reviewDraft.correctedRating,
+    correctedReliability: reviewDraft.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION' ? pct(read('reviewCorrectedRel')) : reviewDraft.correctedReliability,
+    notes: read('reviewNote') || reviewDraft.notes || null,
+    createdBy: reviewActor(),
+  };
+}
 let reviewPending = null;      // a prepared decision awaiting explicit confirmation
 let reviewMessage = '';
 
@@ -3841,69 +3882,96 @@ function buildReviewSectionHtml(){
   return html;
 }
 
+// A tier change and its rating consequence are ONE board decision, so the panel
+// will not let the second half be skipped. Choosing a tier move arms the review;
+// it is only recordable once the board has also said what happens to the
+// rating. "Keep the current rating" is one of those answers and is recorded --
+// a decision that leaves no trace is indistinguishable from the omission this
+// rule exists to prevent.
 function buildReviewPanelHtml(name){
-  const s = V3_STATE.players[name];
-  if(!s) return `<div class="section-sub" style="color:var(--red);">${name} has no v3 record.</div>`;
-  const rel = Math.round(s.reliability*100);
+  const snap = reviewSnapshot();
+  const s = snap[name];
+  const live = V3_STATE.players[name];
+  if(!live) return `<div class="section-sub" style="color:var(--red);">${name} has no v3 record.</div>`;
+  if(!s) return `<div class="section-sub" style="color:var(--red);">${name} has no recorded state before ${reviewToday()}, so there is nothing to review against.</div>`;
+
   const last = ClubDecision.lastEventDate(V3_JOURNEY, name);
+  const d = reviewDraft && reviewDraft.playerId === name ? reviewDraft : null;
+  const up = TIER_ABOVE[s.tier], down = TIER_BELOW[s.tier];
 
   let html = `<div class="callout-card" style="padding:12px; margin-top:10px;">
     <div style="font-weight:700; color:var(--text); font-size:14px;">${name}</div>
-    <div class="section-sub" style="margin-top:2px;">Tier ${s.tier} · Power Rating <b style="color:var(--text);">${Math.round(s.rating*10)/10}</b> · Reliability ${rel}% (${s.reliabilityBand}) · ${s.lifetimeMatches} rated matches · ${s.classificationStatus}</div>
-    <div class="section-sub" style="font-size:10.5px;">Last recorded event: ${last || 'none'}. A decision cannot be dated before that.</div>`;
+    <div class="section-sub" style="margin-top:2px;">Tier ${s.tier} · Power Rating <b style="color:var(--text);">${(Math.round(s.rating*10)/10).toFixed(1)}</b> · Reliability ${Math.round(Engine_reliability(s.effectiveEvidence)*100)}% · ${s.lifetimeMatches} rated matches · ${s.classificationStatus || 'status unknown'}</div>
+    <div class="section-sub" style="font-size:10.5px;">Figures are as they stood before ${reviewToday()} (last event ${s.asOfDate}). Everyone reviewed today is measured against this same snapshot, so the order the board works through them cannot change what anybody is offered.</div>`;
 
-  // ---- Rating reassessment ----
-  const up = TIER_ABOVE[s.tier], down = TIER_BELOW[s.tier];
-  const dir = (reviewDirection === 'demotion' && down) ? 'demotion' : 'promotion';
-  const fromTier = s.tier;
-  const toTier = dir === 'promotion' ? up : down;
-  html += `<div class="section-heading" style="margin-top:12px;">Rating reassessment</div>`;
+  // ---- Step 1: the tier decision ----
+  html += `<div class="section-heading" style="margin-top:12px;">1 · Tier</div>`;
   html += `<div class="difficulty-row" style="margin-top:4px;">
-    <button class="preset-btn review-dir ${dir==='promotion'?'active':''}" data-dir="promotion" style="flex:1;" ${up?'':'disabled'}>Toward Tier ${up || '—'}</button>
-    <button class="preset-btn review-dir ${dir==='demotion'?'active':''}" data-dir="demotion" style="flex:1;" ${down?'':'disabled'}>Toward Tier ${down || '—'}</button>
+    ${up ? `<button class="preset-btn review-tier ${d && d.tierEvent==='PROMOTION' ? 'active':''}" data-player="${name}" data-event="PROMOTION" data-tier="${up}" style="flex:1;">Promote to ${up}</button>` : ''}
+    ${down ? `<button class="preset-btn review-tier ${d && d.tierEvent==='DEMOTION' ? 'active':''}" data-player="${name}" data-event="DEMOTION" data-tier="${down}" style="flex:1;">Demote to ${down}</button>` : ''}
+    <button class="preset-btn review-tier ${d && d.tierEvent==='TIER_RETAINED' ? 'active':''}" data-player="${name}" data-event="TIER_RETAINED" data-tier="${s.tier}" style="flex:1;">Retain ${s.tier}</button>
   </div>`;
 
-  if(!toTier){
-    html += `<div class="section-sub">No tier in that direction, so no boundary to measure against.</div>`;
+  if(!d){
+    html += `<div class="section-sub" style="margin-top:8px;">Choose a tier decision to begin. A tier change moves no points on its own — the rating decision below is a separate, required step.</div>`;
+    html += `<div style="margin-top:10px;"><button class="preset-btn" id="reviewCloseBtn" style="width:100%;">Close review</button></div></div>`;
+    return html;
+  }
+
+  // ---- Step 2: the rating decision, which cannot be skipped ----
+  const rec = d.recommendation;
+  html += `<div class="section-heading" style="margin-top:12px;">2 · Rating — required</div>`;
+  html += `<div class="section-sub">This review cannot be recorded until the board says what happens to ${name}'s Power Rating. Leaving it unanswered is what creates a request to backdate months later.</div>`;
+
+  if(d.tierEvent === 'TIER_RETAINED'){
+    html += `<div class="section-sub" style="font-size:10.5px;">Retaining a tier crosses no boundary, so there is no statistical recommendation to offer.</div>`;
+  } else if(rec && rec.recommended){
+    html += `<div class="section-sub">Recommendation: <b style="color:var(--text);">${(Math.round(rec.recommendationRating*10)/10).toFixed(1)}</b> (${rec.ratingDelta>=0?'+':''}${Math.round(rec.ratingDelta*10)/10}). ${rec.reason} Boundary T2 ${rec.t2.toFixed(1)}, from ${rec.establishedFrom} established in ${rec.fromTier} and ${rec.establishedTo} in ${rec.toTier}.</div>`;
+    html += `<div class="section-sub" style="font-size:10.5px;">${rec.caveats.join(' ')}</div>`;
   } else {
-    const rec = reviewRecommendation(name, fromTier, toTier, dir === 'promotion' ? 'PROMOTION' : 'DEMOTION');
-    if(rec.error){
-      html += `<div class="section-sub" style="color:var(--red);">Recommendation unavailable — ${rec.error}</div>`;
-    } else if(!rec.recommended){
-      html += `<div class="section-sub">${rec.reason}</div>`;
-    } else {
-      html += `<div class="section-sub">${rec.reason} Boundary T2 = ${rec.t2.toFixed(1)} (from ${rec.establishedFrom} established in ${fromTier}, ${rec.establishedTo} in ${toTier}). Recommended Power Rating <b style="color:var(--text);">${Math.round(rec.recommendationRating*10)/10}</b> (${rec.ratingDelta >= 0 ? '+' : ''}${Math.round(rec.ratingDelta*10)/10}).</div>`;
-      html += `<div class="section-sub" style="font-size:10.5px;">${rec.caveats.join(' ')}</div>`;
-      if(Math.abs(rec.ratingDelta) > 1e-9){
-        html += `<div class="difficulty-row" style="margin-top:6px;">
-          <button class="preset-btn review-accept" data-player="${name}" data-rating="${rec.recommendationRating}" data-dir="${dir}" style="flex:1;">Accept ${Math.round(rec.recommendationRating*10)/10}</button>
-        </div>`;
-      }
-    }
+    html += `<div class="section-sub">No statistical recommendation: ${rec ? rec.reason : 'not calculated.'}</div>`;
+  }
+
+  const opt = (key, label, enabled, why) => `<div class="alpha-row">
+    <div class="alpha-name" style="font-size:12.5px;">${label}${why ? `<div style="font-size:10px; color:var(--text-dim);">${why}</div>` : ''}</div>
+    <button class="preset-btn review-decision ${d.ratingDecision===key?'active':''}" data-decision="${key}" style="width:104px;" ${enabled?'':'disabled'}>${d.ratingDecision===key ? 'Chosen' : 'Choose'}</button>
+  </div>`;
+
+  const canAccept = !!(rec && rec.recommended);
+  const provisional = s.classificationStatus === 'PROVISIONAL';
+  html += opt('ACCEPT_RECOMMENDATION', 'Accept the statistical recommendation', canAccept,
+    canAccept ? `Moves to ${(Math.round(rec.recommendationRating*10)/10).toFixed(1)}` : 'No recommendation is available');
+  html += opt('CLUB_OVERRIDE', 'Club override', true, 'The board sets the rating and/or reliability itself');
+  html += opt('KEEP_CURRENT_RATING', 'Keep the current rating', true, `Recorded as a decision, not an omission — stays at ${(Math.round(s.rating*10)/10).toFixed(1)}`);
+  html += opt('CORRECT_INITIAL_CLASSIFICATION', 'Correct the initial classification', provisional,
+    provisional ? 'The initial estimate was wrong — not a reward for development'
+      : `${name} is already established, so there is no initial estimate left to correct`);
+
+  if(d.ratingDecision === 'CLUB_OVERRIDE'){
     html += `<div class="fg-controls" style="margin-top:6px;">
-      <div class="fg-row"><label class="fg-label">Override Power Rating</label>
-        <input id="reviewOverrideRating" class="fg-select" placeholder="leave blank to keep ${Math.round(s.rating*10)/10}" />
-      </div>
-      <div class="fg-row"><label class="fg-label">Override Reliability %</label>
-        <input id="reviewOverrideRel" class="fg-select" placeholder="leave blank to keep ${rel}%" />
-      </div>
-      <div class="fg-row"><label class="fg-label">Note (recorded)</label>
-        <input id="reviewNote" class="fg-select" placeholder="Why the club decided this" />
-      </div>
-      <div class="fg-row"><button class="preset-btn" id="reviewOverrideBtn" data-player="${name}" data-dir="${dir}">Record override</button></div>
+      <div class="fg-row"><label class="fg-label">Power Rating</label><input id="reviewOverrideRating" class="fg-select" value="${d.overrideRating ?? ''}" placeholder="leave blank to keep ${(Math.round(s.rating*10)/10).toFixed(1)}" /></div>
+      <div class="fg-row"><label class="fg-label">Reliability %</label><input id="reviewOverrideRel" class="fg-select" value="${d.overrideReliability!=null ? Math.round(d.overrideReliability*100) : ''}" placeholder="leave blank to keep ${Math.round(Engine_reliability(s.effectiveEvidence)*100)}%" /></div>
+    </div>`;
+  }
+  if(d.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION'){
+    html += `<div class="fg-controls" style="margin-top:6px;">
+      <div class="fg-row"><label class="fg-label">Corrected Power Rating</label><input id="reviewCorrectedRating" class="fg-select" value="${d.correctedRating ?? ''}" placeholder="the rating the club believes was right" /></div>
+      <div class="fg-row"><label class="fg-label">Reliability % (optional)</label><input id="reviewCorrectedRel" class="fg-select" value="${d.correctedReliability!=null ? Math.round(d.correctedReliability*100) : ''}" placeholder="leave blank to keep the evidence already gathered" /></div>
     </div>`;
   }
 
-  // ---- Tier move, deliberately separate ----
-  html += `<div class="section-heading" style="margin-top:12px;">Tier move</div>`;
-  html += `<div class="section-sub">Recorded on its own, and moves no points and no reliability.</div>`;
-  html += `<div class="difficulty-row" style="margin-top:4px;">
-    ${up ? `<button class="preset-btn review-tier" data-player="${name}" data-tier="${up}" data-type="PROMOTION" style="flex:1;">Promote to ${up}</button>` : ''}
-    ${down ? `<button class="preset-btn review-tier" data-player="${name}" data-tier="${down}" data-type="DEMOTION" style="flex:1;">Demote to ${down}</button>` : ''}
-    <button class="preset-btn review-tier" data-player="${name}" data-tier="${s.tier}" data-type="TIER_RETAINED" style="flex:1;">Retain ${s.tier}</button>
+  html += `<div class="fg-controls" style="margin-top:6px;">
+    <div class="fg-row"><label class="fg-label">Note (recorded)</label><input id="reviewNote" class="fg-select" value="${d.notes || ''}" placeholder="Why the club decided this" /></div>
   </div>`;
 
-  html += `<div style="margin-top:10px;"><button class="preset-btn" id="reviewCloseBtn" style="width:100%;">Close review</button></div>`;
+  const missing = MonthlyReview.incompleteReasons(reviewDraftForCheck(), snap);
+  if(missing.length){
+    html += `<div class="section-sub" style="color:var(--gold-bright); margin-top:6px;">${missing.map(m=>`• ${m}`).join('<br/>')}</div>`;
+  }
+  html += `<div class="difficulty-row" style="margin-top:8px;">
+    <button class="preset-btn" id="reviewStageBtn" style="flex:1;" ${missing.length?'disabled':''}>Review what will be recorded</button>
+    <button class="preset-btn" id="reviewCloseBtn" style="flex:1;">Close</button>
+  </div>`;
   html += `</div>`;
 
   if(reviewPending) html += buildReviewConfirmHtml();
@@ -3913,11 +3981,12 @@ function buildReviewPanelHtml(name){
 // Nothing is written until this is confirmed, and it states the exact document
 // id and the exact before/after rather than a reassuring summary.
 function buildReviewConfirmHtml(){
-  const p = reviewPending;
+  const list = reviewPending;
   return `<div class="callout-card" style="padding:12px; margin-top:10px; border-color:var(--gold-dim);">
-    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this writes to the permanent record</div>
-    <div class="section-sub" style="margin-top:4px; color:var(--text);">${p.summary}</div>
-    <div class="section-sub" style="font-size:10.5px;">Event: ${p.event.eventType}, effective ${p.event.effectiveDate}, recorded as <code>${p.journeyDoc.id}</code>. Attributed to ${p.journeyDoc.createdBy}. It cannot be deleted; to undo it you record a reversal.</div>
+    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this writes ${list.length === 1 ? 'one event' : `${list.length} events`} to the permanent record</div>
+    ${list.map((p,i)=>`<div class="section-sub" style="margin-top:4px; color:var(--text);">${i+1}. ${p.summary}</div>
+      <div class="section-sub" style="font-size:10.5px;">${p.event.eventType}, effective ${p.event.effectiveDate}, as <code>${p.journeyDoc.id}</code>.</div>`).join('')}
+    <div class="section-sub" style="font-size:10.5px;">Attributed to ${list[0].journeyDoc.createdBy}. Nothing here can be deleted; to undo it you record a reversal.</div>
     <div class="difficulty-row" style="margin-top:8px;">
       <button class="preset-btn" id="reviewConfirmBtn" style="flex:1;">Record it</button>
       <button class="preset-btn" id="reviewCancelBtn" style="flex:1;">Cancel</button>
@@ -3929,62 +3998,60 @@ function buildReviewConfirmHtml(){
 // without a second, explicit confirmation showing the exact document.
 function wireReviewSection(){
   document.querySelectorAll('.review-pick').forEach(el=>{
-    el.onclick = ()=>{ reviewSubject = el.dataset.player; reviewPending = null; reviewMessage = ''; renderManage(); };
+    el.onclick = ()=>{ reviewSubject = el.dataset.player; reviewDraft = null; reviewPending = null; reviewMessage = ''; renderManage(); };
   });
   const anyBtn = document.getElementById('reviewAnyBtn');
   if(anyBtn) anyBtn.onclick = ()=>{
     const raw = (document.getElementById('reviewAnyName').value || '').trim();
     const match = Object.keys(V3_STATE.players || {}).find(n => n.toLowerCase() === raw.toLowerCase());
     if(!match){ reviewMessage = raw ? `No v3 record for "${raw}".` : 'Enter a player name.'; }
-    else { reviewSubject = match; reviewPending = null; reviewMessage = ''; }
+    else { reviewSubject = match; reviewDraft = null; reviewPending = null; reviewMessage = ''; }
     renderManage();
   };
   const closeBtn = document.getElementById('reviewCloseBtn');
-  if(closeBtn) closeBtn.onclick = ()=>{ reviewSubject = null; reviewPending = null; reviewMessage = ''; renderManage(); };
+  if(closeBtn) closeBtn.onclick = ()=>{ reviewSubject = null; reviewDraft = null; reviewPending = null; reviewMessage = ''; renderManage(); };
 
-  document.querySelectorAll('.review-dir').forEach(el=>{
-    el.onclick = ()=>{ reviewDirection = el.dataset.dir; reviewPending = null; renderManage(); };
-  });
-
-  document.querySelectorAll('.review-accept').forEach(el=>{
-    el.onclick = ()=> stageReviewDecision(buildReassessmentDecision(el.dataset.player, el.dataset.dir, {
-      rating: Number(el.dataset.rating), decisionType: 'ACCEPTED_RECOMMENDATION',
-      notes: (document.getElementById('reviewNote') || {}).value || null,
-    }));
-  });
-
-  const ovBtn = document.getElementById('reviewOverrideBtn');
-  if(ovBtn) ovBtn.onclick = ()=>{
-    const name = ovBtn.dataset.player;
-    const ratingRaw = (document.getElementById('reviewOverrideRating').value || '').trim();
-    const relRaw = (document.getElementById('reviewOverrideRel').value || '').trim();
-    if(!ratingRaw && !relRaw){
-      reviewMessage = 'An override needs a new Power Rating, a new Reliability, or both.';
-      renderManage(); return;
-    }
-    if(ratingRaw && !isFinite(Number(ratingRaw))){ reviewMessage = `"${ratingRaw}" is not a number.`; renderManage(); return; }
-    if(relRaw && !isFinite(Number(relRaw))){ reviewMessage = `"${relRaw}" is not a number.`; renderManage(); return; }
-    stageReviewDecision(buildReassessmentDecision(name, ovBtn.dataset.dir, {
-      rating: ratingRaw ? Number(ratingRaw) : null,
-      // Entered as a percentage because that is how the app shows it everywhere.
-      reliability: relRaw ? Number(relRaw) / 100 : null,
-      decisionType: 'OVERRIDE',
-      notes: (document.getElementById('reviewNote') || {}).value || null,
-    }));
-  };
-
+  // Step 1. Arms the review and computes the recommendation from the shared
+  // snapshot -- never from live state, which already contains any decision
+  // recorded earlier today.
   document.querySelectorAll('.review-tier').forEach(el=>{
-    el.onclick = ()=> stageReviewDecision({
-      playerId: el.dataset.player,
-      eventType: el.dataset.type,
-      effectiveDate: reviewToday(),
-      newTier: el.dataset.tier,
-      decisionType: 'CLUB_DECISION',
-      reasonCode: 'MONTHLY_REVIEW',
-      notes: (document.getElementById('reviewNote') || {}).value || null,
-      createdBy: reviewActor(),
-    });
+    el.onclick = ()=>{
+      const name = el.dataset.player;
+      const snap = reviewSnapshot();
+      const s = snap[name];
+      const toTier = el.dataset.tier;
+      const eventType = el.dataset.event;
+      reviewDraft = {
+        playerId: name,
+        effectiveDate: reviewToday(),
+        tierEvent: eventType,
+        newTier: toTier,
+        ratingDecision: null,
+        overrideRating: null, overrideReliability: null,
+        correctedRating: null, correctedReliability: null,
+        notes: null,
+        recommendation: (eventType === 'TIER_RETAINED' || !s) ? null
+          : MonthlyReview.recommendationFor(snap, {
+              playerId: name, fromTier: s.tier, toTier, eventType,
+            }),
+      };
+      reviewPending = null; reviewMessage = '';
+      renderManage();
+    };
   });
+
+  // Step 2. Choosing a rating answer never writes; it only completes the draft.
+  document.querySelectorAll('.review-decision').forEach(el=>{
+    el.onclick = ()=>{
+      if(!reviewDraft) return;
+      reviewDraft = { ...reviewDraftForCheck(), ratingDecision: el.dataset.decision };
+      reviewPending = null; reviewMessage = '';
+      renderManage();
+    };
+  });
+
+  const stageBtn = document.getElementById('reviewStageBtn');
+  if(stageBtn) stageBtn.onclick = ()=>{ reviewDraft = reviewDraftForCheck(); stageReview(); };
 
   const diagBtn = document.getElementById('runDiagnosticsBtn');
   if(diagBtn) diagBtn.onclick = runBetaDiagnostics;
@@ -4001,36 +4068,31 @@ function reviewActor(){
   return (currentUserName && currentUserName.trim()) || 'Admin (unnamed)';
 }
 
-function buildReassessmentDecision(name, dir, { rating, reliability, decisionType, notes }){
-  const s = V3_STATE.players[name];
-  const toTier = dir === 'promotion' ? TIER_ABOVE[s.tier] : TIER_BELOW[s.tier];
-  const rec = toTier ? reviewRecommendation(name, s.tier, toTier, dir === 'promotion' ? 'PROMOTION' : 'DEMOTION') : null;
-  return {
-    playerId: name,
-    eventType: RatingEngine.EVENT.CLUB_RATING_REASSESSMENT,
-    effectiveDate: reviewToday(),
-    newPowerRating: (rating === null || rating === undefined) ? null : rating,
-    newReliability: (reliability === null || reliability === undefined) ? null : reliability,
-    recommendation: (rec && !rec.error && rec.recommended) ? rec : null,
-    decisionType,
-    reasonCode: 'MONTHLY_REVIEW',
-    notes: notes || null,
-    createdBy: reviewActor(),
-  };
-}
 
 // Builds a decision, runs it past ClubDecision, and holds it for confirmation.
 // A refusal is shown verbatim: these are the reasons the record would stop
 // being reconstructible, and softening them would defeat the point.
-function stageReviewDecision(decision){
+// Prepares BOTH halves of the review against the live record, applying the
+// first to a working copy so the second is prepared against the state it will
+// actually meet. Nothing is written.
+function stageReview(){
+  const snap = reviewSnapshot();
+  const recordedAt = new Date().toISOString();
   try {
-    reviewPending = ClubDecision.prepare({
-      state: V3_STATE.players,
-      journey: V3_JOURNEY,
-      decision,
-      today: reviewToday(),
-      recordedAt: new Date().toISOString(),
+    const decisions = MonthlyReview.decisionsFor(reviewDraftForCheck(), snap);
+    const working = {};
+    Object.entries(V3_STATE.players).forEach(([k,v])=>{ working[k] = {...v}; });
+    const journey = V3_JOURNEY.slice();
+    const prepared = [];
+    decisions.forEach(decision=>{
+      const p = ClubDecision.prepare({ state: working, journey, decision, today: reviewToday(), recordedAt });
+      prepared.push(p);
+      // Apply to the working copy so the next event is prepared against the
+      // state it will meet, and cannot be refused as a same-day duplicate.
+      RatingEngine.applyStateEvent(working, p.event);
+      journey.push(p.event);
     });
+    reviewPending = prepared;
     reviewMessage = '';
   } catch(e){
     reviewPending = null;
@@ -4040,19 +4102,23 @@ function stageReviewDecision(decision){
 }
 
 async function commitReviewDecision(){
-  const p = reviewPending;
-  if(!p) return;
+  const list = reviewPending;
+  if(!list || !list.length) return;
   if(!db){ reviewMessage = 'No database connection — nothing was written.'; renderManage(); return; }
   const btn = document.getElementById('reviewConfirmBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Recording…'; }
   try {
-    await ClubDecision.commit(RatingStore.firestoreCompatBackend(db), p);
+    const backend = RatingStore.firestoreCompatBackend(db);
+    // In order: the tier move, then the rating decision that completes it.
+    for(const p of list){ await ClubDecision.commit(backend, p); }
     reviewPending = null;
+    reviewDraft = null;
+    reviewSnapshotCache = null;
     // Re-read rather than patch local state: the screen must show what is
     // actually stored, not what it believes it just stored.
     await loadV3State();
     recomputeAll();
-    reviewMessage = `Recorded. ${p.summary}`;
+    reviewMessage = 'Recorded. ' + list.map(p=>p.summary).join(' ');
   } catch(e){
     reviewMessage = e.message;
   }

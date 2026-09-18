@@ -25,11 +25,12 @@
 (function (root, factory) {
   const api = factory(
     typeof require === 'function' ? require('./ratingEngine.js') : root.RatingEngine,
-    typeof require === 'function' ? require('./ratingStore.js') : root.RatingStore
+    typeof require === 'function' ? require('./ratingStore.js') : root.RatingStore,
+    typeof require === 'function' ? require('./monthlyReview.js') : root.MonthlyReview
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.ReplayForward = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (Engine, Store) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Engine, Store, Review) {
   'use strict';
 
   const INIT = Engine.EVENT.PLAYER_INITIALISED;
@@ -62,9 +63,18 @@
         reasonCode: e.reasonCode || undefined,
       }));
 
+    // Same date, same player: a tier move is recorded before the rating
+    // decision that accompanies it. Sorting by event type alphabetically put
+    // CLUB_RATING_REASSESSMENT before PROMOTION -- backwards from how a board
+    // makes the decision, and enough to stop the record reproducing itself.
     const events = (journey || [])
       .filter((e) => e.eventType !== INIT && e.eventType !== MATCH)
-      .sort((a, b) => byDateThen(a, b, 'eventType'))
+      .sort((a, b) => {
+        if (a.effectiveDate !== b.effectiveDate) return a.effectiveDate < b.effectiveDate ? -1 : 1;
+        const ra = Review.eventRank(a.eventType), rb = Review.eventRank(b.eventType);
+        if (ra !== rb) return ra - rb;
+        return String(a.playerId || '').localeCompare(String(b.playerId || ''));
+      })
       .map((e) => {
         const input = {
           playerId: e.playerId,
