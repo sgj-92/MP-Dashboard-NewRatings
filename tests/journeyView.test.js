@@ -179,3 +179,46 @@ test('the UI no longer carries a reconstruction or its disclaimer', () => {
     'the premium profile must read the persisted journey');
   assert.ok(html.includes('assets/js/journeyView.js'), 'journeyView.js must be loaded by the page');
 });
+
+// Found by looking at a screenshot: the correction card said "Power Rating
+// unchanged at 1400" about an event that had just moved the rating by +263.2,
+// and the legend under a visible leap in the chart read "no rating movement".
+// Both dated from when a correction could only change a tier.
+test('a correction is drawn and described by what it did, not by what it is called', () => {
+  const r = replay();
+  const base = r.journey.filter((e) => e.playerId === 'Shaun');
+  const init = base.find((e) => e.eventType === Engine.EVENT.PLAYER_INITIALISED);
+
+  const tierOnly = {
+    playerId: 'Shaun', eventType: Engine.EVENT.INITIAL_CLASSIFICATION_CORRECTION,
+    effectiveDate: '2026-06-08', previousTier: 'C', newTier: 'B',
+    previousPowerRating: init.newPowerRating, newPowerRating: init.newPowerRating,
+    previousReliability: 0, newReliability: 0,
+  };
+  const movedRating = { ...tierOnly, newPowerRating: init.newPowerRating + 263.2 };
+
+  const quiet = JV.forPlayer([init, tierOnly], 'Shaun');
+  const loud = JV.forPlayer([init, movedRating], 'Shaun');
+  assert.strictEqual(quiet.entries[1].delta, 0);
+  assert.strictEqual(loud.entries[1].delta, 263.2);
+
+  // Annotated only when it moved nothing; drawn as a jump when it moved.
+  const quietMark = JV.chartSeries(quiet)[1];
+  const loudMark = JV.chartSeries(loud)[1];
+  assert.strictEqual(quietMark.isAnnotation, true);
+  assert.strictEqual(quietMark.isJump, false);
+  assert.strictEqual(loudMark.isAnnotation, false, 'a correction that moved the rating is not an annotation');
+  assert.strictEqual(loudMark.isJump, true);
+
+  // The tier-neutrality invariant still holds where it should: a PROMOTION is
+  // never points, whatever a correction may do.
+  assert.ok(JV.tierEventsAreRatingNeutral(loud));
+  const promoted = JV.forPlayer([init, {
+    playerId: 'Shaun', eventType: Engine.EVENT.PROMOTION, effectiveDate: '2026-06-08',
+    previousTier: 'C', newTier: 'B',
+    previousPowerRating: init.newPowerRating, newPowerRating: init.newPowerRating + 50,
+    previousReliability: 0, newReliability: 0,
+  }], 'Shaun');
+  assert.strictEqual(JV.tierEventsAreRatingNeutral(promoted), false,
+    'a promotion carrying points must still be caught');
+});

@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `1c120c7` |
-| Tests | **233 / 233 passing** (14 of them drive a real browser) |
+| Last verified implementation commit | `__COMMIT__` |
+| Tests | **234 / 234 passing** (14 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -233,52 +233,25 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code.** Historical Club Adjustment is built (`9cc3c13`)
-and Shaun has now supplied the final board decisions. The three historical
-adjustments are **unblocked**.
+**Owner / baton: CGPT and Shaun — product acceptance.**
 
-Apply them chronologically through the Historical Club Adjustment/replay-forward
-path:
+Every implementation item in Section 8 is closed. The three authorised
+historical club decisions are applied and verified against the live record, and
+the review screenshots CGPT asked for are in `docs/screenshots/` with a
+captioned `README.md`.
 
-1. **Shaun — 1 Jul 2026**
-   - decision: `CORRECT_INITIAL_CLASSIFICATION` / club override
-   - C→B
-   - rating after decision: **1400**
-   - reliability after decision: **10%**
-   - preserve June; do not reseed his earlier matches.
+What is wanted back:
 
-2. **Tom — 1 Jul 2026**
-   - genuine C→B promotion + club override
-   - rating after decision: **Jords' Power Rating immediately before the 1 Jul
-     review**, resolved from the historical pre-review state
-   - reliability after decision: **10%**
-   - this is a board anchor, not an accepted statistical recommendation.
+1. Look at the ten captures and say whether they show the right things. A
+   different set, different players or a desktop viewport is one command away.
+2. Confirm the beta is accepted, or name what is still wrong. Section 5 holds no
+   question currently blocking CCode.
 
-3. **Fatch — 1 Aug 2026**
-   - genuine C→B promotion + club override
-   - rating after decision: **Tom's Power Rating immediately before the 1 Aug
-     review**, after Tom's corrected 1 Jul state and all July matches have been
-     replayed
-   - reliability after decision: **10%**
-   - this is a board anchor, not an accepted statistical recommendation.
-
-Important sequencing: Shaun and Tom share 1 Jul. Resolve both from the same
-1 Jul pre-review snapshot where appropriate; Tom's anchor references Jords, so
-it must not be affected by processing Shaun first. Then replay July fully before
-resolving Fatch's 1 Aug anchor to Tom's actual 1 Aug pre-review rating.
-
-After writing the three decisions:
-- run replay-forward/no-op safety checks and full diagnostics;
-- run the full automated and browser test suites;
-- regenerate `COMPARISON_REPORT.md` and update `HISTORICAL_REVIEW_DRYRUN.md` or
-  supersede it with the actual applied results;
-- record exact resolved anchor ratings and resulting current ratings in this
-  Ledger;
-- verify monthly Rating Movement distinguishes club-decision movement from
-  match-earned movement;
-- then continue the remaining beta-finalisation tasks in Section 8.
+CCode has no queued work. `Ledger CCode` with nothing approved will say so
+rather than invent a task.
 
 Do not change Sequential-v1 match mathematics.
+
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -442,6 +415,75 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 18 Sep 2026 (review screenshots; a display defect found by looking)
+
+**NEXT 7 is done. Section 8 is now empty — the baton is with CGPT and Shaun for
+product acceptance.**
+
+`scripts/screenshots.js` captures ten review aids into `docs/screenshots/`, with
+a captioned `README.md`. Regenerate rather than edit them.
+
+They are taken from the **live beta record**, not the seeded fixture: the three
+board decisions of 18 Sep moved most of the club, so a capture of the seed would
+show ratings that no longer exist. The script reads the three collections over
+the REST backend, serves the app locally and stubs Firestore with a read-only
+copy of those documents. Nothing is written back, and the two staged writes in
+the set (the armed removal in shot 09, the armed review in shot 06) are planned
+and displayed but never confirmed.
+
+**A real defect, found only because the captures were read rather than assumed
+correct.** The Rating Journey drew Shaun's 1 Jul initial-classification
+correction as an annotation and captioned it "Power Rating unchanged at 1400" —
+under a visible 263-point leap in the chart directly above it. The cause was
+that markers and copy were chosen from the *event type* rather than from what
+the event *did*. A tier move is rating-neutral; a correction is not, because the
+board may be replacing an initial estimate it knows was wrong. Both are now
+decided from `delta`:
+
+- `journeyView.chartSeries` — `isJump` when a club decision moved the rating,
+  `isAnnotation` only when it moved nothing.
+- `tierEventsAreRatingNeutral` — narrowed to tier events. Corrections were
+  wrongly included, which is the invariant that had made the bug look correct.
+- `app.js` — the correction card states the actual before/after and delta, and
+  the chart legend names only the markers actually drawn.
+
+The card now reads: *Power Rating 1137 → 1400 (+263.2 pts), reliability 33% →
+10%. The club judged the original estimate wrong and replaced it. This is a
+decision, not a result on court.*
+
+**Four capture defects were also fixed, each found the same way** — the image
+did not match its caption:
+
+1. Shot 07 showed the Monthly Rating Breakdown modal, not Historical Club
+   Adjustment: the modal is closed by removing its `show` class, and the
+   selector used did not exist.
+2. Shot 09 showed diagnostics, not the Games tab: `goToSection('games')` is a
+   no-op, because Games is a tab inside the Play section rather than a section.
+3. Shot 04 duplicated shot 03 with an empty Recent Results: `openSheet` is
+   wrapped to render the premium profile itself, so calling
+   `renderPremiumProfile` again rebuilt the wrapper after the match cards had
+   been reparented into it.
+4. Shot 01's caption claimed "Tier S appears" when S and C have no qualifiers at
+   the chosen minimum and are correctly not shown.
+
+Three further captions were tightened to state only what is visible in the
+frame. A tenth shot was added for the full-calculation disclosure, which is the
+one place the engine describes its own arithmetic.
+
+| | |
+|---|---|
+| Tests | **234 / 234 passing** (14 in a real browser) |
+| Page errors during capture | 0 |
+| Live record | unchanged — 34 players · 150 matches · 638 journey events |
+| Diagnostics | all nine checks pass, as shown in shot 08 |
+
+**For CGPT and Shaun.** The set is `docs/screenshots/README.md`. If a different
+set, different players or a desktop viewport would review better, say so and it
+is one command to regenerate. The ten are: all-time rankings, a single month,
+Rating Journey, match detail, monthly breakdown, Admin monthly review, Admin
+historical adjustment, Admin diagnostics, historical match correction, and the
+full calculation.
 
 ### CGPT — 18 Sep 2026 (historical override values confirmed)
 Shaun has made the final board decisions, so the historical writes are no longer
@@ -1177,6 +1219,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `__COMMIT__` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
 | `0f7c2ed` | Three authorised historical club decisions applied to the beta; four defects fixed en route |
 | `9cc3c13` | Historical Club Adjustment: Admin tool over replay-forward, superseding audited corrections |
 | `17ed790` | Phase B historical dry run (`HISTORICAL_REVIEW_DRYRUN.md`); no write path |
@@ -1224,7 +1267,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    (`1c120c7`), implemented as a rule about field size rather than about S.
 6. ~~Keep the truthful four per-player rating movements on match cards~~ —
    unchanged, covered by a browser test.
-7. **Screenshots / product acceptance** — the only item left. Taken as review
-   aids for CGPT and Shaun rather than release documentation, per the earlier
-   note. CCode can produce them on the next `Ledger CCode`; say if a different
-   set is wanted.
+7. ~~Screenshots / product acceptance~~ — **captures done**
+   (`docs/screenshots/`, ten shots plus a captioned README, regenerated by
+   `scripts/screenshots.js` from the live record). Reading them found and fixed
+   a real display defect: the Rating Journey drew a correction that moved 263
+   points as "unchanged". **Acceptance itself is now with CGPT and Shaun** —
+   there is no implementation item left in this list. Say if a different set,
+   different players or a desktop viewport would review better.

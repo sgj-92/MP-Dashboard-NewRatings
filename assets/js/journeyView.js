@@ -180,11 +180,14 @@
     };
   }
 
-  // A tier event must never show rating movement. Asserting it here as well as
-  // in the engine means a display bug cannot invent one either.
+  // A TIER MOVE must never show rating movement -- a promotion is not points.
+  // A correction is different: the board may be replacing an initial estimate
+  // it knows was wrong, and that legitimately moves the rating. Asserting the
+  // tier rule here as well as in the engine means a display bug cannot invent
+  // movement on a promotion either.
   function tierEventsAreRatingNeutral(journey) {
     return journey.entries
-      .filter((e) => e.kind === 'tier' || e.kind === 'correction')
+      .filter((e) => e.kind === 'tier')
       .every((e) => e.delta === 0 || e.delta === null);
   }
 
@@ -196,10 +199,12 @@
       rating: e.rating,
       kind: e.kind,
       delta: e.delta,
-      // Reassessments are drawn distinctly; tier changes annotate without
-      // moving the line, because they do not move the rating.
-      isJump: e.kind === 'reassessment',
-      isAnnotation: e.kind === 'tier' || e.kind === 'correction',
+      // Drawn by what the event DID, not by what it is called. A club decision
+      // that moved the rating is a jump; one that moved nothing annotates the
+      // line without implying movement. A correction can be either, which is
+      // why this cannot be decided from the event type alone.
+      isJump: e.kind === 'reassessment' || ((e.kind === 'correction' || e.kind === 'tier') && !!e.delta),
+      isAnnotation: (e.kind === 'tier' || e.kind === 'correction') && !e.delta,
     }));
   }
 

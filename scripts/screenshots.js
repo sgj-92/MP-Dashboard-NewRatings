@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+// Capture the review screenshots CGPT and Shaun asked for.
+//
+//   node scripts/screenshots.js
+//
+// They are review aids, not release documentation, so they are taken from the
+// LIVE beta record rather than the seeded fixture. A screenshot of the seed
+// would show ratings that no longer exist -- the three board decisions of
+// 18 Sep moved most of the club -- and a review aid that shows the wrong
+// numbers is worse than none.
+//
+// Read-only: the page is served locally and its Firestore is a stub holding a
+// copy of the live documents. Nothing is written back.
+
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const Store = require('../assets/js/ratingStore.js');
+const { PROJECT_ID } = require('./seed-beta.js');
+
+const ROOT = path.join(__dirname, '..');
+const OUT = path.join(ROOT, 'docs', 'screenshots');
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+
+function playwright() {
+  for (const id of ['playwright', '/opt/node22/lib/node_modules/playwright']) {
+    try { return require(id); } catch (e) { /* next */ }
+  }
+  return null;
+}
+
+function serve() {
+  const server = http.createServer((req, res) => {
+    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    const file = path.join(ROOT, rel);
+    if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
+    fs.createReadStream(file).pipe(res);
+  });
+  return new Promise((r) => server.listen(0, '127.0.0.1', () => r(server)));
+}
+
+// Each shot says what a reviewer should be looking at, which is the point of a
+// review aid. The captions become docs/screenshots/README.md.
+const SHOTS = [
+  { file: '01-rankings-all-time.png', title: 'Power Rankings — all time',
+    note: 'Kings of Tiers, the podium and the ranking list. A tier is crowned only where someone qualifies at the chosen minimum games, so S and C are absent here rather than shown empty.' },
+  { file: '02-rankings-month.png', title: 'Power Rankings — a single month',
+    note: 'The month in four parts. Club-decision movement is labelled separately from movement earned on court, so Tom\'s and Shaun\'s July reads as a board decision rather than form.' },
+  { file: '03-profile-journey.png', title: 'Rating Journey',
+    note: 'The recorded journey, not a reconstruction: the last point IS the Power Rating. Milestones show the club decision with its own marker.' },
+  { file: '04-match-card.png', title: 'Match detail',
+    note: 'Ratings as they were going in, the performance score against the pre-match expectation, and each player\'s own rating change.' },
+  { file: '05-monthly-breakdown.png', title: 'Monthly Rating breakdown',
+    note: 'Carried-in rating (1137 -- wherever the continuous rating had reached, never a tier baseline) and the month\'s moves as the engine recorded them, including each player\'s own change in a shared match.' },
+  { file: '06-admin-review.png', title: 'Admin — Monthly Review',
+    note: 'A tier change cannot be recorded until the board answers the rating question. Four explicit answers; nothing is written before confirmation.' },
+  { file: '07-admin-historical.png', title: 'Admin — Historical Club Adjustment',
+    note: 'A board decision entered late. The player\'s state is reconstructed as at that date, decisions already recorded on it are listed, and a new one supersedes rather than replaces — nothing earlier is deleted.' },
+  { file: '08-admin-diagnostics.png', title: 'Admin — Beta diagnostics',
+    note: 'Reads the three collections directly and checks the record still hangs together. Also carries the read-strategy measurement.' },
+  { file: '09-games-correction.png', title: 'Games — historical match correction',
+    note: 'Correct or remove a rated game. The blast radius is measured by replaying and shown in full before anything is written.' },
+  { file: '10-full-calculation.png', title: 'The full calculation',
+    note: 'The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.' },
+];
+
+async function main() {
+  const pw = playwright();
+  if (!pw) { console.error('Playwright is not available.'); process.exitCode = 1; return; }
+
+  console.log('Reading the live beta ...');
+  const backend = Store.firestoreRestBackend({ projectId: PROJECT_ID });
+  const [players, matches, journey] = await Promise.all([
+    backend.getAll(Store.COLLECTIONS.players),
+    backend.getAll(Store.COLLECTIONS.matches),
+    backend.getAll(Store.COLLECTIONS.journey),
+  ]);
+  console.log(`  ${players.length} players, ${matches.length} matches, ${journey.length} journey events`);
+
+  const server = await serve();
+  const port = server.address().port;
+  const browser = await pw.chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+
+  await page.addInitScript(({ data }) => {
+    window.firebase = { initializeApp() {}, firestore() { return { collection(n) { return {
+      doc(id) { return { async get() { const v = (data[n] || {})[id]; return { exists: !!v, data: () => v }; },
+        async set() {}, async delete() {} }; },
+      async get() { return { docs: Object.values(data[n] || {}).map((v) => ({ data: () => v })) }; },
+    }; } }; } };
+  }, { data: {
+    players: Object.fromEntries(players.map((d) => [d.id, d])),
+    matches: Object.fromEntries(matches.map((d) => [d.id, d])),
+    ratingJourney: Object.fromEntries(journey.map((d) => [d.id, d])),
+  } });
+
+  await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof V3_STATE !== 'undefined' && (V3_STATE.loaded || V3_STATE.error), null, { timeout: 20000 });
+  await page.waitForTimeout(600);
+  const dismiss = () => page.evaluate(() => { const el = document.getElementById('viewerSelectorSheet'); if (el) el.remove(); });
+  await dismiss();
+
+  fs.mkdirSync(OUT, { recursive: true });
+  const shot = async (file, prepare, scrollTo) => {
+    await page.evaluate(prepare);
+    await page.waitForTimeout(700);
+    await dismiss();
+    if (scrollTo) { await page.evaluate(scrollTo); await page.waitForTimeout(400); }
+    await page.screenshot({ path: path.join(OUT, file) });
+    console.log('  ' + file);
+  };
+
+  console.log('Capturing ...');
+  await shot('01-rankings-all-time.png',
+    () => { selectedMonth = 'all'; activeTier = 'All'; minGames = 10; activeTab = 'power'; activeSortP = 'rating'; goToSection('rankings'); render(); },
+    () => { const el = document.getElementById('kingsOfTiersPanel'); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('02-rankings-month.png',
+    () => { selectedMonth = '2026-07'; minGames = 5; render(); },
+    () => { const el = document.querySelector('.monthly-stories'); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('03-profile-journey.png',
+    // openSheet is wrapped to render the premium profile itself. Calling
+    // renderPremiumProfile again rebuilds the wrapper AFTER the match cards
+    // have been reparented into it, which empties Recent Results.
+    () => { selectedMonth = 'all'; minGames = 10; render(); openSheet('Shaun'); },
+    () => { const w = document.getElementById('premiumProfileWrap'); const el = w && [...w.querySelectorAll('.pp-section-label')].find((e) => /rating journey/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('04-match-card.png', () => {}, () => {
+    const host = document.getElementById('ppMatchesHost');
+    const row = host && host.querySelector('.pp-match-row');
+    if (!row) return;
+    row.click();
+    const label = [...host.parentElement.querySelectorAll('.pp-section-label')].find((e) => /recent results/i.test(e.textContent));
+    (label || row).scrollIntoView({ block: 'start' });
+  });
+  await shot('05-monthly-breakdown.png',
+    () => { closeSheet(); selectedMonth = '2026-07'; minGames = 5; render(); openMonthlyRatingBreakdown('Shaun', '2026-07'); });
+  await shot('06-admin-review.png',
+    () => {
+      const mrb = document.getElementById('monthlyRatingModal'); if (mrb) mrb.classList.remove('show');
+      closeSheet(); isUnlocked = true; currentUserName = 'Board';
+      // Reach Admin the way a reviewer does -- More > Admin / Manage -- so the
+      // More sheet is closed by its own handler rather than left over the shot.
+      const admin = document.querySelector('#shellMoreSheet .admin-item');
+      if (admin) admin.click();
+      if (typeof renderManage === 'function') renderManage();
+      // Open a real review and choose a tier move, which is what arms the
+      // required rating question. Nothing is staged for writing: the confirm
+      // step is never reached, and the stubbed Firestore cannot write anyway.
+      const cands = reviewCandidates();
+      reviewSubject = cands.length ? cands[0].name : 'Rishi';
+      renderManage();
+      const tier = document.querySelector('.review-tier');
+      if (tier) tier.click();
+    },
+    () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Rating — required/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('07-admin-historical.png',
+    () => {
+      reviewSubject = null; renderManage();
+      const p = document.getElementById('histPlayer'), d = document.getElementById('histDate');
+      if (p && d) { p.value = 'Tom'; d.value = '2026-07-01'; histLoadContext(); }
+    },
+    () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Historical club adjustment/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('08-admin-diagnostics.png',
+    () => { histReset(); renderManage(); return runBetaDiagnostics(); },
+    () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Beta diagnostics/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+  // Games is a tab inside the Play section, not a section of its own, so it is
+  // reached through its legacy tab button. Staging a removal PLANS the replay
+  // and shows the consequence; it is never confirmed, and the stubbed
+  // Firestore has no write path in any case.
+  await shot('09-games-correction.png',
+    () => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; isUnlocked = true; currentUserName = 'Board';
+      renderGamesTab();
+      const yn = document.getElementById('gamesYourName'); if (yn) yn.value = 'Board';
+      const del = document.querySelector('#gamesView [data-delete]');
+      if (!del) return null;
+      armedDeleteId = del.dataset.delete;
+      return deleteMatch(del.dataset.delete);
+    },
+    () => { const el = [...document.querySelectorAll('#gamesView .callout-card')].find((e) => /re-derives every rating/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+
+  // Back to the monthly breakdown for the calculation disclosure, which is
+  // the one place the engine describes its own arithmetic.
+  await shot('10-full-calculation.png',
+    () => {
+      matchFixReset();
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="power"]');
+      if (b) b.click();
+      selectedMonth = '2026-07'; minGames = 5; render();
+      openMonthlyRatingBreakdown('Shaun', '2026-07');
+      const t = document.getElementById('mrbFullCalcToggle'); if (t) t.click();
+    },
+    () => { const el = document.getElementById('mrbFullCalcBody'); if (el) el.scrollIntoView({ block: 'start' }); });
+
+  const readme = ['# Review screenshots', '',
+    `Captured ${new Date().toISOString().slice(0, 10)} from the **live beta record** by \`scripts/screenshots.js\`.`,
+    'Review aids for CGPT and Shaun, not release documentation. Regenerate rather than edit.', '',
+    'Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,',
+    'so a capture of the seeded fixture would show ratings that no longer exist.', ''];
+  SHOTS.forEach((s) => { readme.push(`### ${s.title}`, '', `![${s.title}](${s.file})`, '', s.note, ''); });
+  fs.writeFileSync(path.join(OUT, 'README.md'), readme.join('\n'));
+
+  await browser.close();
+  server.close();
+  console.log(`\n${SHOTS.length} screenshots in docs/screenshots/. Page errors: ${errors.length}`);
+  if (errors.length) { errors.slice(0, 5).forEach((e) => console.error('  ' + e)); process.exitCode = 1; }
+}
+
+if (require.main === module) main().catch((e) => { console.error(e); process.exitCode = 1; });

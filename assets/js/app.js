@@ -3052,8 +3052,19 @@ function buildJourneyEventRowHtml(name, e){
       `Power Rating unchanged at <b>${after}</b>, reliability unchanged at ${journeyPct(e.reliability)}. A tier change moves neither — it changes who ${name} is ranked against, not what the rating says.`);
   }
   if(e.kind === 'correction'){
-    return row('Classification corrected', `Initial tier corrected: Tier ${e.previousTier || '—'} → Tier ${e.tier || '—'}`,
-      `Power Rating unchanged at <b>${after}</b>, reliability unchanged at ${journeyPct(e.reliability)}. The starting tier was wrong; the evidence gathered since was not, so none of it was discarded.`);
+    // A correction may or may not move the rating: the board is replacing an
+    // initial estimate, and sometimes only the tier was wrong. Saying
+    // "unchanged" either way was false the moment corrections began carrying a
+    // rating decision, and it was false on the most-read screen in the app.
+    const moved = !!e.delta;
+    const before = e.previousRating === null || e.previousRating === undefined ? null : Math.round(e.previousRating);
+    const detail = moved
+      ? `Power Rating ${before === null ? '—' : before} → <b>${after}</b> (${journeyDeltaHtml(e.delta)})`
+        + `, reliability ${journeyPct(e.previousReliability)} → ${journeyPct(e.reliability)}.`
+        + ` The club judged the original estimate wrong and replaced it. This is a decision, not a result on court.`
+      : `Power Rating unchanged at <b>${after}</b>, reliability unchanged at ${journeyPct(e.reliability)}.`
+        + ` The starting tier was wrong; the evidence gathered since was not, so none of it was discarded.`;
+    return row('Classification corrected', `Initial tier corrected: Tier ${e.previousTier || '—'} → Tier ${e.tier || '—'}`, detail);
   }
   if(e.kind === 'reassessment'){
     const before = e.previousRating === null ? null : Math.round(e.previousRating);
@@ -3078,9 +3089,13 @@ function buildJourneyEventRowHtml(name, e){
 const JOURNEY_METHODOLOGY_TEXT = `Every point below is the number the engine recorded at the time, replayed back in order — not a re-estimate. Each match compares what was expected of you before the ball was struck with the performance score you actually delivered. That score runs 0 to 1 and is 80% the share of games you won plus 20% the result itself, so it is deliberately not the same figure as the game percentages shown on the match cards. The gap between expected and delivered is multiplied by a weighting that starts high while your rating is new and falls as evidence builds, so early matches move you further than late ones. A tier change moves no points and no reliability at all. A club reassessment does move points, and is shown as its own event so it can never be mistaken for a result.`;
 
 function buildJourneyLegendHtml(journey){
+  const series = JourneyView.chartSeries(journey);
   const bits = [`<span style="color:#5a9c5a;">●</span> match gained · <span style="color:#b5453f;">●</span> match lost ground`];
-  if(journey.reassessmentCount) bits.push(`<span style="color:#7ba7d4;">◆</span> club reassessment`);
-  if(journey.tierChangeCount) bits.push(`<span style="color:#c8a96a;">▫</span> tier change (no rating movement)`);
+  // Described by what is actually drawn. Claiming "no rating movement" for a
+  // correction that moved the rating by 263 points made the legend contradict
+  // the leap in the chart directly above it.
+  if(series.some(s=>s.isJump)) bits.push(`<span style="color:#7ba7d4;">◆</span> club decision (moved the rating)`);
+  if(series.some(s=>s.isAnnotation)) bits.push(`<span style="color:#c8a96a;">▫</span> tier change (no rating movement)`);
   return `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px;">${bits.join(' &nbsp;·&nbsp; ')}</div>`;
 }
 
