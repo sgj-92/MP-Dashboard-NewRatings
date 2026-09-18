@@ -480,7 +480,16 @@ function getDisplayMatches(){
   return effective.concat(pending).concat(historical);
 }
 
-// ===================== RATING ENGINE =====================
+// ===================== LEGACY RATING ENGINE (no callers) ==================
+// The pre-v3 joint solver. Nothing in the application calls it any more: the
+// last two screens that did -- the Monthly Rating breakdown and the
+// head-to-head month view -- now read the persisted trajectory.
+//
+// It is kept rather than deleted because Shaun's decision was that the legacy
+// solver stays available through the beta for comparison. It is no longer
+// reachable from the UI, and must not be wired back into any display: a screen
+// showing a v3 rating next to a legacy-derived figure is how the "story
+// estimate" problem started.
 function computeElo(matches, tierMap, startingTierMap){
   startingTierMap = startingTierMap || {};
   const ratings = {};
@@ -506,25 +515,42 @@ function computeElo(matches, tierMap, startingTierMap){
   return ratings;
 }
 
-function enrichMatches(matches, ratings){
+// Attaches what the engine recorded for each match. Nothing here is derived
+// from today's ratings: the team ratings are the ones carried INTO the match,
+// and the expectation is the one the engine used at the time. Recomputing a
+// historical expectation in the browser is forbidden, and it was also simply
+// unstable -- the same June match reported a different expectation every time
+// anybody played.
+//
+// `expected_score` and `actual_score` are the engine's performance scores
+// (0.80 x game share + 0.20 x the result). They are NOT a share of games, and
+// are named so they cannot be mistaken for `game_share_winner`, which is.
+function enrichMatches(matches){
   return matches.map(m=>{
     const gw = m.sets.reduce((s,set)=>s+set[0],0);
     const gl = m.sets.reduce((s,set)=>s+set[1],0);
     const total = (gw+gl) || 1;
-    const actual = gw/total;
-    const wr = m.winners.reduce((s,p)=>s+ratings[p],0)/m.winners.length;
-    const lr = m.losers.reduce((s,p)=>s+ratings[p],0)/m.losers.length;
-    const expected = 1/(1+Math.pow(10,(lr-wr)/400));
+    const facts = V3_MATCH_FACTS[m.id];
+    // A rated match with no recorded events is a broken read, not a match to
+    // draw an approximate card for.
+    if(!facts) throw new Error('No recorded engine facts for match ' + m.id);
+    const view = MatchFacts.forPlayer(facts, m.winners[0]);
+    if(!view) throw new Error('Match ' + m.id + ' has no event for ' + m.winners[0]);
     return {
       id: m.id, date: m.date, winners: m.winners, losers: m.losers,
       score: m.sets.map(s=>s.join('-')).join(', '),
       type: m.type, note: m.note||'', verified: m.verified !== false,
+      isDraw: !!m.isDraw,
       games_winner: gw, games_loser: gl,
-      game_share_winner: Math.round(actual*1000)/1000,
-      expected_winshare: Math.round(expected*1000)/1000,
-      team_w_rating: Math.round(wr*10)/10, team_l_rating: Math.round(lr*10)/10,
-      match_strength: Math.round((wr+lr)/2*10)/10,
-      overperformance_winner: Math.round((actual-expected)*1000)/1000,
+      game_share_winner: Math.round((gw/total)*1000)/1000,
+      expected_score: Math.round(view.mine.expected*1000)/1000,
+      actual_score: Math.round(view.mine.actual*1000)/1000,
+      performance_residual: Math.round(view.mine.residual*1000)/1000,
+      team_w_rating: view.mine.preRating, team_l_rating: view.theirs.preRating,
+      match_strength: Math.round((view.mine.preRating + view.theirs.preRating)/2*10)/10,
+      // Per-player, because K is per-player: the four players in one match do
+      // not move by the same amount and must never be shown as if they did.
+      deltas: facts.byPlayer,
     };
   });
 }
@@ -543,13 +569,13 @@ function buildPlayers(enrichedMatches, ratings, tierMap, activeMap){
     const isUpset = !isClose && !winnerFavored;
     m.winners.forEach(p=>{
       const a = A(p);
-      a.wins++; a.strengths.push(m.match_strength); a.overperf.push(m.overperformance_winner);
+      a.wins++; a.strengths.push(m.match_strength); a.overperf.push(m.performance_residual);
       a.games_w += m.games_winner; a.games_l += m.games_loser;
       if(isUpset) a.upset_wins++;
     });
     m.losers.forEach(p=>{
       const a = A(p);
-      a.losses++; a.strengths.push(m.match_strength); a.overperf.push(-m.overperformance_winner);
+      a.losses++; a.strengths.push(m.match_strength); a.overperf.push(-m.performance_residual);
       a.games_w += m.games_loser; a.games_l += m.games_winner;
       if(isUpset) a.upset_losses++;
     });
@@ -638,8 +664,8 @@ function buildPartnerships(enrichedMatches, tierMap){
       if(!partnerships[key]) partnerships[key] = {pair: [...team].sort(), games:0, wins:0, losses:0, overperfSum:0};
       const p = partnerships[key];
       p.games++;
-      if(isWin){ p.wins++; p.overperfSum += m.overperformance_winner; }
-      else { p.losses++; p.overperfSum += -m.overperformance_winner; }
+      if(isWin){ p.wins++; p.overperfSum += m.performance_residual; }
+      else { p.losses++; p.overperfSum += -m.performance_residual; }
     });
   });
   const rows = [];
@@ -845,6 +871,7 @@ function buildDifficultySuggestions(allPlayers, activePlayers){
 let V3_STATE = (typeof V3Bridge !== 'undefined') ? V3Bridge.createState() : { loaded:false, error:'v3Bridge.js did not load', players:{} };
 let V3_MATCHES = [];   // the v3 `matches` collection, in the shape the app reads
 let V3_JOURNEY = [];   // the Rating Journey -- monthly views only, never player state
+let V3_MATCH_FACTS = {}; // matchId -> what the engine did in that match, read back
 let MONTHLY_VIEWS = null;
 let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
   ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
@@ -867,12 +894,16 @@ async function loadV3State(){
         // historical tier, within-tier rank and tierChanged flag in the app.
         // TierHistory.create() now rejects an empty map so this cannot recur
         // quietly, but the right source was always v3's own tiers.
+        // What the engine did in each match, so no screen has to re-derive an
+        // expectation, a pre-match rating or a rating change from today's state.
+        V3_MATCH_FACTS = MatchFacts.index(V3_JOURNEY);
         MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, {
           tierAsOf: TierHistory.create({ currentTiers: V3Bridge.tierMap(V3_STATE) }).tierAsOf,
         });
       }
       catch(e){
         V3_MATCHES = []; V3_JOURNEY = []; MONTHLY_VIEWS = null;
+        V3_MATCH_FACTS = {};
         V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 history: ' + e.message};
       }
     }
@@ -924,7 +955,7 @@ function recomputeAll(){
   // ratings. Those values are legacy-derived and are NOT v3 pre-match
   // expectations, which live in ratingJourney. They must not be presented as
   // such, and this function is scheduled for replacement.
-  MATCHES = enrichMatches(ALL_MATCHES, ratings);
+  MATCHES = enrichMatches(ALL_MATCHES);
   PLAYERS = buildPlayers(MATCHES, ratings, TIER_MAP, ACTIVE_MAP);
   PLAYERS.forEach(p=>V3Bridge.decoratePlayer(p, V3_STATE, PRODUCTION_SNAPSHOT_INDEX));
 
@@ -1087,13 +1118,13 @@ function computeMonthlyStats(month){
     const isUpset = !isClose && !winnerFavored;
     m.winners.forEach(p=>{
       const a = A(p);
-      a.wins++; a.strengths.push(monthMatchStrength); a.overperf.push(m.overperformance_winner);
+      a.wins++; a.strengths.push(monthMatchStrength); a.overperf.push(m.performance_residual);
       a.games_w += m.games_winner; a.games_l += m.games_loser;
       if(isUpset) a.upset_wins++;
     });
     m.losers.forEach(p=>{
       const a = A(p);
-      a.losses++; a.strengths.push(monthMatchStrength); a.overperf.push(-m.overperformance_winner);
+      a.losses++; a.strengths.push(monthMatchStrength); a.overperf.push(-m.performance_residual);
       a.games_w += m.games_loser; a.games_l += m.games_winner;
       if(isUpset) a.upset_losses++;
     });
@@ -1718,7 +1749,7 @@ function computeRecentForm(name, windowSize){
   if(own.length === 0) return null;
   const vals = own.map(m=>{
     const won = m.winners.includes(name);
-    return won ? m.overperformance_winner : -m.overperformance_winner;
+    return won ? m.performance_residual : -m.performance_residual;
   });
   const avg = vals.reduce((s,x)=>s+x,0) / vals.length;
   const wins = own.filter(m=>m.winners.includes(name)).length;
@@ -2873,19 +2904,10 @@ function buildRankingNeighborsSection(name){
 }
 
 // The per-game rating weight shown to users. Derived from the real engine's K (28) times the
-// damping factor removed (x3 epochs-per-pass), i.e. the full-weight contribution one match's
-// performance signal carries. Used only for this readable breakdown, not for the official rating.
-const DISPLAY_MATCH_WEIGHT = 84;
-
 // A result within this band of the prediction counts as "played to expectation" -- no rating
-// movement at all. Once a result crosses the line, the full overperformance counts, not just
-// the amount past the threshold. Hardcoded, not a per-group setting.
-const NEUTRAL_PERFORMANCE_BAND = 0.05; // 5 percentage points of game-share
-
-function displayDeltaFromOverperf(overperf){
-  if(Math.abs(overperf) < NEUTRAL_PERFORMANCE_BAND) return 0;
-  return Math.round(DISPLAY_MATCH_WEIGHT * overperf * 10) / 10;
-}
+// movement is implied either way. This is a DISPLAY band on the engine's own performance
+// residual: it decides wording, never a number.
+const NEUTRAL_PERFORMANCE_BAND = 0.05; // 5 points of performance score
 
 // The player's real Rating Journey, read straight back from the persisted
 // ratingJourney events. Nothing here is reconstructed: every rating, delta,
@@ -2915,86 +2937,15 @@ function journeyDeltasByMatchId(journey){
   return out;
 }
 
-// LEGACY, NOT v3. This re-solves a month's games with the old joint solver and
-// restarts every player from their tier seed, which v3 does not do: there is one
-// continuous rating and no monthly reset. It survives only because the Monthly
-// Rating breakdown modal and the head-to-head month view still call it. Those
-// two screens are the last places in the app still showing a reconstruction,
-// and they are recorded in PROJECT_LEDGER.md as outstanding work -- the player
-// Rating Journey above no longer reconstructs anything.
+// One month of a player's real trajectory, sliced out of the persisted journey.
+// There is no monthly seed, no monthly re-solve and no separate monthly engine
+// -- a month is a window onto one continuous rating, and this cannot express
+// anything else. Returns null when the player has no events that month.
 function computeMonthlyJourney(name, month){
-  const monthMatches = ALL_MATCHES.filter(m => m.date.slice(0,7) === month);
-  if(monthMatches.length === 0) return null;
-  // Array.prototype.sort is stable, so matches on the same date keep their original relative order.
-  const monthSorted = monthMatches.slice().sort((a,b)=> a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
-
-  const playerMatchIds = new Set(monthSorted.filter(m => m.winners.includes(name) || m.losers.includes(name)).map(m=>m.id));
-  if(playerMatchIds.size === 0) return null;
-
-  const idToAllIdx = {};
-  ALL_MATCHES.forEach((m,i)=>{ idToAllIdx[m.id] = i; });
-
-  const tier = STARTING_TIER_MAP[name] || TIER_MAP[name] || 'B';
-  const journey = [{ type:'start', date: null, rating: TIER_SEED[tier], label: `Tier ${tier} starting point` }];
-
-  const cumulativeSubset = [];
-  monthSorted.forEach(m=>{
-    cumulativeSubset.push(m);
-    if(!playerMatchIds.has(m.id)) return;
-    const ratings = computeElo(cumulativeSubset, TIER_MAP, STARTING_TIER_MAP);
-    const newRating = Math.round(ratings[name]*10)/10;
-    const prevRating = journey[journey.length-1].rating;
-    const delta = Math.round((newRating - prevRating)*10)/10;
-    const won = m.winners.includes(name);
-    const enriched = MATCHES[idToAllIdx[m.id]];
-    const myExpected = won ? enriched.expected_winshare : (1 - enriched.expected_winshare);
-    const myActual = won ? enriched.game_share_winner : (1 - enriched.game_share_winner);
-    journey.push({
-      type: 'match', _idx: idToAllIdx[m.id], date: m.date, rating: newRating, delta, won,
-      overperfPts: Math.round((myActual - myExpected)*1000)/10,
-    });
-  });
-
-  // Guarantee the final point matches the Month Rating headline exactly, even if this player's
-  // own last game in the month wasn't the very last game anyone played that month.
-  const finalRatings = computeElo(monthSorted, TIER_MAP, STARTING_TIER_MAP);
-  const finalVal = Math.round(finalRatings[name]*10)/10;
-  const lastPoint = journey[journey.length-1];
-  if(Math.abs(lastPoint.rating - finalVal) > 0.05){
-    const delta = Math.round((finalVal - lastPoint.rating)*10)/10;
-    journey.push({ type:'today', date: 'end of month', rating: finalVal, delta, label: 'End of month (current)' });
-  }
-
-  return journey;
-}
-
-function buildJourneyChartSvg(journey){
-  const w = 320, h = 110, padX = 8, padY = 12;
-  const ratings = journey.map(j=>j.rating);
-  const minR = Math.min(...ratings), maxR = Math.max(...ratings);
-  const range = (maxR - minR) || 1;
-  const stepX = journey.length > 1 ? (w - padX*2) / (journey.length - 1) : 0;
-  const toXY = (j,i) => {
-    const x = padX + i*stepX;
-    const y = padY + (h - padY*2) * (1 - (j.rating - minR)/range);
-    return [x, y];
-  };
-  const points = journey.map((j,i)=> toXY(j,i).map(v=>v.toFixed(1)).join(',')).join(' ');
-
-  const dots = journey.map((j,i)=>{
-    const [x,y] = toXY(j,i);
-    let color = '#a89c82'; // neutral (starting point)
-    if(j.type === 'match' || j.type === 'today'){
-      color = j.delta > 0 ? '#5a9c5a' : (j.delta < 0 ? '#b5453f' : '#a89c82');
-    }
-    const r = (i === journey.length-1) ? 4 : 2.3;
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${color}"/>`;
-  }).join('');
-
-  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%; height:${h}px; display:block;">
-    <polyline points="${points}" fill="none" stroke="#a89c82" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" opacity="0.45"/>
-    ${dots}
-  </svg>`;
+  if(month === 'all') return null;
+  const result = playerJourney(name);
+  if(!result.journey) return null;
+  return JourneyView.monthSlice(result.journey, month);
 }
 
 // ---- Rating journey rendering (all of it reads persisted events) ----
@@ -3282,7 +3233,8 @@ function getMonthlyRatingContext(name, month){
   const standings = computeMonthlyTierStandings(month, tier);
   const idx = standings.findIndex(s=>s.name===name);
   if(idx === -1) return null; // no qualifying monthly rating for this player
-  const seedTier = STARTING_TIER_MAP[name] || TIER_MAP[name] || 'B';
+  // No seed here on purpose. A month does not start anyone at a tier baseline;
+  // it starts them wherever their continuous rating had reached.
   return {
     name, tier, month,
     player: standings[idx],
@@ -3291,7 +3243,6 @@ function getMonthlyRatingContext(name, month){
     standings,
     above: idx>0 ? standings[idx-1] : null,
     below: idx<standings.length-1 ? standings[idx+1] : null,
-    seedTier, seed: TIER_SEED[seedTier],
     journey: computeMonthlyJourney(name, month),
   };
 }
@@ -3299,11 +3250,14 @@ function getMonthlyRatingContext(name, month){
 const MONTHLY_RATING_METHODOLOGY_TEXT = `There is one continuous Power Rating and it never resets. The monthly number is simply where that rating stood at the end of the month — not a separate score solved from that month's games, and not a fresh start from your tier's seed. Each match moves it by how much you beat or fell short of what was expected of you, weighted by how established your rating already is, and the month's figure is wherever that sequence had reached. "Points moved" is the distance travelled during the month, and rank movement is where that left you against everyone else. Monthly Performance answers a different question again: how far above or below pre-match expectation you actually played, regardless of how many rating points that happened to be worth.`;
 
 function buildMonthlyReconciliationText(ctx){
-  const matchCount = ctx.journey ? ctx.journey.filter(j=>j.type==='match').length : 0;
-  const seedLabel = ctx.seedTier !== ctx.tier
-    ? `their Tier ${ctx.seedTier} starting point (${ctx.seed}) — they've since moved to Tier ${ctx.tier}`
-    : `the Tier ${ctx.tier} starting point (${ctx.seed})`;
-  return `${ctx.name} entered ${monthLabel(ctx.month)} at ${seedLabel}. Across ${matchCount} rated match${matchCount===1?'':'es'} that month (${ctx.player.wins}-${ctx.player.losses}), the engine solved every player's rating jointly — the same method used for the overall Power Rating, just run fresh on this month's ${matchCount===1?'match':'matches'} only — and settled on <b style="color:var(--gold-bright);">${Math.round(ctx.rating)}</b>.`;
+  if(!ctx.journey) return `${ctx.name} has no recorded events in ${monthLabel(ctx.month)}.`;
+  const j = ctx.journey;
+  const moved = j.totalChange;
+  const movedLabel = moved > 0 ? `up ${moved}` : (moved < 0 ? `down ${Math.abs(moved)}` : 'nowhere');
+  const extras = [];
+  if(j.tierChangeCount) extras.push(`${j.tierChangeCount} tier change${j.tierChangeCount===1?'':'s'} (which move no points)`);
+  if(j.reassessmentCount) extras.push(`${j.reassessmentCount} club reassessment${j.reassessmentCount===1?'':'s'}`);
+  return `${ctx.name} carried <b style="color:var(--text);">${Math.round(j.startRating)}</b> into ${monthLabel(ctx.month)} — not a tier baseline, but wherever their continuous rating had already reached. Across ${j.matchCount} rated match${j.matchCount===1?'':'es'} (${ctx.player.wins}-${ctx.player.losses})${extras.length ? ` and ${extras.join(' and ')}` : ''} it moved ${movedLabel} to <b style="color:var(--gold-bright);">${Math.round(ctx.rating)}</b>. Every step below is the move the engine recorded at the time; nothing is re-solved for the month.`;
 }
 
 function buildMonthlyRatingHeaderHtml(ctx){
@@ -3333,28 +3287,35 @@ function buildMonthlyRatingHeaderHtml(ctx){
 
 function buildMonthlyMatchCardsHtml(ctx){
   if(!ctx.journey) return `<div class="section-sub">No match data available.</div>`;
-  const matchEntries = ctx.journey.filter(j=>j.type==='match');
+  const matchEntries = ctx.journey.entries.filter(e=>e.kind==='match');
   if(matchEntries.length === 0) return `<div class="section-sub">No qualifying matches this month.</div>`;
-  return matchEntries.map(j=>{
-    const m = MATCHES[j._idx];
+  return matchEntries.map(e=>{
+    const m = MATCHES.find(x=>x.id===e.matchId);
     if(!m) return '';
-    const resultLabel = j.won ? `<span class="perf-pos">Win</span>` : `<span class="perf-neg">Loss</span>`;
+    const d = journeyMatchDescription(ctx.name, e.matchId);
+    const resultLabel = m.isDraw ? `<span style="color:var(--text-dim);">Draw</span>`
+      : (d && d.won ? `<span class="perf-pos">Win</span>` : `<span class="perf-neg">Loss</span>`);
+    const deltaClass = e.delta > 0 ? 'perf-pos' : (e.delta < 0 ? 'perf-neg' : '');
     return `<div class="callout-card" style="padding:10px 12px;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
         <div style="font-size:11.5px; color:var(--text-dim);">${dayLabel(m.date)}</div>
         <div style="font-size:11.5px;">${resultLabel}</div>
       </div>
       <div style="margin-top:2px; font-size:12.5px; font-weight:700;">${m.score}</div>
-      ${buildMatchDetailBlock(m, j._idx, true, true)}
+      <div style="font-size:11.5px; color:var(--text-dim);"><span class="${deltaClass}" style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} pts</span> for ${ctx.name} → ${Math.round(e.rating)}</div>
+      ${buildMatchDetailBlock(m, true)}
     </div>`;
   }).join('');
 }
 
 function buildMonthlyFullCalculationHtml(ctx){
-  const exact = ctx.journey && ctx.journey.length ? ctx.journey[ctx.journey.length-1].rating : ctx.rating;
-  return `<div class="mrb-detail-line">Engine: same joint rating solver as the overall Power Rating — K=28 per full-weight game-share swing, 300 passes over the month's match set until ratings stop moving.</div>
-    <div class="mrb-detail-line">Seed: Tier ${ctx.seedTier} starting point = <b style="color:var(--text);">${ctx.seed}</b></div>
-    <div class="mrb-detail-line">Exact monthly rating: <b style="color:var(--text);">${Math.round(exact*100)/100}</b> (shown rounded to ${Math.round(ctx.rating)} elsewhere)</div>
+  const exact = ctx.journey ? ctx.journey.endRating : ctx.rating;
+  const opened = ctx.journey ? ctx.journey.startRating : null;
+  return `<div class="mrb-detail-line">Engine: <b style="color:var(--text);">sequential-v1</b>. Each match is applied once, in order, the moment it is played. Nothing is re-solved and nothing is reset at a month boundary.</div>
+    <div class="mrb-detail-line">Per match: the rating moves by K × (performance score − pre-match expected score), where the performance score is 0.80 × games won + 0.20 × the result.</div>
+    <div class="mrb-detail-line">K falls as evidence builds: K = 10 + 30 × (1 − reliability), and reliability = e / (e + 10) for e rated matches. A new player moves by up to 40 points a match; a well-established one by around 10.</div>
+    ${opened !== null ? `<div class="mrb-detail-line">Carried into ${monthLabel(ctx.month)}: <b style="color:var(--text);">${Math.round(opened*100)/100}</b></div>` : ''}
+    <div class="mrb-detail-line">Rating at month end: <b style="color:var(--text);">${Math.round(exact*100)/100}</b> (shown rounded to ${Math.round(ctx.rating)} elsewhere)</div>
     <div class="mrb-detail-line">Qualifying threshold this view uses: ${minGames}+ games this month — the same minimum currently applied to the Power Rankings list, so this can never show a player the list itself wouldn't.</div>`;
 }
 
@@ -3373,12 +3334,13 @@ function buildMonthlyRatingBreakdownHtml(name, month){
   let html = buildMonthlyRatingHeaderHtml(ctx);
   html += `<div class="section-sub" style="margin-top:12px;">${buildMonthlyReconciliationText(ctx)}</div>`;
 
-  if(ctx.journey && ctx.journey.length > 1){
-    html += `<div class="section-heading" style="margin-top:14px;">Rating over the month</div>
-      <div class="matchup-vs" style="padding:8px;">${buildJourneyChartSvg(ctx.journey)}</div>`;
+  if(ctx.journey && ctx.journey.entries.length > 1){
+    html += `<div class="section-heading" style="margin-top:14px;">Rating through the month</div>
+      <div class="matchup-vs" style="padding:8px;">${buildV3JourneyChartSvg(ctx.journey)}</div>`
+      + buildJourneyLegendHtml(ctx.journey);
   }
 
-  const matchCount = ctx.journey ? ctx.journey.filter(j=>j.type==='match').length : 0;
+  const matchCount = ctx.journey ? ctx.journey.matchCount : 0;
   html += `<div class="section-heading" style="margin-top:14px;">Matches this month (${matchCount})</div>`;
   html += buildMonthlyMatchCardsHtml(ctx);
 
@@ -3403,10 +3365,14 @@ function buildMonthlyRatingCompareHtml(nameA, nameB, month){
   const trailCtx = diff >= 0 ? ctxB : ctxA;
   const margin = Math.abs(diff);
 
-  const sameSeed = ctxA.seedTier === ctxB.seedTier;
-  const seedLine = sameSeed
-    ? `Both started ${monthLabel(month)} at the same Tier ${ctxA.seedTier} seed of ${ctxA.seed} — the gap below comes entirely from this month's results.`
-    : `${ctxA.name} started from Tier ${ctxA.seedTier} (${ctxA.seed}) and ${ctxB.name} from Tier ${ctxB.seedTier} (${ctxB.seed}) — a different starting point going in, on top of this month's results.`;
+  // Neither player is seeded at a month boundary: they each carry in whatever
+  // their continuous rating had reached, and the month's results move it from
+  // there. Saying where they came in is what actually explains the gap.
+  const openA = ctxA.journey ? Math.round(ctxA.journey.startRating) : null;
+  const openB = ctxB.journey ? Math.round(ctxB.journey.startRating) : null;
+  const seedLine = (openA === null || openB === null)
+    ? `Both figures are month-end points on one continuous rating, not a score solved for ${monthLabel(month)}.`
+    : `${ctxA.name} carried ${openA} into ${monthLabel(month)} and ${ctxB.name} carried ${openB}. Neither is reset at the start of a month, so the gap below is that head start plus what each of them did with it.`;
 
   const statLine = (ctx) => `<b style="color:var(--text);">${ctx.name}</b>: ${ctx.player.wins}-${ctx.player.losses}, avg opponent ${Math.round(ctx.player.avg_match_strength)}, ${ctx.player.avg_overperf_pct>=0?'+':''}${ctx.player.avg_overperf_pct}% vs. expectation`;
 
@@ -3453,7 +3419,7 @@ function openSheet(name, matchFilter){
   const deltaByMatchId = journeyDeltasByMatchId(journeyResult.journey);
 
   document.getElementById('sheetProfile').innerHTML = `<div class="profile-box">${buildProfileText(p)}</div>` + buildDevAreasSection(name) + buildGameRequestsForPlayerSection(name) + buildRecentFormSection(name) + buildMonthlyRatingSection(name) + buildJourneySection(name, journeyResult) + buildRankingNeighborsSection(name) + buildCallOutSection(name) + buildDifficultySection(name);
-  let ms = MATCHES.map((m, idx)=>({...m, _idx: idx})).filter(m => m.winners.includes(name) || m.losers.includes(name));
+  let ms = MATCHES.filter(m => m.winners.includes(name) || m.losers.includes(name));
   ms.sort((a,b)=> a.date < b.date ? 1 : -1);
 
   // If a month is selected elsewhere in the app, keep this profile's match log scoped to it too.
@@ -3465,29 +3431,17 @@ function openSheet(name, matchFilter){
   let filterBannerHtml = '';
   const upsetFilterActive = matchFilter === 'upset_wins' || matchFilter === 'upset_losses';
   if(upsetFilterActive){
-    // If a month is active, judge "upset" by ratings as of that month too, so this drill-down's
-    // count always matches the upset figures already shown in the monthly list view.
-    const monthlyRatingsForFilter = monthActive ? monthEndRatings(selectedMonth) : null;
-    const ratingForFilter = (n) => {
-      if(monthlyRatingsForFilter && (n in monthlyRatingsForFilter)) return monthlyRatingsForFilter[n];
-      const p2 = PLAYERS.find(x=>x.name===n);
-      return p2 ? p2.rating : 1400;
-    };
+    // Whether a result was an upset is settled by the ratings the two pairings
+    // carried INTO the match, which is what team_w_rating/team_l_rating now
+    // are. There is no month-specific variant any more: a match was or was not
+    // an upset when it was played, and no later month can change that.
     ms = ms.filter(m=>{
       const won = m.winners.includes(name);
-      let myTeamRating, oppTeamRating;
-      if(monthActive){
-        const winnerR = m.winners[1] ? (ratingForFilter(m.winners[0])+ratingForFilter(m.winners[1]))/2 : ratingForFilter(m.winners[0]);
-        const loserR = m.losers[1] ? (ratingForFilter(m.losers[0])+ratingForFilter(m.losers[1]))/2 : ratingForFilter(m.losers[0]);
-        myTeamRating = won ? winnerR : loserR;
-        oppTeamRating = won ? loserR : winnerR;
-      } else {
-        myTeamRating = won ? m.team_w_rating : m.team_l_rating;
-        oppTeamRating = won ? m.team_l_rating : m.team_w_rating;
-      }
+      const myTeamRating = won ? m.team_w_rating : m.team_l_rating;
+      const oppTeamRating = won ? m.team_l_rating : m.team_w_rating;
       const gap = Math.abs(myTeamRating - oppTeamRating);
       const favored = myTeamRating > oppTeamRating;
-      if(gap < 15) return false; // must be a genuine gap on paper to count as an upset
+      if(gap < 15) return false; // must be a genuine gap going in to count as an upset
       return matchFilter === 'upset_wins' ? (won && !favored) : (!won && favored);
     });
   }
@@ -3518,31 +3472,37 @@ function openSheet(name, matchFilter){
     const favored = myTeamRating > oppTeamRating;
     const gap = Math.round(Math.abs(myTeamRating - oppTeamRating));
 
-    const myExpectedShare = won ? m.expected_winshare : (1 - m.expected_winshare);
-    const myActualShare = won ? m.game_share_winner : (1 - m.game_share_winner);
+    // The engine's own pre-match expectation for this player's side, read back.
+    // These are performance scores (0.80 x games won + 0.20 x the result), so
+    // they are reported as scores and never as a percentage of games -- the
+    // game count on the line above is the game figure.
+    const myExpected = won ? m.expected_score : (1 - m.expected_score);
+    const myActual = won ? m.actual_score : (1 - m.actual_score);
     const myGames = won ? m.games_winner : m.games_loser;
     const oppGames = won ? m.games_loser : m.games_winner;
 
-    const perf = (myActualShare - myExpectedShare) * 100;
+    const perf = (myActual - myExpected) * 100;
     const perfRounded = Math.round(perf * 10) / 10;
     const neutralPts = NEUTRAL_PERFORMANCE_BAND * 100;
-    const perfLabel = perfRounded >= neutralPts ? `<span class="perf-pos">overperformed +${perfRounded}pts on games</span>`
-                     : (perfRounded <= -neutralPts ? `<span class="perf-neg">underperformed ${perfRounded}pts on games</span>`
-                     : `<span style="color:var(--text-dim)">games roughly as expected</span>`);
+    const perfLabel = perfRounded >= neutralPts ? `<span class="perf-pos">beat expectation by ${perfRounded} pts</span>`
+                     : (perfRounded <= -neutralPts ? `<span class="perf-neg">fell ${Math.abs(perfRounded)} pts short of expectation</span>`
+                     : `<span style="color:var(--text-dim)">played to expectation</span>`);
 
-    const isCloseOnPaper = gap < 15;
+    const isCloseGoingIn = gap < 15;
     let upsetTag = '';
-    if(!isCloseOnPaper){
+    if(!isCloseGoingIn){
       if(favored && !won) upsetTag = `<div class="upset-tag upset-bad">⚠️ UPSET LOSS — lost as the favorite</div>`;
       else if(!favored && won) upsetTag = `<div class="upset-tag upset-good">🔥 UPSET WIN — won as the underdog</div>`;
     }
 
-    const favLabel = isCloseOnPaper
-      ? `evenly matched on paper (${gap} pt gap)`
-      : (favored ? `favored by ${gap} pts on paper` : `underdogs by ${gap} pts on paper`);
+    const favLabel = isCloseGoingIn
+      ? `evenly matched going in (${gap} pt gap)`
+      : (favored ? `favoured by ${gap} pts going in` : `underdogs by ${gap} pts going in`);
 
-    const namesWithRatings = myTeam.map(n => `${n} (${ratingOf(n)})`).join(' &amp; ');
-    const oppWithRatings = oppTeam.map(n => `${n} (${ratingOf(n)})`).join(' &amp; ');
+    // Ratings as they were going into this match, not as they are today.
+    const atTheTime = (n) => (m.deltas && m.deltas[n]) ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n);
+    const namesWithRatings = myTeam.map(n => `${n} (${atTheTime(n)})`).join(' &amp; ');
+    const oppWithRatings = oppTeam.map(n => `${n} (${atTheTime(n)})`).join(' &amp; ');
 
     const delta = deltaByMatchId[m.id];
     let deltaLabel = '';
@@ -3564,8 +3524,8 @@ function openSheet(name, matchFilter){
       <div class="teams"><b>${namesWithRatings}</b> vs ${oppWithRatings}</div>
       <div class="score">${m.score}${m.note ? ' · '+m.note : ''}</div>
       <div style="margin-top:5px; font-size:11.5px; color:var(--text-dim); line-height:1.5;">
-        ${favLabel}, expected ~${Math.round(myExpectedShare*100)}% of games<br/>
-        actually took ${myGames}/${myGames+oppGames} games (${Math.round(myActualShare*100)}%)
+        ${favLabel}<br/>
+        took ${myGames}/${myGames+oppGames} games (${Math.round(100*myGames/((myGames+oppGames)||1))}%) &middot; performance score ${myActual.toFixed(2)} against ${myExpected.toFixed(2)} expected
       </div>
       <div style="margin-top:4px;">${perfLabel}</div>
       ${deltaLabel}
@@ -3795,7 +3755,10 @@ function renderManage(){
     const gap = Math.abs(ratingA - ratingB);
     const isClose = gap < 15;
     const aFavored = ratingA > ratingB;
-    const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+    // Routed through the engine rather than re-derived, so a prediction can
+    // never drift from what the engine would actually expect. This is the
+    // performance score it targets, not a share of games.
+    const expectedA = RatingEngine.expectedScore(ratingA, ratingB);
 
     const teamALabel = teamA.map(n=>`${n} (${Math.round(getP(n).rating)})`).join(' &amp; ');
     const teamBLabel = teamB.map(n=>`${n} (${Math.round(getP(n).rating)})`).join(' &amp; ');
@@ -3808,8 +3771,8 @@ function renderManage(){
     resultBox.innerHTML = `<div class="matchup-vs" style="margin-top:8px;">
       <div><b style="color:var(--text);">${teamALabel}</b> vs <b style="color:var(--text);">${teamBLabel}</b></div>
       <div style="margin-top:6px; font-size:12.5px;">${favLine}</div>
-      <div style="margin-top:4px; font-size:12.5px; color:var(--text-dim);">Expected split of games: ${Math.round(expectedA*100)}% / ${Math.round((1-expectedA)*100)}%</div>
-      <div style="margin-top:6px; font-size:10.5px; color:var(--text-dim);">Based on current ratings only — nothing here is recorded, and this doesn't need a real game to exist.</div>
+      <div style="margin-top:4px; font-size:12.5px; color:var(--text-dim);">Expected performance score: ${expectedA.toFixed(2)} / ${(1-expectedA).toFixed(2)}</div>
+      <div style="margin-top:6px; font-size:10.5px; color:var(--text-dim);">The score the engine would expect each side to reach: 0.80 × share of games won + 0.20 × the result. Based on today's ratings, because this game hasn't been played — nothing here is recorded.</div>
     </div>`;
   }
   ['predA1','predA2','predB1','predB2'].forEach(id=>{
@@ -3914,7 +3877,7 @@ function downloadCsv(filename, headers, rows){
 }
 
 function exportMatchesCsv(){
-  const headers = ['Date','Type','Team A','Team B','Score','Winner','Draw','Team A Rating','Team B Rating','Expected Win % (A/B whichever won)','Actual Win %','Overperformance %','Verified','Status','Submitted By'];
+  const headers = ['Date','Type','Team A','Team B','Score','Winner','Draw','Team A Rating Going In','Team B Rating Going In','Expected Performance Score (Team A)','Actual Performance Score (Team A)','Game Share % (Team A)','Performance vs Expectation (pts)','Verified','Status','Submitted By'];
   const displayMatches = getDisplayMatches();
   const rows = displayMatches.map(m=>{
     const enrichedIdx = m.isDraw ? -1 : idToIdxGlobalForExport(m.id);
@@ -3927,9 +3890,10 @@ function exportMatchesCsv(){
       m.isDraw ? 'Yes' : 'No',
       enriched ? enriched.team_w_rating : '',
       enriched ? enriched.team_l_rating : '',
-      enriched ? Math.round(enriched.expected_winshare*1000)/10 : '',
+      enriched ? enriched.expected_score : '',
+      enriched ? enriched.actual_score : '',
       enriched ? Math.round(enriched.game_share_winner*1000)/10 : '',
-      enriched ? Math.round(enriched.overperformance_winner*1000)/10 : '',
+      enriched ? Math.round(enriched.performance_residual*1000)/10 : '',
       m.verified === false ? 'No (pre-June, single-sourced)' : 'Yes',
       m._status || 'approved',
       m.submittedBy || (m.id.startsWith('base_') ? 'Historical record' : ''),
@@ -4202,66 +4166,82 @@ let armedDeleteId = null;
 let expandedGameId = null;
 let addGameExpanded = false;
 
-function computeMatchDelta(idxInAllMatches, preferMonthIfActive){
-  if(idxInAllMatches === undefined || idxInAllMatches === null) return null;
-  const m = MATCHES[idxInAllMatches];
-  if(!m) return null;
-  // If asked to, and a month is active, and this specific game falls within it: use that month's
-  // own engine (every game counts, no neutral band), matching the month-scoped views elsewhere.
-  if(preferMonthIfActive && selectedMonth !== 'all' && m.date.slice(0,7) === selectedMonth){
-    const monthJourney = computeMonthlyJourney(m.winners[0], selectedMonth);
-    if(monthJourney){
-      const entry = monthJourney.find(e => e.type==='match' && e._idx === idxInAllMatches);
-      if(entry) return entry.delta;
-    }
-  }
-  // Same basis as the "favored/expected/actual/over-under-performed" text shown alongside this,
-  // so the two can never contradict each other the way two different calculations could.
-  return displayDeltaFromOverperf(m.overperformance_winner);
+// The rating each player in this match actually moved by, read back from the
+// engine. There is deliberately no single per-match figure and no month-scoped
+// variant: K is per-player, so the four players move by four different amounts,
+// and the rating is continuous, so a match moved it by exactly one amount
+// whichever month filter happens to be on screen.
+function matchDeltaLineHtml(m){
+  if(!m.deltas) return '';
+  const side = (names) => names.map(n=>{
+    const d = m.deltas[n];
+    if(!d) return `${n} —`;
+    const cls = d.ratingDelta > 0 ? 'perf-pos' : (d.ratingDelta < 0 ? 'perf-neg' : '');
+    const lbl = d.ratingDelta > 0 ? `+${d.ratingDelta}` : `${d.ratingDelta}`;
+    return `${n} <span class="${cls}" style="font-weight:700;">${lbl}</span>`;
+  }).join(' &nbsp;·&nbsp; ');
+  return `<div style="margin-top:6px;">
+    <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">Rating change, per player</div>
+    <div>${side(m.winners)}</div>
+    <div>${side(m.losers)}</div>
+    <div style="font-size:10.5px; margin-top:3px;">Each player moves by their own amount: the less established a rating is, the further one result moves it.</div>
+  </div>`;
 }
 
-function buildMatchDetailBlock(m, idxInAllMatches, contextHasMonthFigure, preferMonthIfActive){
+// A draw counts as a win for nobody -- it is kept out of every record -- but it
+// IS rated: the engine scores the result 0.5 for both sides and moves every
+// player. The card used to say it "doesn't affect any rating", which was simply
+// untrue; one recorded draw moved a player by more than 10 points.
+function buildDrawDetailBlock(m){
+  const facts = V3_MATCH_FACTS[m.id];
+  if(!facts) return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim);">Recorded as unfinished / a draw. No rating was computed from it.</div>`;
+  const line = (names) => names.map(n=>{
+    const d = facts.byPlayer[n];
+    if(!d) return `${n} —`;
+    const cls = d.ratingDelta > 0 ? 'perf-pos' : (d.ratingDelta < 0 ? 'perf-neg' : '');
+    return `${n} (${Math.round(d.preMatchRating)}) <span class="${cls}" style="font-weight:700;">${d.ratingDelta > 0 ? '+' : ''}${d.ratingDelta}</span>`;
+  }).join(' &nbsp;·&nbsp; ');
+  return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim); line-height:1.6;">
+    <div>Recorded as unfinished / a draw. It counts as a win or a loss for nobody and stays out of every record — but it is rated: the result scores 0.5 for both sides, and how far that beat each side's expectation still moves the ratings.</div>
+    <div style="margin-top:6px;">
+      <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">Rating change, per player</div>
+      <div>${line(m.winners)}</div>
+      <div>${line(m.losers)}</div>
+    </div>
+  </div>`;
+}
+
+function buildMatchDetailBlock(m, contextHasMonthFigure){
   const gap = Math.abs(m.team_w_rating - m.team_l_rating);
   const isClose = gap < 15;
   const winnerFavored = m.team_w_rating > m.team_l_rating;
+  const sideLabel = m.isDraw ? 'first-named pair' : 'winners';
   const favLabel = isClose
-    ? `evenly matched on paper (${Math.round(gap)} pt gap)`
-    : (winnerFavored ? `winners favored by ${Math.round(gap)} pts on paper` : `winners were underdogs by ${Math.round(gap)} pts on paper`);
+    ? `evenly matched going in (${Math.round(gap)} pt gap)`
+    : (winnerFavored ? `${sideLabel} favoured by ${Math.round(gap)} pts going in` : `${sideLabel} were underdogs by ${Math.round(gap)} pts going in`);
 
-  const winnersWithRatings = m.winners.map(n => `${n} (${ratingOf(n)})`).join(' &amp; ');
-  const losersWithRatings = m.losers.map(n => `${n} (${ratingOf(n)})`).join(' &amp; ');
+  // Ratings as they were at the time, not as they are now. The pairing shown
+  // beside a June match is the pairing that played it.
+  const winnersWithRatings = m.winners.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
+  const losersWithRatings = m.losers.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
 
-  const expectedPct = Math.round(m.expected_winshare*100);
   const actualPct = Math.round(m.game_share_winner*100);
-  const perf = Math.round(m.overperformance_winner*1000)/10;
+  // The performance score is 80% games won + 20% the result. It is NOT the
+  // share of games, which is on the line above, so it never borrows that
+  // wording -- two near-identical labels read as a contradiction even when
+  // both numbers are right.
+  const perf = Math.round(m.performance_residual*1000)/10;
   const neutralPts = NEUTRAL_PERFORMANCE_BAND * 100;
-  const perfLabel = perf >= neutralPts ? `<span class="perf-pos">winners overperformed +${perf}pts on games</span>`
-                   : (perf <= -neutralPts ? `<span class="perf-neg">winners underperformed ${perf}pts on games</span>`
-                   : `<span style="color:var(--text-dim);">games roughly as expected</span>`);
-
-  const delta = computeMatchDelta(idxInAllMatches, preferMonthIfActive);
-  const usedMonthEngine = preferMonthIfActive && selectedMonth !== 'all' && m.date.slice(0,7) === selectedMonth;
-  let deltaHtml = '';
-  if(delta !== null){
-    const winnerLabel = delta >= 0 ? `+${delta}` : `${delta}`;
-    const loserVal = Math.round(-delta*10)/10;
-    const loserLabel = loserVal >= 0 ? `+${loserVal}` : `${loserVal}`;
-    const winnerClass = delta >= 0 ? 'perf-pos' : 'perf-neg';
-    const loserClass = loserVal >= 0 ? 'perf-pos' : 'perf-neg';
-    deltaHtml = `<div style="margin-top:6px;">
-      <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">${usedMonthEngine ? `${monthLabel(selectedMonth)} rating impact` : `Overall (season) rating impact${contextHasMonthFigure ? ' — a different figure from the month total above' : ''}`}</div>
-      <span class="${winnerClass}" style="font-weight:700;">${winnerLabel} pts</span> <span style="color:var(--text-dim); font-size:11px;">for winners</span>
-      &nbsp;·&nbsp;
-      <span class="${loserClass}" style="font-weight:700;">${loserLabel} pts</span> <span style="color:var(--text-dim); font-size:11px;">for losers</span>
-    </div>`;
-  }
+  const perfLabel = perf >= neutralPts ? `<span class="perf-pos">${sideLabel} beat expectation by ${perf} pts</span>`
+                   : (perf <= -neutralPts ? `<span class="perf-neg">${sideLabel} fell ${Math.abs(perf)} pts short of expectation</span>`
+                   : `<span style="color:var(--text-dim);">played to expectation</span>`);
 
   return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim); line-height:1.6;">
-    <div><b style="color:var(--text);">${winnersWithRatings}</b> vs ${losersWithRatings}</div>
-    <div style="margin-top:4px;">${favLabel}, expected ~${expectedPct}% of games</div>
-    <div>actually took ${m.games_winner}/${m.games_winner+m.games_loser} games (${actualPct}%)</div>
+    <div><b style="color:var(--text);">${winnersWithRatings}</b> vs ${losersWithRatings} <span style="font-size:10.5px;">(ratings going in)</span></div>
+    <div style="margin-top:4px;">${favLabel}</div>
+    <div>took ${m.games_winner}/${m.games_winner+m.games_loser} games (${actualPct}%) · performance score ${m.actual_score.toFixed(2)} against ${m.expected_score.toFixed(2)} expected</div>
     <div style="margin-top:4px;">${perfLabel}</div>
-    ${deltaHtml}
+    ${matchDeltaLineHtml(m)}
   </div>`;
 }
 
@@ -4364,38 +4344,34 @@ function renderH2H(){
       </div>
     </div>`;
 
-    const idToIdxH2H = {};
-    ALL_MATCHES.forEach((m,i)=>{ idToIdxH2H[m.id] = i; });
-
-    html += `<div class="section-sub" style="padding:4px 2px;">Each player starts the month at their tier baseline. The running total below replays the same engine as the Power Rating above, checkpoint by checkpoint, so it always ends exactly on that figure once every game for the month is in.</div>`;
+    html += `<div class="section-sub" style="padding:4px 2px;">The rating below is the continuous Power Rating, shown from where each player carried it into ${monthLabel(selectedMonth)}. It is not reset at the start of the month and not re-solved for the month: these are the moves the engine actually recorded, in order.</div>`;
 
     [h2hPlayerA, h2hPlayerB].forEach(pname=>{
       const monthJourney = computeMonthlyJourney(pname, selectedMonth);
-      const startPoint = monthJourney ? Math.round(monthJourney[0].rating) : null;
-      const monthEntries = monthJourney ? monthJourney.filter(e=>e.type==='match') : [];
-      html += `<div class="section-sub" style="font-weight:700; color:var(--text); margin-top:8px;">${pname}'s games this month${startPoint!==null ? ` — started at ${startPoint}` : ''}</div>`;
+      const monthEntries = monthJourney ? monthJourney.entries.filter(e=>e.kind==='match') : [];
+      const startPoint = monthJourney ? Math.round(monthJourney.startRating) : null;
+      html += `<div class="section-sub" style="font-weight:700; color:var(--text); margin-top:8px;">${pname}'s games this month${startPoint!==null ? ` — carried in at ${startPoint}` : ''}</div>`;
       if(monthEntries.length === 0){
         html += `<div class="section-sub">No games for ${pname} in ${monthLabel(selectedMonth)}.</div>`;
       } else {
         monthEntries.forEach(e=>{
-          const m = MATCHES[e._idx];
-          const myTeam = e.won ? m.winners : m.losers;
-          const oppTeam = e.won ? m.losers : m.winners;
-          const partner = m.type==='doubles' ? myTeam.filter(n=>n!==pname)[0] : null;
-          const teamLabel = partner ? `${pname} &amp; ${partner}` : pname;
+          const m = MATCHES.find(x=>x.id===e.matchId);
+          if(!m) return;
+          const d = journeyMatchDescription(pname, e.matchId);
+          const teamLabel = d && d.partner ? `${pname} &amp; ${d.partner}` : pname;
           const deltaClass = e.delta > 0 ? 'perf-pos' : (e.delta < 0 ? 'perf-neg' : '');
           const deltaLabel = e.delta > 0 ? `+${e.delta}` : `${e.delta}`;
           const isExpanded = expandedGameId === m.id;
-          const detailContent = isExpanded ? buildMatchDetailBlock(m, idToIdxH2H[m.id], true) : '';
+          const detailContent = isExpanded ? buildMatchDetailBlock(m, true) : '';
           html += `<div class="callout-card" style="padding:8px 12px;">
             <div class="game-card-clickable h2h-month-game" data-gameid="${m.id}" style="cursor:pointer;">
               <div style="display:flex; justify-content:space-between; font-size:11.5px;">
-                <span><b>${teamLabel}</b> vs ${oppTeam.join(' &amp; ')}</span>
-                <span style="color:${e.won?'var(--green)':'var(--red)'};">${e.won?'WIN':'LOSS'}</span>
+                <span><b>${teamLabel}</b> vs ${d ? d.opponents : ''}</span>
+                <span style="color:${m.isDraw?'var(--text-dim)':(d && d.won?'var(--green)':'var(--red)')};">${m.isDraw?'DRAW':(d && d.won?'WIN':'LOSS')}</span>
               </div>
               <div style="margin-top:2px; color:var(--text-dim); font-size:11px;">${e.date} · ${m.score}</div>
-              <div style="margin-top:4px;"><span class="${deltaClass}" style="font-weight:700;">${deltaLabel} pts this month</span> <span style="color:var(--text-dim); font-size:11px;">→ month running total: ${Math.round(e.rating)}</span></div>
-              ${!isExpanded ? `<div style="margin-top:2px; color:var(--text-dim); font-size:10px;">tap for the overall (season) breakdown of this game</div>` : ''}
+              <div style="margin-top:4px;"><span class="${deltaClass}" style="font-weight:700;">${deltaLabel} pts</span> <span style="color:var(--text-dim); font-size:11px;">→ ${Math.round(e.rating)}</span></div>
+              ${!isExpanded ? `<div style="margin-top:2px; color:var(--text-dim); font-size:10px;">tap for this game's full breakdown</div>` : ''}
               ${detailContent}
             </div>
           </div>`;
@@ -5214,15 +5190,19 @@ Player C &amp; Player D"></textarea>
     const isArmed = armedDeleteId === m.id;
     const unverifiedTag = m.verified === false ? `<span class="strength-pill" style="color:#e8a5a1; border-color:var(--red); margin-left:6px;">Pre-June · single-sourced</span>` : '';
     const isExpanded = expandedGameId === m.id;
-    const enriched = m.isDraw ? null : MATCHES[idToIdx[m.id]];
+    // Draws are deliberately absent from MATCHES: they are not wins or losses
+    // and must not enter any record. They ARE rated, though, so their detail
+    // comes straight from the engine's recorded facts instead.
+    const enriched = m.isDraw ? null : (MATCHES[idToIdx[m.id]] || null);
     const drawTag = m.isDraw ? `<span class="strength-pill" style="margin-left:6px;">DRAW · not finished</span>` : '';
     const titleText = m.isDraw
       ? `${m.winners.join(' & ')} vs ${m.losers.join(' & ')}${drawTag}${unverifiedTag}`
       : `<span style="color:var(--green);">${m.winners.join(' & ')}</span> <span style="color:var(--text-dim); font-weight:400;">def</span> <span style="color:var(--red);">${m.losers.join(' & ')}</span>${unverifiedTag}`;
+    // A draw is not a win or a loss for anyone, but it IS rated: the engine
+    // scores the result at 0.5 and moves every player accordingly. Saying it
+    // "doesn't affect any rating" was simply untrue.
     const detailContent = isExpanded
-      ? (m.isDraw
-          ? `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim);">Recorded as unfinished / a draw — doesn't count as a win or loss for anyone, and doesn't affect any rating.</div>`
-          : (enriched ? buildMatchDetailBlock(enriched, idToIdx[m.id], false, true) : ''))
+      ? (m.isDraw ? buildDrawDetailBlock(m) : (enriched ? buildMatchDetailBlock(enriched, false) : ''))
       : '';
     let cardStyle = '';
     if(selectedGamesPlayer !== 'all' && !m.isDraw){

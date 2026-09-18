@@ -117,6 +117,42 @@
     };
   }
 
+  // One month of a player's journey, for the monthly breakdown. The opening
+  // figure is the rating carried INTO the month -- read from the first event's
+  // own previousRating, which is where the engine actually started it. There is
+  // no monthly seed and no monthly re-solve: a month is a window onto one
+  // continuous trajectory, and this function cannot express anything else.
+  function monthSlice(journey, month) {
+    const entries = journey.entries.filter((e) => String(e.date).slice(0, 7) === month);
+    if (!entries.length) return null;
+    const first = entries[0], last = entries[entries.length - 1];
+    const opened = typeof first.previousRating === 'number' ? first.previousRating : first.rating;
+    const counts = {
+      matchCount: entries.filter((e) => e.kind === 'match').length,
+      reassessmentCount: entries.filter((e) => e.kind === 'reassessment').length,
+      tierChangeCount: entries.filter((e) => e.kind === 'tier' || e.kind === 'correction').length,
+    };
+    // Shown so the chart opens where the month opened rather than at the
+    // player's first result, which would hide the first match's movement.
+    const withOpening = (opened === first.rating && first.kind === 'initialised')
+      ? entries
+      : [{ kind: 'opening', eventType: 'MONTH_OPENED', date: first.date, rating: opened,
+           previousRating: null, delta: null, reliability: null, previousReliability: null,
+           tier: first.previousTier || first.tier || null, previousTier: null,
+           reasonCode: null, notes: null, decisionType: null }].concat(entries);
+    return {
+      playerId: journey.playerId,
+      month,
+      entries: withOpening,
+      startRating: opened,
+      endRating: last.rating,
+      totalChange: Math.round((last.rating - opened) * 10) / 10,
+      ...counts,
+      firstDate: first.date,
+      lastDate: last.date,
+    };
+  }
+
   // A tier event must never show rating movement. Asserting it here as well as
   // in the engine means a display bug cannot invent one either.
   function tierEventsAreRatingNeutral(journey) {
@@ -140,5 +176,5 @@
     }));
   }
 
-  return { forPlayer, kindOf, chronological, chartSeries, tierEventsAreRatingNeutral, TIER_EVENTS };
+  return { forPlayer, monthSlice, kindOf, chronological, chartSeries, tierEventsAreRatingNeutral, TIER_EVENTS };
 });
