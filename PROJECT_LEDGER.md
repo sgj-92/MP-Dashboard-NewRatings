@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `bd47757` |
-| Tests | **140 / 140 passing** |
+| Last verified implementation commit | `6fd7a1c` |
+| Tests | **147 / 147 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -61,7 +61,15 @@ browser). The legacy monthly solver is **retired** — `computeMonthlyRating` no
 longer exists; all 11 call sites now read real month-end Power Ratings via
 `monthEndRatings`.
 
-**Not built:** Kings of Tiers on historical tier ·
+Kings of Tiers, the rankings podium and the tier filter now scope tier to the
+selected month via a single `tierInScope()` helper. This uncovered a defect
+underneath: `MONTHLY_VIEWS` was built with `TIER_MAP`, which is `{}` at that
+point, so **every historical tier, within-tier rank and tier-change flag in the
+shipped application was `undefined`** for all but the three players in the
+authoritative change list. Fixed at source (v3's own tier map) and `TierHistory`
+now refuses an empty map. See Handoffs.
+
+**Not built:**
 Admin Monthly Review · reassessment write path (`applyClubDecision` does not
 exist; only the read-only recommendation) · beta diagnostics screen · beta reset
 workflow · replay-forward for historical edits · UI regression tests · final
@@ -179,10 +187,11 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code.** The Real Rating Journey UI is complete
-(`bd47757`). Next unblocked item is Kings of Tiers on historical tier.
-On `Ledger CCode`, reconcile repository state and start the first approved,
-unblocked item without another Shaun decision.
+**Owner / baton: Claude Code.** The Real Rating Journey UI (`bd47757`) and
+Kings of Tiers on historical tier (`6fd7a1c`) are complete. Next unblocked item
+is retiring the last two reconstructions (Open Questions 6 and 7), unless CGPT
+resequences. On `Ledger CCode`, reconcile repository state and start the first
+approved, unblocked item without another Shaun decision.
 
 **Needs a look from CGPT/CChat before it is built on:** Open Questions 6 and 7
 below record the last two places in the application that still present a
@@ -260,6 +269,12 @@ concepts.
    reader "Each player starts the month at their tier baseline." These are the
    last screens in the app showing a reconstruction. The four monthly views in
    `monthlyViews.js` already carry the real figures.
+8. **Manny is Tier S and is invisible to every tier-scoped view.** Noticed
+   while fixing Kings of Tiers: current tiers are A 9 · B 17 · C 7 · **S 1**.
+   The Kings panel hardcodes A/B/C and the tier filter offers A/B/C, so Manny
+   can never appear in either. Not changed — whether Tier S is a real tier, a
+   legacy artefact or a data error is Shaun's call, not an implementation
+   detail. **Low urgency, but it should not stay unanswered before beta.**
 
 ---
 
@@ -333,6 +348,56 @@ half-fix would put two different expectation figures on screen at once.
 **Baton → CGPT.** Requested: a view on whether Questions 6 and 7 are scheduled
 ahead of Kings of Tiers, given that 6 breaches a standing constraint. CCode will
 otherwise take NEXT #1 (Kings of Tiers) on the next `Ledger CCode`.
+
+### CCode — 18 Sep 2026 (Kings of Tiers on historical tier — and a defect under it)
+`6fd7a1c` on `main`. 147/147 tests (7 new). Verified in-browser across all 20
+month × tier-filter combinations: no placeholder leaks, zero page errors.
+
+**The task as scoped.** Kings of Tiers, the rankings podium and the tier filter
+now scope tier to the selected month through one `tierInScope()` helper, so the
+three cannot disagree. In a month view it returns the tier held at that month's
+close — the same tier the within-tier ranks already use. June's Tier C king was
+previously **missing entirely**: all three players who were Tier C that month
+have since been promoted, so Tier C's June field was empty and the card showed a
+dash. It now reads Shaun 1137, with a note saying he is Tier B today, because a
+past king in a tier he no longer holds is not a mistake and the panel should
+not leave the reader assuming it is.
+
+**The defect underneath — worth CGPT's and CChat's attention.** `MONTHLY_VIEWS`
+was built with `TierHistory.create({ currentTiers: TIER_MAP })`, and `TIER_MAP`
+is still `{}` at that moment: `loadV3State()` runs before
+`rebuildMapsFromState()` populates it. `tierAsOf()` therefore returned
+`undefined` for every player outside the three-entry authoritative change list.
+**Every historical tier, within-tier rank and `tierChanged` flag in the shipped
+application was missing**, from `05f6cd4` onward. In the browser, June resolved
+3 of 22 rows; in Node, where the tests pass a complete tier map, all 22 resolved
+and every test passed.
+
+Two things let it hide, and both are now closed:
+* An empty map reads as "no opinion" rather than an error. `TierHistory.create()`
+  now refuses an empty `currentTiers` outright.
+* The one guard that could have caught it — comparing a change-list player's
+  current tier against the end of their history — skipped players whose current
+  tier was `undefined`. That skip is now an error.
+
+**Method note, because this is the second time it has bitten.** The tests were
+green throughout; they exercised the data layer with correct inputs while the
+application supplied wrong ones. The regression guards added here are therefore
+source-level assertions about the wiring, and both were checked against the old
+code to confirm they fail there. Unit-testing a module does not test how the
+application calls it.
+
+**Also corrected:** the monthly stories panel described Monthly Performance as
+"what drives the podium and Kings of Tiers". Both rank on rating. Same failure
+mode already recorded twice — retiring a calculation does not retire the
+sentence describing it.
+
+**New Open Question 8:** Manny is Tier **S**. The Kings panel hardcodes A/B/C
+and the tier filter offers A/B/C, so he appears in neither. Left alone: whether
+Tier S is real, legacy or an error is Shaun's call.
+
+**Baton → CGPT.** Questions 6 and 7 are still unsequenced and Question 8 is new.
+Absent a steer, CCode takes Questions 6 and 7 next on `Ledger CCode`.
 
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
@@ -481,6 +546,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `6fd7a1c` | Kings of Tiers / podium / tier filter on historical tier; fixed empty-TIER_MAP defect erasing all historical tiers |
 | `bd47757` | Real Rating Journey UI: persisted events replace the reconstruction; "story estimate" disclaimer deleted |
 | `707f6e8` | Monthly acceptance: tier-change rank guard, inactive boundary state, fallers/slides, stale methodology copy removed |
 | `05f6cd4` | Monthly UI: four views presented; stale mini-season copy corrected |
@@ -505,16 +571,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. Kings of Tiers on historical tier — the monthly data layer already exposes
-   historical tier per row, so this is presentation.
-2. **Retire the last two reconstructions — Open Questions 6 and 7.** Swap the
+1. **Retire the last two reconstructions — Open Questions 6 and 7.** Swap the
    browser-recomputed match expectations for the persisted
    `preMatchExpectedScore`/`ratingDelta` (Q6, a standing-constraint conflict,
    and it requires a card redesign because K is per-player), and replace
    `computeMonthlyJourney` in the Monthly Rating breakdown modal and the
-   head-to-head month view (Q7). **Sequencing against item 1 is CGPT's call.**
-3. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-4. Beta diagnostics and beta reset workflow.
-5. Replay-forward — **required before any historical editing UI is exposed.**
+   head-to-head month view (Q7). **Sequencing is CGPT's call.**
+2. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
+3. Beta diagnostics and beta reset workflow.
+4. Replay-forward — **required before any historical editing UI is exposed.**
    Hiding inert Edit/Delete Match controls is already approved and must not
    wait for replay-forward; restore them only when historical editing works.
