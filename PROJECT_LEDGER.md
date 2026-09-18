@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `19ffe21` |
-| Tests | **157 / 157 passing** |
+| Last verified implementation commit | `2a61943` |
+| Tests | **174 / 174 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -68,10 +68,13 @@ shipped application was `undefined`** for all but the three players in the
 authoritative change list. Fixed at source (v3's own tier map) and `TierHistory`
 now refuses an empty map. See Handoffs.
 
+**Write path live.** `clubDecision.js` is the only thing in the application that
+writes a rating. The Admin Monthly Review is wired to it. Forward-only,
+attributed, confirmed against the exact document before anything is stored, and
+undone by recording a reversal rather than by deleting.
+
 **Not built:**
-Admin Monthly Review · reassessment write path (`applyClubDecision` does not
-exist; only the read-only recommendation) · beta diagnostics screen · beta reset
-workflow · replay-forward for historical edits · UI regression tests · final
+beta diagnostics screen · beta reset workflow · replay-forward for historical edits · UI regression tests · final
 comparison report and screenshots.
 
 ---
@@ -187,17 +190,17 @@ Shaun's decisions, including where an agent recommended otherwise.
 ## 4. CURRENT TASK
 
 **Owner / baton: Claude Code.** The Real Rating Journey UI (`bd47757`), Kings of
-Tiers on historical tier (`6fd7a1c`) and the retirement of the last two
-reconstructions (`19ffe21`) are complete. Next unblocked item is the
-reassessment write path and Admin Monthly Review. On `Ledger CCode`, reconcile
-repository state and start the first approved, unblocked item without another
-Shaun decision.
+Tiers on historical tier (`6fd7a1c`), the retirement of the last two
+reconstructions (`19ffe21`) and the reassessment write path with Admin Monthly
+Review (`2a61943`) are complete. Next unblocked item is beta diagnostics and the
+beta reset workflow. On `Ledger CCode`, reconcile repository state and start the
+first approved, unblocked item without another Shaun decision.
 
-**Two items need Shaun, neither blocking:** Open Question 8 (Manny is Tier S and
-no tier-scoped view can show him) and Open Question 9 (match cards now show four
-different per-player rating changes instead of one team figure — a visible
-change, made because there is no other truthful rendering of a per-player K
-model, but worth a look).
+**Three items need Shaun, none blocking:** Open Question 8 (Manny is Tier S and
+no tier-scoped view can show him), Open Question 9 (match cards now show four
+per-player rating changes instead of one team figure) and **Open Question 11
+(a one-line engine fix, which CCode will not make unilaterally because the
+engine is frozen)**.
 
 Open Question 1a remains resolved. Preserve the small-journey session cache
 exception and review trigger, the frozen engine, and all four distinct monthly
@@ -281,7 +284,22 @@ concepts.
    truthful rendering of a per-player model, and the previous number was an
    invention (84 × overperformance) in any case. **Recorded for review, not
    presented as settled.**
-10. **A fourth false statement, now fixed, worth recording as a pattern.** The
+11. **Engine precision — needs Shaun/CGPT, because the engine is frozen.**
+   Found while building the write path. `applyStateEvent` writes both
+   `newReliability` and the exact `effectiveEvidenceAfter` onto every event, but
+   when an event is replayed it prefers `newReliability` and inverts it through
+   `reliability = e / (e + 10)`. The round trip loses a last bit: evidence of 21
+   replays as 20.999999999999996. **It does not change K, does not compound (50
+   round trips stay within a billionth), and no current code replays stored
+   events** — but it means a replayed document is not byte-identical to the
+   stored one, and **replay-forward will replay these documents for real.**
+   Proposed fix, one line in `ratingEngine.applyStateEvent`: prefer the exact
+   `effectiveEvidenceAfter` over the derived `newReliability` when both are
+   present. This changes no mathematics — it picks the lossless of two
+   representations of the same quantity — but it is engine code, so CCode has
+   recorded it as a passing test (`KNOWN:` in `clubDecision.test.js`) rather
+   than applying it. **Decide before replay-forward is built.**
+12. **A fourth false statement, now fixed, worth recording as a pattern.** The
    Games view told users a draw "doesn't count as a win or loss for anyone, and
    doesn't affect any rating". Draws are rated in v3 — one moved a player by
    10.25 points. This is the fourth time a retired calculation left its
@@ -451,6 +469,52 @@ retired. Suggest treating copy that describes engine behaviour as code.
 **Baton → CGPT.** NEXT is now the reassessment write path. Questions 8, 9 and 10
 are for Shaun and do not block it.
 
+### CCode — 18 Sep 2026 (club decision write path + Admin Monthly Review)
+`2a61943` on `main`. 174/174 tests (18 new). Verified end to end in a browser
+against a stubbed Firestore: refusals fire, zero writes occur before
+confirmation, a confirmed decision writes both documents in the right order, and
+the re-read shows the new rating.
+
+**This is the application's first write of a rating**, so the rules live in
+`clubDecision.js` — a pure module — not in the screen. A screen can be bypassed.
+Refused outright, not warned about: backdating over existing history (there is no
+replay-forward, so the stored ratings would stop following from the stored
+events), future-dating, a tier move carrying points, a rating reassessment
+carrying a tier, reliability outside [0, 1), a decision with no attribution, and
+a same-day duplicate that deterministic ids would otherwise silently overwrite.
+
+**Nothing is deleted, ever.** A decision is undone by recording a reversal, so
+both remain in the ledger. That is what "forward-only and audited" means in
+practice, and `reversalOf()` builds it — reversing a tier move as the opposite
+tier move, carrying no points.
+
+**Write ordering is deliberate.** Two documents, no transaction available. The
+journey event goes first, because the journey IS the history and a replay
+reproduces the player document from it; a failure after the first write is
+recoverable and says so, and tells the operator not to record it again. The
+reverse order could leave a rating with nothing explaining it.
+
+**The trust model is on the screen, not implied.** `isUnlocked` is a UI gate,
+not a security boundary; beta storage is open by decision, so attribution
+records intent, not identity. Said in those words in the UI.
+
+**One consequence handled here because it only became reachable now.** With
+reassessments possible, monthly Rating Movement could show a rating that moved
+by decision as a month's form. Rows now carry `reassessmentChange` and the
+stories panel says "(+40 by club decision)" where it applies. Until this commit
+that distinction was 0 for everyone, which is why it had never surfaced.
+
+**New Open Question 11 — needs a decision before replay-forward.** A stored
+event replays evidence through reliability and loses a last bit. Harmless today
+(K unchanged, no compounding, nothing replays stored events yet) but
+replay-forward will replay these documents for real. The fix is one line of
+engine code; the engine is frozen, so it is recorded as a passing `KNOWN:` test
+and left for Shaun/CGPT rather than applied.
+
+**Baton → CGPT.** NEXT is beta diagnostics and the beta reset workflow.
+Questions 8, 9 and 11 are for Shaun; only 11 has a deadline (before
+replay-forward).
+
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
 On Shaun's behalf, accepted the current once-per-session cumulative
@@ -598,6 +662,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `2a61943` | Club reassessment write path (`clubDecision.js`) and Admin Monthly Review; club-decision movement separated in monthly views |
 | `19ffe21` | Last two reconstructions retired; `matchFacts.js`; per-player match deltas; draws shown as rated |
 | `6fd7a1c` | Kings of Tiers / podium / tier filter on historical tier; fixed empty-TIER_MAP defect erasing all historical tiers |
 | `bd47757` | Real Rating Journey UI: persisted events replace the reconstruction; "story estimate" disclaimer deleted |
@@ -624,8 +689,7 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-2. Beta diagnostics and beta reset workflow.
-3. Replay-forward — **required before any historical editing UI is exposed.**
+1. Beta diagnostics and beta reset workflow.
+2. Replay-forward — **required before any historical editing UI is exposed.**
    Hiding inert Edit/Delete Match controls is already approved and must not
    wait for replay-forward; restore them only when historical editing works.
