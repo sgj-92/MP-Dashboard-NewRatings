@@ -538,6 +538,9 @@ function enrichMatches(matches){
     if(!view) throw new Error('Match ' + m.id + ' has no event for ' + m.winners[0]);
     return {
       id: m.id, date: m.date, winners: m.winners, losers: m.losers,
+      // Both: `score` is the stored winner-first string every neutral caller
+      // wants, `sets` is what a player-centric card needs in order to orient.
+      sets: m.sets.map(s=>[...s]),
       score: m.sets.map(s=>s.join('-')).join(', '),
       type: m.type, note: m.note||'', verified: m.verified !== false,
       isDraw: !!m.isDraw,
@@ -1229,13 +1232,52 @@ function buildMonthlyStoriesHtml(month){
   const idleBody = idleMovers.map(rankLine).join('');
   const crossBody = crossovers.map(c=>line(`${c.overtook} passed ${c.overtaken}`, '')).join('');
 
+  // Collapsible, and collapsible with <details> rather than a toggle this file
+  // would have to re-wire on every render. Nothing is removed: all four
+  // concepts keep their own heading and their own explanation, they just no
+  // longer all compete for the top of the screen.
+  const foldBlock = (title, explain, body) => body
+    ? `<details class="ms-fold"><summary class="ms-fold-summary">
+         <span class="ms-fold-title">${title}</span>
+         <span class="ms-fold-explain">${explain}</span>
+       </summary><div class="ms-fold-body">${body}</div></details>` : '';
+
+  // Key takeaways deliberately does NOT repeat one table: it takes the single
+  // strongest line out of three different stories, so the summary says
+  // something the sections below do not each say on their own.
+  const takeaways = [];
+  if(perf.length){
+    takeaways.push({ value: `${perf[0].performancePct>0?'+':''}${perf[0].performancePct}%`,
+      positive: perf[0].monthlyPerformance > 0,
+      name: perf[0].playerId, note: `Strongest performance (${perf[0].matches} games)` });
+  }
+  if(risers.length){
+    takeaways.push({ value: `${risers[0].ratingChange>0?'+':''}${risers[0].ratingChange} pts`,
+      positive: true, name: risers[0].playerId,
+      note: risers[0].reassessmentChange ? 'Biggest riser — mostly by club decision' : 'Biggest rating riser' });
+  }
+  if(climbers.length){
+    takeaways.push({ value: `▲${Math.abs(climbers[0].rankChangeOverall)}`, positive: true,
+      name: climbers[0].playerId,
+      note: `Biggest climb · #${climbers[0].startRankOverall} → #${climbers[0].endRankOverall}` });
+  }
+  const takeawaysHtml = takeaways.length ? `<div class="ms-takeaways">
+    <div class="ms-takeaways-head">Key takeaways</div>
+    ${takeaways.map(t=>`<div class="ms-takeaway">
+      <span class="ms-takeaway-value ${t.positive?'perf-pos':'perf-neg'}">${t.value}</span>
+      <span class="ms-takeaway-name">${t.name}</span>
+      <span class="ms-takeaway-note">${t.note}</span>
+    </div>`).join('')}
+  </div>` : '';
+
   return `<div class="monthly-stories">
-    <div class="ms-head">${label} — the month in four parts</div>
+    <div class="ms-head">${label} — monthly summary</div>
+    ${takeawaysHtml}
     ${block('Monthly Performance', 'Who most beat their pre-match expectation. Its own measure: the podium and Kings of Tiers rank on rating, not on this.', perfBody)}
-    ${block('Rating Movement', 'How far the real Power Rating actually moved — risers and fallers. Not the same question as performance.', riseBody)}
-    ${block('Ranking Movement', 'Overall rank at the start and end of the month — climbs and slides both.', climbBody)}
-    ${block('Moved without playing', 'Rank can move while a player sits out, because others moved around them. Their rating did not change.', idleBody)}
-    ${block('Crossovers', 'Who overtook whom during the month.', crossBody)}
+    ${foldBlock('Rating Movement', 'How far the real Power Rating actually moved — risers and fallers. Not the same question as performance.', riseBody)}
+    ${foldBlock('Ranking Movement', 'Overall rank at the start and end of the month — climbs and slides both.', climbBody)}
+    ${foldBlock('Moved without playing', 'Rank can move while a player sits out, because others moved around them. Their rating did not change.', idleBody)}
+    ${foldBlock('Crossovers', 'Who overtook whom during the month.', crossBody)}
     <div class="ms-foot">League points are a separate record — see the League tab.</div>
   </div>`;
 }
@@ -1872,7 +1914,7 @@ function renderCallouts(){
   tierOrderDisplay.forEach(t=>{
     const games = WITHIN_TIER_GAMES.filter(c=>c.tier===t);
     if(games.length === 0) return;
-    html += `<div style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:11.5px; color:var(--gold-dim); font-weight:700; margin:8px 0 4px;">TIER ${t}</div>`;
+    html += `<div style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:11.5px; color:var(--gold-soft); font-weight:700; margin:8px 0 4px;">TIER ${t}</div>`;
     games.forEach(c=>{
       const m = c.matchup;
       let wingNote = '';
@@ -2876,7 +2918,7 @@ function buildDifficultySection(name){
   }
 
   if(d.crossTier && (!d.withinTier || d.crossTier.pair.join() !== bal.pair.join())){
-    html += `<div style="margin-top:10px; font-size:11px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.04em;">Recommended across tiers</div>
+    html += `<div style="margin-top:10px; font-size:11px; color:var(--gold-soft); text-transform:uppercase; letter-spacing:.04em;">Recommended across tiers</div>
       <div class="matchup-vs"><b>${d.crossTier.pair[0]} &amp; ${d.crossTier.pair[1]}</b> (avg ${Math.round(d.crossTier.avg_rating)}) <span style="color:var(--text-dim); font-size:11px;">— closest overall rating match, any tier</span></div>`;
   }
   return html;
@@ -3035,7 +3077,7 @@ function buildJourneyEventRowHtml(name, e){
   const after = Math.round(e.rating);
   const date = journeyDateLabel(e.date);
   const row = (tag, title, detail) => `<div class="matchup-vs" style="margin-top:6px; padding:8px;">
-      <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em;">${date}${tag ? ` · ${tag}` : ''}</div>
+      <div style="font-size:10px; color:var(--gold-soft); text-transform:uppercase; letter-spacing:.03em;">${date}${tag ? ` · ${tag}` : ''}</div>
       <div style="font-weight:700; color:var(--text); margin-top:2px;">${title}</div>
       <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-top:2px;">${detail}</div>
     </div>`;
@@ -3257,7 +3299,7 @@ function getMonthlyRatingContext(name, month){
   const tier = TIER_MAP[name] || p.tier;
   const standings = computeMonthlyTierStandings(month, tier);
   const idx = standings.findIndex(s=>s.name===name);
-  if(idx === -1) return null; // no qualifying monthly rating for this player
+  if(idx === -1) return null; // no qualifying month-end figure for this player
   // No seed here on purpose. A month does not start anyone at a tier baseline;
   // it starts them wherever their continuous rating had reached.
   return {
@@ -3272,7 +3314,7 @@ function getMonthlyRatingContext(name, month){
   };
 }
 
-const MONTHLY_RATING_METHODOLOGY_TEXT = `There is one continuous Power Rating and it never resets. The monthly number is simply where that rating stood at the end of the month — not a separate score solved from that month's games, and not a fresh start from your tier's seed. Each match moves it by how much you beat or fell short of what was expected of you, weighted by how established your rating already is, and the month's figure is wherever that sequence had reached. "Points moved" is the distance travelled during the month, and rank movement is where that left you against everyone else. Monthly Performance answers a different question again: how far above or below pre-match expectation you actually played, regardless of how many rating points that happened to be worth.`;
+const MONTHLY_RATING_METHODOLOGY_TEXT = `There is one continuous Power Rating and it never resets. Nothing is solved separately for a month: the month-end figure is simply where that one rating stood on the last day of it — not a separate score solved from that month's games, and not a fresh start from your tier's seed. Each match moves it by how much you beat or fell short of what was expected of you, weighted by how established your rating already is, and the month's figure is wherever that sequence had reached. "Points moved" is the distance travelled during the month, and rank movement is where that left you against everyone else. Monthly Performance answers a different question again: how far above or below pre-match expectation you actually played, regardless of how many rating points that happened to be worth.`;
 
 function buildMonthlyReconciliationText(ctx){
   if(!ctx.journey) return `${ctx.name} has no recorded events in ${monthLabel(ctx.month)}.`;
@@ -3303,11 +3345,35 @@ function buildMonthlyRatingHeaderHtml(ctx){
   return `<div class="mrb-header">
     <div class="mrb-period">${monthLabel(ctx.month)} · Tier ${ctx.tier}</div>
     <div class="mrb-rankname"><span class="mrb-rank">#${ctx.position}</span> <span class="mrb-name">${ctx.name}</span></div>
-    <div class="mrb-rating-row"><span class="mrb-rating">${Math.round(ctx.rating)}</span><span class="mrb-rating-label">Monthly Rating</span></div>
+    <div class="mrb-rating-row"><span class="mrb-rating">${Math.round(ctx.rating)}</span><span class="mrb-rating-label">Power Rating<br/>at month end</span></div>
     <div class="mrb-gap">${gapLine}</div>
     ${belowLine ? `<div class="mrb-gap mrb-gap-secondary">${belowLine}</div>` : ''}
     ${closeMargin ? `<div class="mrb-close-note">This is a tight one — worth checking the numbers below.</div>` : ''}
   </div>`;
+}
+
+// ---- Score orientation ----------------------------------------------------
+// Set scores are STORED from the winners' perspective: sets[i][0] is always the
+// winning side's games in that set. Printed unchanged on a card that is about
+// ONE player, a defeat reads "6-3, 6-4" beside the word LOSS, which looks like
+// a win and is the single most confusing thing in the app. Any card written
+// from a player's point of view orients the score to that player; a neutral
+// card leaves it in winner order and names the winners beside it, so the two
+// readings can never be confused.
+function setsForViewer(match, viewerWon){
+  const sets = match.sets || [];
+  return viewerWon ? sets.map(s=>[...s]) : sets.map(([a,b])=>[b,a]);
+}
+
+function scoreForViewer(match, viewerWon){
+  return setsForViewer(match, viewerWon).map(s=>s.join('-')).join(', ');
+}
+
+// True when `name` is on the side the score is stored for. A draw has no
+// winner, but it still has a stored side order, and the player's own team is
+// still the one their card should read from.
+function playerIsOnStoredWinningSide(match, name){
+  return (match.winners || []).includes(name);
 }
 
 function buildMonthlyMatchCardsHtml(ctx){
@@ -3326,7 +3392,7 @@ function buildMonthlyMatchCardsHtml(ctx){
         <div style="font-size:11.5px; color:var(--text-dim);">${dayLabel(m.date)}</div>
         <div style="font-size:11.5px;">${resultLabel}</div>
       </div>
-      <div style="margin-top:2px; font-size:12.5px; font-weight:700;">${m.score}</div>
+      <div style="margin-top:2px; font-size:12.5px; font-weight:700;">${scoreForViewer(m, playerIsOnStoredWinningSide(m, ctx.name))}</div>
       <div style="font-size:11.5px; color:var(--text-dim);"><span class="${deltaClass}" style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} pts</span> for ${ctx.name} → ${Math.round(e.rating)}</div>
       ${buildMatchDetailBlock(m, true)}
     </div>`;
@@ -3354,7 +3420,7 @@ function buildMonthlyCompareButtonsHtml(ctx){
 
 function buildMonthlyRatingBreakdownHtml(name, month){
   const ctx = getMonthlyRatingContext(name, month);
-  if(!ctx) return `<div class="section-sub">No qualifying monthly rating for ${name} in ${monthLabel(month)}.</div>`;
+  if(!ctx) return `<div class="section-sub">No qualifying month-end Power Rating for ${name} in ${monthLabel(month)}.</div>`;
 
   let html = buildMonthlyRatingHeaderHtml(ctx);
   html += `<div class="section-sub" style="margin-top:12px;">${buildMonthlyReconciliationText(ctx)}</div>`;
@@ -3375,7 +3441,7 @@ function buildMonthlyRatingBreakdownHtml(name, month){
   const compareHtml = buildMonthlyCompareButtonsHtml(ctx);
   if(compareHtml) html += `<div style="margin-top:14px;">${compareHtml}</div>`;
 
-  html += `<button class="explainer-toggle mrb-howitworks-toggle" id="mrbHowItWorksToggle" style="margin-top:14px;">How monthly ratings work ›</button>
+  html += `<button class="explainer-toggle mrb-howitworks-toggle" id="mrbHowItWorksToggle" style="margin-top:14px;">How month-end Power Rating works ›</button>
     <div class="section-sub" id="mrbHowItWorksBody" style="display:none; margin-top:6px;">${MONTHLY_RATING_METHODOLOGY_TEXT}</div>`;
 
   return html;
@@ -3537,7 +3603,6 @@ function openSheet(name, matchFilter){
       deltaLabel = `<div style="margin-top:4px; font-weight:700;"><span class="${deltaClass}">${deltaText} pts</span> <span style="color:var(--text-dim); font-weight:400; font-size:11px;">rating change from this game</span></div>`;
     }
 
-    const isArmed = armedDeleteId === m.id;
     // One place owns correction, so a blast radius is never shown twice or
     // acted on from two screens at once.
     const adminButtons = isUnlocked
@@ -3548,7 +3613,7 @@ function openSheet(name, matchFilter){
       <div class="top"><span>${m.date}${m.type==='singles' ? ' · Singles' : ''}</span><span style="color:${won?'var(--green)':'var(--red)'}">${won?'WIN':'LOSS'}</span></div>
       ${upsetTag}
       <div class="teams"><b>${namesWithRatings}</b> vs ${oppWithRatings}</div>
-      <div class="score">${m.score}${m.note ? ' · '+m.note : ''}</div>
+      <div class="score">${scoreForViewer(m, won)}${m.note ? ' · '+m.note : ''}</div>
       <div style="margin-top:5px; font-size:11.5px; color:var(--text-dim); line-height:1.5;">
         ${favLabel}<br/>
         took ${myGames}/${myGames+oppGames} games (${Math.round(100*myGames/((myGames+oppGames)||1))}%) &middot; performance score ${myActual.toFixed(2)} against ${myExpected.toFixed(2)} expected
@@ -3803,7 +3868,7 @@ function buildHistoricalAdjustmentHtml(){
 
   if(histCtx.existing.length){
     html += `<div class="section-sub" style="margin-top:6px; font-weight:700; color:var(--text);">Already recorded on this date</div>`;
-    html += histCtx.existing.map(e=>`<div class="section-sub" style="font-size:10.5px;">• ${e.eventType}${e.superseded?' <i>(already superseded)</i>':''} — ${e.previousTier||'—'}→${e.newTier||'—'}, rating ${e.previousPowerRating==null?'—':(Math.round(e.previousPowerRating*10)/10).toFixed(1)}→${e.newPowerRating==null?'—':(Math.round(e.newPowerRating*10)/10).toFixed(1)}, by ${e.createdBy||'unknown'}</div>`).join('');
+    html += histCtx.existing.map(e=>buildAuditRowHtml(e, histCtx.existing)).join('');
     html += `<div class="section-sub" style="font-size:10.5px;">A decision of the same type will <b>supersede</b> the live one above. Both stay in the record; only the newer is replayed.</div>`;
   }
 
@@ -3826,13 +3891,15 @@ function buildHistoricalAdjustmentHtml(){
       html += `<div class="section-sub">Recommendation at this date: <b style="color:var(--text);">${(Math.round(rec.recommendationRating*10)/10).toFixed(1)}</b> (${rec.ratingDelta>=0?'+':''}${Math.round(rec.ratingDelta*10)/10}). ${rec.reason}</div>`;
     }
 
-    const opt = (key, label, enabled, why) => `<div class="alpha-row">
+    // Same rule as the live review: an unavailable branch is disabled and says
+    // why, rather than offering a button that cannot do anything.
+    const opt = (key, label, enabled, why) => `<div class="alpha-row${enabled ? '' : ' row-unavailable'}">
       <div class="alpha-name" style="font-size:12.5px;">${label}${why?`<div style="font-size:10px; color:var(--text-dim);">${why}</div>`:''}</div>
-      <button class="preset-btn hist-decision ${histAdj.ratingDecision===key?'active':''}" data-decision="${key}" style="width:104px;" ${enabled?'':'disabled'}>${histAdj.ratingDecision===key?'Chosen':'Choose'}</button>
-    </div>`;
+      <button class="preset-btn hist-decision ${histAdj.ratingDecision===key?'active':''}" data-decision="${key}" style="width:104px;" ${enabled?'':'disabled'}>${enabled ? (histAdj.ratingDecision===key?'Chosen':'Choose') : 'Unavailable'}</button>
+    </div>${enabled || !why ? '' : `<div class="reason-note">ⓘ ${why}</div>`}`;
     const canAccept = !!(rec && rec.recommended);
     const provisional = b.classificationStatus === 'PROVISIONAL';
-    html += opt('ACCEPT_RECOMMENDATION', 'Accept the statistical recommendation', canAccept, canAccept ? '' : 'No recommendation exists at this date');
+    html += opt('ACCEPT_RECOMMENDATION', 'Accept the statistical recommendation', canAccept, canAccept ? '' : 'No recommendation exists at this date. That is an absence, not a decision to keep the rating.');
     html += opt('CLUB_OVERRIDE', 'Club override', true, 'The board sets the rating and/or reliability');
     html += opt('KEEP_CURRENT_RATING', 'Keep the rating as it stood', true, 'An explicit decision, recorded as one');
     html += opt('CORRECT_INITIAL_CLASSIFICATION', 'Correct the initial classification', provisional,
@@ -3901,6 +3968,7 @@ function wireHistoricalAdjustment(){
   });
   document.querySelectorAll('.hist-decision').forEach(el=>{
     el.onclick = ()=>{
+      if(el.disabled) return; // an unavailable branch is never recordable
       histAdj = { ...histDraft(), ratingDecision: el.dataset.decision };
       histPlan = null; histMessage = '';
       renderManage();
@@ -4037,6 +4105,68 @@ function buildDiagnosticsSectionHtml(){
 let reviewSubject = null;      // player currently being reviewed
 let reviewDraft = null;        // the half-made decision on screen
 let reviewSnapshotCache = null; // one pre-review snapshot per effective date
+
+// ---- Audit row ------------------------------------------------------------
+// The raw record is truthful but unreadable: "CLUB_RATING_REASSESSMENT — B→B"
+// tells a board member nothing, and three promotion rows in a column give no
+// clue which one the engine actually replays. This says what each event is, in
+// English, and marks the one that is live. It never collapses the trail into a
+// single rewritten event -- every row stays, superseded ones just recede.
+const AUDIT_EVENT_LABELS = {
+  PLAYER_INITIALISED: 'Entered the record',
+  INITIAL_CLASSIFICATION_CORRECTION: 'Initial classification corrected',
+  INITIAL_CLASSIFICATION_CONFIRMED: 'Initial classification confirmed',
+  PROMOTION: 'Promotion',
+  DEMOTION: 'Demotion',
+  TIER_RETAINED: 'Tier retained',
+  CLUB_RATING_REASSESSMENT: 'Rating reassessment',
+};
+
+function auditEventLabel(e, siblings){
+  const base = AUDIT_EVENT_LABELS[e.eventType] || e.eventType;
+  if(e.eventType !== 'CLUB_RATING_REASSESSMENT') return base;
+  // A reassessment recorded alongside a tier move is the rating half of one
+  // board decision, and saying so is the difference between "why is this here"
+  // and "of course".
+  const live = (siblings || []).filter(x => !x.superseded);
+  if(live.some(x => x.eventType === 'PROMOTION')) return base + ' after promotion';
+  if(live.some(x => x.eventType === 'DEMOTION')) return base + ' after demotion';
+  return base;
+}
+
+function auditTierText(e){
+  if(!e.previousTier && !e.newTier) return '';
+  if(e.previousTier && e.newTier && e.previousTier === e.newTier) return `tier unchanged (${e.newTier})`;
+  return `${e.previousTier || '—'} → <b>${e.newTier || '—'}</b>`;
+}
+
+function auditRatingText(e){
+  const fmt = (v) => v == null ? '—' : (Math.round(v*10)/10).toFixed(1);
+  if(e.previousPowerRating == null && e.newPowerRating == null) return '';
+  if(e.previousPowerRating != null && e.newPowerRating != null
+     && Math.abs(e.previousPowerRating - e.newPowerRating) < 0.05){
+    return `rating unchanged at ${fmt(e.newPowerRating)}`;
+  }
+  return `rating ${fmt(e.previousPowerRating)} → <b>${fmt(e.newPowerRating)}</b>`;
+}
+
+function buildAuditRowHtml(e, siblings){
+  const isCorrection = e.eventType === 'INITIAL_CLASSIFICATION_CORRECTION';
+  const badge = e.superseded
+    ? '<span class="audit-badge audit-badge-superseded">Superseded</span>'
+    : (isCorrection
+      ? '<span class="audit-badge audit-badge-correction">Correction</span>'
+      : '<span class="audit-badge audit-badge-active">Active</span>');
+  const facts = [auditTierText(e), auditRatingText(e)].filter(Boolean).join(', ');
+  return `<div class="audit-row${e.superseded ? ' audit-row-superseded' : ''}">
+    <span class="audit-dot"></span>
+    <div class="audit-body">
+      <div class="audit-head">${auditEventLabel(e, siblings)}${badge}</div>
+      ${facts ? `<div class="audit-facts">${facts}</div>` : ''}
+      <div class="audit-meta">by ${e.createdBy || 'unknown'}${e.revision ? ` · revision ${e.revision}` : ''}</div>
+    </div>
+  </div>`;
+}
 
 function Engine_reliability(evidence){ return RatingEngine.reliability(evidence); }
 
@@ -4193,10 +4323,13 @@ function buildReviewPanelHtml(name){
     html += `<div class="section-sub">No statistical recommendation: ${rec ? rec.reason : 'not calculated.'}</div>`;
   }
 
-  const opt = (key, label, enabled, why) => `<div class="alpha-row">
+  // An action the board cannot take is shown, disabled, with the reason in the
+  // same row -- never as a live-looking Choose button. Hiding it entirely would
+  // leave the board wondering whether the branch exists at all.
+  const opt = (key, label, enabled, why) => `<div class="alpha-row${enabled ? '' : ' row-unavailable'}">
     <div class="alpha-name" style="font-size:12.5px;">${label}${why ? `<div style="font-size:10px; color:var(--text-dim);">${why}</div>` : ''}</div>
-    <button class="preset-btn review-decision ${d.ratingDecision===key?'active':''}" data-decision="${key}" style="width:104px;" ${enabled?'':'disabled'}>${d.ratingDecision===key ? 'Chosen' : 'Choose'}</button>
-  </div>`;
+    <button class="preset-btn review-decision ${d.ratingDecision===key?'active':''}" data-decision="${key}" style="width:104px;" ${enabled?'':'disabled'}>${enabled ? (d.ratingDecision===key ? 'Chosen' : 'Choose') : 'Unavailable'}</button>
+  </div>${enabled ? '' : `<div class="reason-note">ⓘ ${why}</div>`}`;
 
   const canAccept = !!(rec && rec.recommended);
   const provisional = s.classificationStatus === 'PROVISIONAL';
@@ -4305,6 +4438,7 @@ function wireReviewSection(){
   document.querySelectorAll('.review-decision').forEach(el=>{
     el.onclick = ()=>{
       if(!reviewDraft) return;
+      if(el.disabled) return; // an unavailable branch is never recordable
       reviewDraft = { ...reviewDraftForCheck(), ratingDecision: el.dataset.decision };
       reviewPending = null; reviewMessage = '';
       renderManage();
@@ -4991,14 +5125,25 @@ function buildMatchFixConfirmHtml(){
   const p = matchFixPlan;
   if(!p) return '';
   const moved = p.playersMoved;
-  return `<div class="callout-card" style="padding:12px; margin-top:8px; border-color:var(--gold-dim);">
-    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this re-derives every rating after this game</div>
+  // Removing a game and correcting one have different consequences and deserve
+  // different words. Sharing one confirmation for both was how "Confirm
+  // removal?" ended up sitting above a button reading "Correct and replay".
+  const isRemoval = !!(p.change && p.change.type === 'delete');
+  const heading = isRemoval
+    ? 'Confirm removal — this deletes the match and re-derives every rating after it'
+    : 'Confirm correction — this re-derives every rating after this game';
+  const commitLabel = isRemoval ? 'Remove and replay' : 'Correct and replay';
+  const nobody = isRemoval
+    ? 'Nobody — removing this match changes no rating.'
+    : 'Nobody — this correction changes no rating.';
+  return `<div class="callout-card" style="padding:12px; margin-top:8px; border-color:${isRemoval ? 'var(--red)' : 'var(--gold-dim)'};">
+    <div style="font-weight:700; color:${isRemoval ? '#e8a5a1' : 'var(--gold-bright)'};">${heading}</div>
     <div class="section-sub" style="margin-top:4px; color:var(--text);">${p.describe}</div>
-    <div class="section-sub" style="font-size:10.5px;">${p.documentsToWrite} documents rewritten, ${p.documentsToDelete} removed. Nothing is silently dropped: the record is replayed from the corrected history and verified afterwards.</div>
+    <div class="section-sub" style="font-size:10.5px;">${p.documentsToWrite} documents rewritten, ${p.documentsToDelete} removed. Nothing is silently dropped: the record is replayed from the ${isRemoval ? 'remaining' : 'corrected'} history and verified afterwards.</div>
     <div class="section-sub" style="margin-top:6px; font-weight:700; color:var(--text);">${moved.length} player${moved.length===1?'':'s'} end on a different rating</div>
-    <div class="section-sub" style="font-size:10.5px; max-height:160px; overflow:auto;">${moved.length ? moved.map(m=>`${m.playerId} ${m.delta>0?'+':''}${m.delta} → ${Math.round(m.to*10)/10}`).join(' &nbsp;·&nbsp; ') : 'Nobody — this correction changes no rating.'}</div>
+    <div class="section-sub" style="font-size:10.5px; max-height:160px; overflow:auto;">${moved.length ? moved.map(m=>`${m.playerId} ${m.delta>0?'+':''}${m.delta} → ${Math.round(m.to*10)/10}`).join(' &nbsp;·&nbsp; ') : nobody}</div>
     <div class="difficulty-row" style="margin-top:8px;">
-      <button class="preset-btn" id="matchFixCommitBtn" style="flex:1;" ${matchFixBusy?'disabled':''}>Correct and replay</button>
+      <button class="preset-btn${isRemoval ? ' match-action-destructive' : ''}" id="matchFixCommitBtn" style="flex:1;" ${matchFixBusy?'disabled':''}>${commitLabel}</button>
       <button class="preset-btn" id="matchFixCancelBtn" style="flex:1;">Cancel</button>
     </div>
   </div>`;
@@ -5031,7 +5176,7 @@ function matchDeltaLineHtml(m){
     return `${n} <span class="${cls}" style="font-weight:700;">${lbl}</span>`;
   }).join(' &nbsp;·&nbsp; ');
   return `<div style="margin-top:6px;">
-    <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">Rating change, per player</div>
+    <div style="font-size:10px; color:var(--gold-soft); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">Rating change, per player</div>
     <div>${side(m.winners)}</div>
     <div>${side(m.losers)}</div>
     <div style="font-size:10.5px; margin-top:3px;">Each player moves by their own amount: the less established a rating is, the further one result moves it.</div>
@@ -5054,7 +5199,7 @@ function buildDrawDetailBlock(m){
   return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim); line-height:1.6;">
     <div>Recorded as unfinished / a draw. It counts as a win or a loss for nobody and stays out of every record — but it is rated: the result scores 0.5 for both sides, and how far that beat each side's expectation still moves the ratings.</div>
     <div style="margin-top:6px;">
-      <div style="font-size:10px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">Rating change, per player</div>
+      <div style="font-size:10px; color:var(--gold-soft); text-transform:uppercase; letter-spacing:.03em; margin-bottom:2px;">Rating change, per player</div>
       <div>${line(m.winners)}</div>
       <div>${line(m.losers)}</div>
     </div>
@@ -6030,14 +6175,13 @@ Player C &amp; Player D"></textarea>
   let lastDate = null;
   display.forEach(m=>{
     if(m.date !== lastDate){
-      html += `<div class="section-heading" style="margin-top:16px; font-size:12px; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.04em;">${dayLabel(m.date)}</div>`;
+      html += `<div class="section-heading" style="margin-top:16px; font-size:12px; color:var(--gold-soft); text-transform:uppercase; letter-spacing:.04em;">${dayLabel(m.date)}</div>`;
       lastDate = m.date;
     }
     const isBase = m.id.startsWith('base_');
     const edit = matchEditsState[m.id];
     let metaLine = isBase ? 'Historical record' : `Submitted by ${m.submittedBy || 'unknown'}`;
     if(edit) metaLine += ` · edited by ${edit.editedBy} (${fmtRelative(edit.editedAt)})`;
-    const isArmed = armedDeleteId === m.id;
     const unverifiedTag = m.verified === false ? `<span class="strength-pill" style="color:#e8a5a1; border-color:var(--red); margin-left:6px;">Pre-June · single-sourced</span>` : '';
     const isExpanded = expandedGameId === m.id;
     // Draws are deliberately absent from MATCHES: they are not wins or losses
@@ -6061,15 +6205,29 @@ Player C &amp; Player D"></textarea>
         ? 'background:rgba(90,156,90,0.12); border-color:rgba(90,156,90,0.4);'
         : 'background:rgba(181,69,63,0.12); border-color:rgba(181,69,63,0.4);';
     }
+    // Filtering to one player makes this list that player's -- the card is even
+    // tinted by their result -- so the score is read from their side. With no
+    // filter the list is neutral: winner order, said out loud.
+    const gamesViewerName = selectedGamesPlayer !== 'all' ? selectedGamesPlayer : null;
+    const scoreText = gamesViewerName
+      ? scoreForViewer(m, playerIsOnStoredWinningSide(m, gamesViewerName))
+      : m.sets.map(s=>s.join('-')).join(', ');
+    // A decisive card's title already reads "X def Y", which binds the score
+    // order on its own -- repeating it under every card is noise. A draw says
+    // "X vs Y" and binds nothing, and a filtered list is read from one
+    // player's side, so those two say it out loud.
+    const scoreBinding = gamesViewerName
+      ? ` <span style="font-size:10.5px; color:var(--text-dim);">(${gamesViewerName}'s games first)</span>`
+      : (m.isDraw ? ` <span style="font-size:10.5px; color:var(--text-dim);">(${m.winners.join(' & ')} first)</span>` : '');
     html += `<div class="callout-card" style="${cardStyle}">
       <div class="game-card-clickable" data-gameid="${m.id}" style="cursor:pointer;">
         <div class="cc-title">${titleText}</div>
-        <div class="cc-detail">${m.sets.map(s=>s.join('-')).join(', ')}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
+        <div class="cc-detail">${scoreText}${scoreBinding}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
         ${detailContent}
       </div>
-      ${isUnlocked ? `<div class="difficulty-row" style="margin-top:8px;">
-        <button class="preset-btn" data-edit="${m.id}" style="flex:1;">Correct</button>
-        <button class="preset-btn" data-delete="${m.id}" style="flex:1; ${isArmed?'color:#e8a5a1; border-color:var(--red);':''}">${isArmed ? 'Confirm removal?' : 'Remove'}</button>
+      ${isUnlocked ? `<div class="difficulty-row match-action-row" style="margin-top:8px;">
+        <button class="preset-btn match-action" data-edit="${m.id}" style="flex:1;">Correct match<span class="match-action-sub">Change the score or the players</span></button>
+        <button class="preset-btn match-action match-action-destructive" data-delete="${m.id}" style="flex:1;">Remove and replay<span class="match-action-sub">Delete this match from the record</span></button>
       </div>
       <div class="section-sub" style="margin-top:4px; font-size:10.5px;">${MATCH_CORRECTION_NOTE}</div>
       ${matchFixPlan && matchFixPlan.change && (matchFixPlan.change.matchId === m.id || (matchFixPlan.change.match && matchFixPlan.change.match.id === m.id)) ? buildMatchFixConfirmHtml() : ''}` : ''}
@@ -6226,11 +6384,13 @@ Player C &amp; Player D"></textarea>
   box.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.onclick = ()=>{ editingMatchId = btn.dataset.edit; armedDeleteId = null; renderGamesTab(); };
   });
+  // Only rated matches carry [data-delete]; a pending submission is rejected,
+  // not removed. Removal no longer arms the button first: the blast-radius
+  // panel IS the confirmation, and it now says "Remove and replay" in as many
+  // words. Two confirmations, one of them invisible, is how a first click
+  // came to look like nothing happening.
   box.querySelectorAll('[data-delete]').forEach(btn=>{
-    btn.onclick = ()=>{
-      if(armedDeleteId === btn.dataset.delete){ deleteMatch(btn.dataset.delete); }
-      else { armedDeleteId = btn.dataset.delete; renderGamesTab(); }
-    };
+    btn.onclick = ()=>{ deleteMatch(btn.dataset.delete); };
   });
 
   if(editingMatchId) wireEditForm(editingMatchId);

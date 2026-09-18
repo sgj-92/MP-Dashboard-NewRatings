@@ -47,22 +47,24 @@ const SHOTS = [
   { file: '01-rankings-all-time.png', title: 'Power Rankings — all time',
     note: 'Kings of Tiers, the podium and the ranking list. A tier is crowned only where someone qualifies at the chosen minimum games, so S and C are absent here rather than shown empty.' },
   { file: '02-rankings-month.png', title: 'Power Rankings — a single month',
-    note: 'The month in four parts. Club-decision movement is labelled separately from movement earned on court, so Tom\'s and Shaun\'s July reads as a board decision rather than form.' },
-  { file: '03-profile-journey.png', title: 'Rating Journey',
+    note: 'Key takeaways first, Monthly Performance open, the other three stories folded -- all four concepts kept. Club-decision movement stays labelled apart from movement earned on court, so Tom\'s July reads as a board decision rather than form.' },
+  { file: '03-profile-hero.png', title: 'Player profile — reliability at a glance',
+    note: 'Reliability sits in its own facts row with its band, beside tier and games played and deliberately away from rank and win rate: it measures how much evidence stands behind the rating, not how good the player is.' },
+  { file: '04-profile-journey.png', title: 'Rating Journey',
     note: 'The recorded journey, not a reconstruction: the last point IS the Power Rating. Milestones show the club decision with its own marker.' },
-  { file: '04-match-card.png', title: 'Match detail',
-    note: 'Ratings as they were going in, the performance score against the pre-match expectation, and each player\'s own rating change.' },
-  { file: '05-monthly-breakdown.png', title: 'Monthly Rating breakdown',
+  { file: '05-match-card.png', title: 'Match detail',
+    note: 'Ratings as they were going in, the performance score against the pre-match expectation, and each player\'s own rating change. Scores read from the player in focus, so a loss looks like a loss.' },
+  { file: '06-monthly-breakdown.png', title: 'Monthly Rating breakdown',
     note: 'Carried-in rating (1137 -- wherever the continuous rating had reached, never a tier baseline) and the month\'s moves as the engine recorded them, including each player\'s own change in a shared match.' },
-  { file: '06-admin-review.png', title: 'Admin — Monthly Review',
-    note: 'A tier change cannot be recorded until the board answers the rating question. Four explicit answers; nothing is written before confirmation.' },
-  { file: '07-admin-historical.png', title: 'Admin — Historical Club Adjustment',
-    note: 'A board decision entered late. The player\'s state is reconstructed as at that date, decisions already recorded on it are listed, and a new one supersedes rather than replaces — nothing earlier is deleted.' },
-  { file: '08-admin-diagnostics.png', title: 'Admin — Beta diagnostics',
+  { file: '07-admin-review.png', title: 'Admin — Monthly Review',
+    note: 'A tier change cannot be recorded until the board answers the rating question. Four explicit answers, and an answer the record makes impossible is disabled with its reason beside it rather than offered as a live button.' },
+  { file: '08-admin-historical.png', title: 'Admin — Historical Club Adjustment',
+    note: 'A board decision entered late. State reconstructed as at that date, and the decisions already on it labelled: what is Active, what was Superseded, and what each one actually did. Nothing earlier is deleted or rewritten.' },
+  { file: '09-admin-diagnostics.png', title: 'Admin — Beta diagnostics',
     note: 'Reads the three collections directly and checks the record still hangs together. Also carries the read-strategy measurement.' },
-  { file: '09-games-correction.png', title: 'Games — historical match correction',
-    note: 'Correct or remove a rated game. The blast radius is measured by replaying and shown in full before anything is written.' },
-  { file: '10-full-calculation.png', title: 'The full calculation',
+  { file: '10-games-correction.png', title: 'Games — historical match correction',
+    note: 'Two separate actions with their own words. A removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.' },
+  { file: '11-full-calculation.png', title: 'The full calculation',
     note: 'The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.' },
 ];
 
@@ -121,13 +123,16 @@ async function main() {
   await shot('02-rankings-month.png',
     () => { selectedMonth = '2026-07'; minGames = 5; render(); },
     () => { const el = document.querySelector('.monthly-stories'); if (el) el.scrollIntoView({ block: 'start' }); });
-  await shot('03-profile-journey.png',
+  await shot('03-profile-hero.png',
+    () => { selectedMonth = 'all'; minGames = 10; render(); openSheet('Shaun'); },
+    () => { const el = document.querySelector('.pp-hero'); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('04-profile-journey.png',
     // openSheet is wrapped to render the premium profile itself. Calling
     // renderPremiumProfile again rebuilds the wrapper AFTER the match cards
     // have been reparented into it, which empties Recent Results.
     () => { selectedMonth = 'all'; minGames = 10; render(); openSheet('Shaun'); },
     () => { const w = document.getElementById('premiumProfileWrap'); const el = w && [...w.querySelectorAll('.pp-section-label')].find((e) => /rating journey/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
-  await shot('04-match-card.png', () => {}, () => {
+  await shot('05-match-card.png', () => {}, () => {
     const host = document.getElementById('ppMatchesHost');
     const row = host && host.querySelector('.pp-match-row');
     if (!row) return;
@@ -135,9 +140,9 @@ async function main() {
     const label = [...host.parentElement.querySelectorAll('.pp-section-label')].find((e) => /recent results/i.test(e.textContent));
     (label || row).scrollIntoView({ block: 'start' });
   });
-  await shot('05-monthly-breakdown.png',
+  await shot('06-monthly-breakdown.png',
     () => { closeSheet(); selectedMonth = '2026-07'; minGames = 5; render(); openMonthlyRatingBreakdown('Shaun', '2026-07'); });
-  await shot('06-admin-review.png',
+  await shot('07-admin-review.png',
     () => {
       const mrb = document.getElementById('monthlyRatingModal'); if (mrb) mrb.classList.remove('show');
       closeSheet(); isUnlocked = true; currentUserName = 'Board';
@@ -156,21 +161,21 @@ async function main() {
       if (tier) tier.click();
     },
     () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Rating — required/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
-  await shot('07-admin-historical.png',
+  await shot('08-admin-historical.png',
     () => {
       reviewSubject = null; renderManage();
       const p = document.getElementById('histPlayer'), d = document.getElementById('histDate');
       if (p && d) { p.value = 'Tom'; d.value = '2026-07-01'; histLoadContext(); }
     },
     () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Historical club adjustment/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
-  await shot('08-admin-diagnostics.png',
+  await shot('09-admin-diagnostics.png',
     () => { histReset(); renderManage(); return runBetaDiagnostics(); },
     () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Beta diagnostics/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
   // Games is a tab inside the Play section, not a section of its own, so it is
   // reached through its legacy tab button. Staging a removal PLANS the replay
   // and shows the consequence; it is never confirmed, and the stubbed
   // Firestore has no write path in any case.
-  await shot('09-games-correction.png',
+  await shot('10-games-correction.png',
     () => {
       const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
       if (b) b.click();
@@ -186,7 +191,7 @@ async function main() {
 
   // Back to the monthly breakdown for the calculation disclosure, which is
   // the one place the engine describes its own arithmetic.
-  await shot('10-full-calculation.png',
+  await shot('11-full-calculation.png',
     () => {
       matchFixReset();
       const b = document.querySelector('#tabrow .tab-btn[data-tab="power"]');

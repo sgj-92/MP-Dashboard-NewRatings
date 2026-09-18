@@ -16,52 +16,58 @@ Kings of Tiers, the podium and the ranking list. A tier is crowned only where so
 
 ![Power Rankings — a single month](02-rankings-month.png)
 
-The month in four parts. Club-decision movement is labelled separately from movement earned on court, so Tom's and Shaun's July reads as a board decision rather than form.
+Key takeaways first, Monthly Performance open, the other three stories folded -- all four concepts kept. Club-decision movement stays labelled apart from movement earned on court, so Tom's July reads as a board decision rather than form.
+
+### Player profile — reliability at a glance
+
+![Player profile — reliability at a glance](03-profile-hero.png)
+
+Reliability sits in its own facts row with its band, beside tier and games played and deliberately away from rank and win rate: it measures how much evidence stands behind the rating, not how good the player is.
 
 ### Rating Journey
 
-![Rating Journey](03-profile-journey.png)
+![Rating Journey](04-profile-journey.png)
 
 The recorded journey, not a reconstruction: the last point IS the Power Rating. Milestones show the club decision with its own marker.
 
 ### Match detail
 
-![Match detail](04-match-card.png)
+![Match detail](05-match-card.png)
 
-Ratings as they were going in, the performance score against the pre-match expectation, and each player's own rating change.
+Ratings as they were going in, the performance score against the pre-match expectation, and each player's own rating change. Scores read from the player in focus, so a loss looks like a loss.
 
 ### Monthly Rating breakdown
 
-![Monthly Rating breakdown](05-monthly-breakdown.png)
+![Monthly Rating breakdown](06-monthly-breakdown.png)
 
 Carried-in rating (1137 -- wherever the continuous rating had reached, never a tier baseline) and the month's moves as the engine recorded them, including each player's own change in a shared match.
 
 ### Admin — Monthly Review
 
-![Admin — Monthly Review](06-admin-review.png)
+![Admin — Monthly Review](07-admin-review.png)
 
-A tier change cannot be recorded until the board answers the rating question. Four explicit answers; nothing is written before confirmation.
+A tier change cannot be recorded until the board answers the rating question. Four explicit answers, and an answer the record makes impossible is disabled with its reason beside it rather than offered as a live button.
 
 ### Admin — Historical Club Adjustment
 
-![Admin — Historical Club Adjustment](07-admin-historical.png)
+![Admin — Historical Club Adjustment](08-admin-historical.png)
 
-A board decision entered late. The player's state is reconstructed as at that date, decisions already recorded on it are listed, and a new one supersedes rather than replaces — nothing earlier is deleted.
+A board decision entered late. State reconstructed as at that date, and the decisions already on it labelled: what is Active, what was Superseded, and what each one actually did. Nothing earlier is deleted or rewritten.
 
 ### Admin — Beta diagnostics
 
-![Admin — Beta diagnostics](08-admin-diagnostics.png)
+![Admin — Beta diagnostics](09-admin-diagnostics.png)
 
 Reads the three collections directly and checks the record still hangs together. Also carries the read-strategy measurement.
 
 ### Games — historical match correction
 
-![Games — historical match correction](09-games-correction.png)
+![Games — historical match correction](10-games-correction.png)
 
-Correct or remove a rated game. The blast radius is measured by replaying and shown in full before anything is written.
+Two separate actions with their own words. A removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.
 
 ### The full calculation
 
-![The full calculation](10-full-calculation.png)
+![The full calculation](11-full-calculation.png)
 
 The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.

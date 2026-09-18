@@ -693,7 +693,7 @@ function openMonthlyRatingBreakdown(name, month){
 
 function renderMonthlyRatingModal(modal, name, month){
   modal.innerHTML = `<div class="shell-more-panel">
-    <h3 style="margin-bottom:10px;">Monthly Rating Breakdown</h3>
+    <h3 style="margin-bottom:10px;">Month-end Power Rating</h3>
     <div id="mrbModalBody">${buildMonthlyRatingBreakdownHtml(name, month)}</div>
   </div>`;
   const fc = document.getElementById('mrbFullCalcToggle');
@@ -708,7 +708,7 @@ function renderMonthlyRatingModal(modal, name, month){
     const body = document.getElementById('mrbHowItWorksBody');
     const open = body.style.display !== 'none';
     body.style.display = open ? 'none' : 'block';
-    hw.textContent = open ? 'How monthly ratings work ›' : 'How monthly ratings work ⌄';
+    hw.textContent = open ? 'How month-end Power Rating works ›' : 'How month-end Power Rating works ⌄';
   };
   modal.querySelectorAll('.mrb-compare-btn').forEach(btn=>{
     btn.onclick = ()=> renderMonthlyRatingCompareModal(modal, name, btn.dataset.compare, month);
@@ -1692,6 +1692,38 @@ function tierRankNeighbors(name){
   };
 }
 
+// Reliability is how much evidence stands behind the rating. It is NOT skill
+// and must never read as a grade, so it sits in a neutral facts row beside
+// tier and games played rather than anywhere near rank or win rate. It comes
+// from the v3 record only: if that is missing for a player, the row says so
+// instead of inventing a number.
+function playerJoinedLabel(name){
+  const dates = MATCHES
+    .filter(m => m.winners.includes(name) || m.losers.includes(name))
+    .map(m => m.date)
+    .sort();
+  if(dates.length === 0) return null;
+  const d = new Date(dates[0] + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+}
+
+function buildProfileFactsHtml(p){
+  const joined = playerJoinedLabel(p.name);
+  const hasReliability = typeof p.reliabilityPct === 'number';
+  const relValue = hasReliability
+    ? `<div class="pp-fact-value pp-fact-value-gold">${Math.round(p.reliabilityPct)}%</div>
+       <div class="pp-fact-note">${p.reliabilityBand || ''}</div>`
+    : `<div class="pp-fact-value pp-fact-unavailable">—</div>
+       <div class="pp-fact-note">no v3 record</div>`;
+  const cell = (label, body) => `<div class="pp-fact"><div class="pp-fact-label">${label}</div>${body}</div>`;
+  return `<div class="pp-hero-facts">
+    ${cell('Tier', `<div class="pp-fact-value">${p.tier}</div>`)}
+    ${cell('Reliability', relValue)}
+    ${cell('Games', `<div class="pp-fact-value">${p.lifetimeMatches != null ? p.lifetimeMatches : (p.wins + p.losses)}</div>`)}
+    ${joined ? cell('Joined', `<div class="pp-fact-value pp-fact-value-small">${joined}</div>`) : ''}
+  </div>`;
+}
+
 function renderPremiumProfile(name, matchFilter){
   const p = PLAYERS.find(x=>x.name===name);
   if(!p) return;
@@ -1712,6 +1744,7 @@ function renderPremiumProfile(name, matchFilter){
       <div class="pp-hero-rating">${Math.round(p.rating)}</div>
       <div class="pp-hero-rating-label">Power Rating</div>
       <div class="pp-hero-sub">${snap.tierRank ? `#${snap.tierRank} Tier` : 'Unranked'} · ${snap.overallRank ? `#${snap.overallRank} Overall` : 'Not currently ranked'} · ${p.wins}-${p.losses} · ${p.winpct}% Win Rate</div>
+      ${buildProfileFactsHtml(p)}
     </div>
   `;
 

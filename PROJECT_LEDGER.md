@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `7178544` |
-| Tests | **234 / 234 passing** (14 of them drive a real browser) |
+| Last verified implementation commit | `__COMMIT__` |
+| Tests | **242 / 242 passing** (21 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -234,103 +234,34 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — CGPT visual acceptance fixes.**
+**Owner / baton: CGPT — final visual acceptance.**
 
-CGPT reviewed the ten live-record screenshots supplied by Shaun. The core
-rating architecture and visual direction are accepted; beta sign-off is
-**withheld pending the UX/terminology fixes below**. These are product
-presentation corrections only — do not alter Sequential-v1 mathematics.
+All eight acceptance fixes are implemented, covered by regression tests and
+captured from the live record. Details, and the measured contrast figures, are
+in the CCode handoff of 18 Sep in Section 6.
 
-### Acceptance fixes
+What is wanted back:
 
-1. **Remove the remaining “Monthly Rating” terminology.**
-   - The monthly breakdown currently says `Monthly Rating Breakdown`, shows
-     `1392 Monthly Rating`, and links to `How monthly ratings work`.
-   - Replace with language that makes clear this is the one continuous Power
-     Rating at a month boundary, e.g. **Month-end Power Rating**, **Power Rating
-     at month end**, and **How month-end Power Rating works**.
-   - Search the whole UI for stale `Monthly Rating` / `monthly ratings` copy and
-     remove any wording that could imply a separate monthly solver.
+1. Confirm the eight fixes read correctly in `docs/screenshots/` (11 shots), or
+   name what is still wrong.
+2. Give or withhold beta sign-off.
 
-2. **Make match score orientation unambiguous everywhere.**
-   - Current screenshots can show a player/team marked `LOSS` beside set scores
-     that visually read like a win because the scores are shown from the winning
-     team’s perspective.
-   - On player-centric/profile/recent-result cards, render set scores from the
-     **team/player in focus** perspective (losses should read 3-6, not 6-3).
-   - On neutral match cards, explicitly bind the score to the winner/team order
-     so there is no ambiguity.
-   - Add browser coverage for both a win and a loss orientation.
+Two deliberate departures from the mockups, both to avoid shipping copy the
+application would contradict:
 
-3. **Make Reliability visible on the main player hero/profile summary.**
-   - Rating Journey now explains reliability correctly, but the primary profile
-     screen must show it at a glance.
-   - Show **Reliability % + band** alongside Tier/Power Rating, using the agreed
-     bands: <25 Provisional, 25–49 Developing, 50–74 Established, 75+ High
-     Reliability.
-   - Reliability must remain visibly separate from skill/rank.
+- **Correct match** says "change the score or the players", not "or date". A
+  match id is built from its date, so a date change is refused and is instead a
+  removal plus a re-entry. If the mockup's wording is preferred, the refusal
+  itself has to be revisited — that is a product decision, not an
+  implementation one.
+- **Key takeaways** summarises three *different* stories rather than restating
+  the Monthly Performance table, so it adds something the sections below do not
+  each already say.
 
-4. **Monthly Review: unavailable actions must be disabled or hidden.**
-   - Example: Rishi is already established, yet `Correct the initial
-     classification` still presents an active `Choose` button.
-   - If an action is impossible, disable/hide its CTA and show the reason in the
-     same row. Do not present a clickable-looking control for an unavailable
-     branch.
+CCode has no other queued work.
 
-5. **Historical Club Adjustment: improve audit readability.**
-   - Raw event labels such as `B → B` and multiple promotion rows are truthful
-     but hard to parse.
-   - Add clear status badges/labels such as **Active**, **Superseded**,
-     **Correction**, and **Rating reassessment after promotion**.
-   - Make the currently-live event visually obvious; superseded events stay
-     visible for audit but visually de-emphasised.
-   - Do not collapse the audit trail into one rewritten event.
+Do not change Sequential-v1 match mathematics.
 
-6. **Historical Match Correction: separate correction vs removal language.**
-   - Current confirmation mixes `Confirm removal?`, `Correct and replay`, and
-     removal copy.
-   - Use two explicit flows/actions:
-       - **Correct match** — change score/players only, then replay.
-       - **Remove and replay** — delete an erroneous match from the rated record.
-   - A removal confirmation button must say **Remove and replay**.
-   - Keep the blast-radius preview and replay explanation.
-
-7. **Improve monthly-story hierarchy without deleting information.**
-   - Keep all four monthly concepts.
-   - Surface a compact **Key takeaways** summary first.
-   - Keep Monthly Performance visible as the award/performance story.
-   - Put Rating Movement, Ranking Movement, Moved without playing, and
-     Crossovers into clearly separated/collapsible sections where practical.
-   - Club-decision movement must remain explicitly separated from match-earned
-     movement, e.g. `+255.1 pts (+263.2 by club decision)`.
-
-8. **Small contrast/readability refinement.**
-   - Preserve the dark/champagne premium aesthetic.
-   - Increase contrast of secondary brown/gold body text slightly, especially
-     on dense Admin screens and long explanatory copy.
-   - Do not flatten the visual hierarchy or turn all secondary copy bright white.
-
-### Screens already accepted in principle
-
-- All-time Rankings / Kings / podium direction is strong and should not be
-  redesigned.
-- Rating Journey is strong after the correction-marker fix; retain the blue
-  club-decision marker and the wording that distinguishes a club decision from
-  an on-court result.
-- Diagnostics content/structure is accepted; only normal readability refinements
-  apply.
-
-### Acceptance gate
-
-After implementing the eight items above:
-- regenerate the same screenshot set from the live beta;
-- ensure tests remain green and add regression tests for stale Monthly Rating
-  terminology, score orientation, disabled unavailable review actions, and
-  remove-vs-correct CTA wording;
-- update the Ledger with commit/test results and baton back to CGPT for final
-  visual acceptance.
-
-CCode should not invent additional redesign work beyond these acceptance fixes.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -494,6 +425,86 @@ CCode should not invent additional redesign work beyond these acceptance fixes.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 18 Sep 2026 (CGPT visual acceptance: all eight fixes done)
+
+**All eight acceptance fixes are implemented, tested and captured. Baton back to
+CGPT for final visual acceptance.** No Sequential-v1 mathematics was touched.
+
+1. **"Monthly Rating" is gone.** The breakdown is now **Month-end Power Rating**,
+   the figure is labelled **Power Rating at month end**, and the disclosure is
+   **How month-end Power Rating works**. The methodology copy now opens
+   "Nothing is solved separately for a month". A browser test asserts the phrase
+   appears nowhere on screen — it caught my own replacement copy reintroducing it.
+
+2. **Score orientation.** Set scores are *stored* winner-first (`sets[i][0]` is
+   the winning side's games), which is why a defeat read "6-3, 6-4" beside the
+   word LOSS. One helper (`setsForViewer` / `scoreForViewer`) now orients any
+   card written from a player's point of view: the profile match log, the
+   monthly breakdown cards, and the Games list when it is filtered to a player.
+   Neutral cards keep winner order, bound by the "X def Y" title they already
+   carry; a draw, which says "X vs Y" and binds nothing, states the order.
+   **This uncovered a real defect in my own first attempt**: `enrichMatches`
+   dropped `sets` and exposed only the joined `score` string, so orienting
+   produced an empty score. The browser test failed on it. `sets` is now carried
+   through enrichment.
+
+3. **Reliability on the profile hero.** A facts row — Tier · Reliability ·
+   Games · Joined — sits under the Power Rating, with the percentage in gold and
+   the band beneath it, on the agreed thresholds (<25 Provisional, 25–49
+   Developing, 50–74 Established, 75+ High Reliability, already implemented in
+   `v3Bridge`). It is deliberately placed away from rank and win rate, because it
+   measures evidence and not ability. If a player has no v3 record the row says
+   so rather than showing a number.
+
+4. **Unavailable actions are disabled with their reason.** Both the live review
+   and Historical Club Adjustment: the button reads **Unavailable**, is styled as
+   unpressable (dashed, 45% opacity), the reason appears in an ⓘ note in the same
+   row, and the click handler refuses the branch even if the button is reached
+   some other way. Rishi's "Correct the initial classification" is the case in
+   the screenshot.
+
+5. **Audit trail is readable and still whole.** Every event keeps its row;
+   nothing is collapsed or rewritten. Each row now carries a status dot, an
+   English label and a badge: **Active**, **Superseded**, **Correction**.
+   `CLUB_RATING_REASSESSMENT — B→B` now reads "Rating reassessment after
+   promotion · tier unchanged (B), rating 1103.4 → 1352.5". Superseded rows stay
+   visible at 55% opacity with a grey dot.
+
+6. **Correct and remove are separate acts.** Two labelled actions on the card
+   ("Correct match — change the score or the players" / "Remove and replay —
+   delete this match from the record"), and the confirmation now speaks the
+   language of the act being taken: a removal is headed "Confirm removal" and
+   committed by a button reading **Remove and replay**. The invisible
+   double-arming click on Remove is gone — the blast-radius panel is the
+   confirmation, and it says so.
+
+7. **Monthly hierarchy.** A compact **Key takeaways** card leads, built from
+   three *different* stories (strongest performance, biggest rating riser,
+   biggest rank climb) so it does not restate the table below it. Monthly
+   Performance stays open as the award story. Rating Movement, Ranking Movement,
+   Moved without playing and Crossovers fold into `<details>` sections — no JS to
+   re-wire on render, and each keeps its own title and explanation. Nothing was
+   deleted, and club-decision movement remains labelled separately
+   (`+255.2 pts (+249.1 by club decision)`).
+
+8. **Contrast.** Measured rather than eyeballed. `--gold-dim` was **3.6:1** on
+   `--bg2` — below AA for small text — and was being used for body copy as well
+   as for borders. It now does borders only; a new `--gold-soft` (**6.6:1**)
+   takes its text uses. `--text-dim` lifted from 6.5:1 to **8.2:1**, and a new
+   `--text-soft` (**11:1**) sits between it and `--text` (14.6:1). The steps
+   between the three are wide, so hierarchy is preserved and nothing became
+   white. The all-time Rankings screen is visually unchanged, as asked.
+
+| | |
+|---|---|
+| Tests | **242 / 242 passing** (21 in a real browser) |
+| New regression tests | stale Monthly Rating copy · score orientation on a win and a loss · reliability + band on the hero · a disabled unavailable action that refuses to record · remove-vs-correct wording and one-click staging · audit badges and English labels · club-decision movement kept separate · all four monthly parts retained |
+| Screenshots | 11, regenerated from the live record, 0 page errors |
+| Live record | unchanged — 34 players · 150 matches · 638 journey events |
+
+The screenshot set gained one shot (the profile hero, so reliability is
+reviewable) and was renumbered; `docs/screenshots/README.md` is regenerated.
 
 ### CGPT — 18 Sep 2026 (visual acceptance pass)
 Reviewed all ten live-record screenshots supplied by Shaun. The beta is **not
@@ -1320,6 +1331,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `__COMMIT__` | CGPT visual acceptance: all eight presentation fixes, plus a stored-vs-displayed score-orientation defect the new browser test caught |
 | `7178544` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
 | `0f7c2ed` | Three authorised historical club decisions applied to the beta; four defects fixed en route |
 | `9cc3c13` | Historical Club Adjustment: Admin tool over replay-forward, superseding audited corrections |
@@ -1356,13 +1368,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **CGPT visual acceptance fixes — active.** Implement Section 4 items 1–8.
-2. Add regression coverage for:
-   - no stale `Monthly Rating` / separate-monthly-solver wording;
-   - player-centric score orientation for both wins and losses;
-   - unavailable Monthly Review branches are disabled/hidden;
-   - Historical Match Correction uses distinct `Correct match` and
-     `Remove and replay` actions.
-3. Regenerate the same ten live-record screenshots after the fixes.
-4. Record implementation commit + full/browser test counts in this Ledger.
-5. **Baton back to CGPT for final product/visual acceptance.**
+1. ~~CGPT visual acceptance fixes — Section 4 items 1–8~~ — **done**
+   (`__COMMIT__`). All eight implemented; no Sequential-v1 mathematics touched.
+2. ~~Regression coverage~~ — **done**. Eight browser tests added, covering
+   stale `Monthly Rating` wording, score orientation on both a win and a loss,
+   reliability and band on the profile hero, a disabled unavailable review
+   branch that also refuses to record, `Correct match` vs `Remove and replay`
+   wording and one-click staging, audit badges and English event labels,
+   club-decision movement kept separate, and all four monthly parts retained.
+   **242 / 242 passing, 21 of them in a real browser.**
+3. ~~Regenerate the live-record screenshots~~ — **done**, now **eleven**: a
+   profile-hero shot was added so reliability is reviewable, and the set was
+   renumbered. 0 page errors; the live record is unchanged.
+4. ~~Record commit and test counts~~ — **done**, above and in Section 1.
+5. **Baton back to CGPT for final product/visual acceptance** — the only open
+   item, and it is not CCode's to close.

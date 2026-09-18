@@ -360,3 +360,278 @@ test('Tier S is supported, and a sole qualifier is not crowned', { skip }, async
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== CGPT VISUAL ACCEPTANCE (18 Sep 2026) =====================
+// Eight presentation corrections raised against the live-record screenshots.
+// Each test below is the one that would have caught the thing CGPT spotted.
+
+// There is one continuous Power Rating. Copy that says "Monthly Rating" invites
+// exactly the misreading the whole v3 rewrite exists to remove: that a separate
+// score is solved each month.
+test('no screen calls the month-end figure a "Monthly Rating"', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = '2026-07'; minGames = 5; activeTab = 'power'; render();
+      openMonthlyRatingBreakdown('Shaun', '2026-07');
+      const modal = document.getElementById('monthlyRatingModal');
+      const t = document.getElementById('mrbHowItWorksToggle');
+      if (t) t.click();
+      return { text: modal.innerText, body: document.body.innerText };
+    });
+    assert.doesNotMatch(r.text, /monthly rating/i,
+      'the breakdown still calls it a Monthly Rating');
+    assert.doesNotMatch(r.text, /how monthly ratings work/i,
+      'the methodology link still calls it a monthly rating');
+    assert.match(r.text, /month.end power rating/i,
+      'the breakdown must name it as the Power Rating at month end');
+    assert.doesNotMatch(r.body, /monthly rating/i,
+      'stale Monthly Rating copy is still on screen somewhere');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Set scores are stored winner-first. Printed unchanged on a card about one
+// player, a defeat reads "6-3, 6-4" next to the word LOSS.
+test('a player-centric card shows the score from that player\'s side', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = 'all'; minGames = 10; render();
+      openSheet('Shaun');
+      // renderPremiumProfile reparents these out of #sheetMatches, keeping the
+      // nodes (and their .match class) intact.
+      const rows = [...document.querySelectorAll('.match')];
+      const read = (el) => ({
+        result: el.querySelector('.top span:last-child').textContent.trim(),
+        score: el.querySelector('.score').textContent.trim(),
+      });
+      const cards = rows.map(read);
+      // The stored, un-oriented score for the same matches, for comparison.
+      const stored = MATCHES
+        .filter((m) => m.winners.includes('Shaun') || m.losers.includes('Shaun'))
+        .sort((a, b) => (a.date < b.date ? 1 : -1))
+        .map((m) => ({ won: m.winners.includes('Shaun'), score: m.sets.map((s) => s.join('-')).join(', ') }));
+      return { cards, stored };
+    });
+
+    const win = r.cards.find((c) => c.result === 'WIN');
+    const loss = r.cards.find((c) => c.result === 'LOSS');
+    assert.ok(win && loss, 'the fixture must contain both a win and a loss for Shaun');
+
+    // In every set of an oriented card, the player's own games come first:
+    // a win reads high-low, a loss reads low-high.
+    const firstSet = (s) => s.split(', ')[0].split('-').map(Number);
+    const [wa, wb] = firstSet(win.score);
+    assert.ok(wa > wb, `a win must read from Shaun's side, got ${win.score}`);
+    const [la, lb] = firstSet(loss.score);
+    assert.ok(la < lb, `a loss must read from Shaun's side, got ${loss.score}`);
+
+    // And the orientation is a flip of the stored score, not a different match.
+    const storedLoss = r.stored.find((s) => !s.won);
+    const flipped = storedLoss.score.split(', ').map((p) => p.split('-').reverse().join('-')).join(', ');
+    assert.ok(r.cards.some((c) => c.score === flipped),
+      'the oriented loss must be the stored score flipped, not recomputed');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Reliability is how much evidence stands behind a rating. It belongs on the
+// profile at a glance -- and nowhere near rank or win rate.
+test('the profile hero shows reliability with its band', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = 'all'; minGames = 10; render();
+      openSheet('Shaun');
+      const facts = document.querySelector('.pp-hero-facts');
+      const p = PLAYERS.find((x) => x.name === 'Shaun');
+      return {
+        text: facts ? facts.innerText.replace(/\n+/g, ' | ') : null,
+        pct: p.reliabilityPct,
+        band: p.reliabilityBand,
+      };
+    });
+    assert.ok(r.text, 'the profile hero has no facts row');
+    assert.match(r.text, /RELIABILITY/i);
+    assert.ok(r.text.includes(`${Math.round(r.pct)}%`),
+      `the hero must show the recorded reliability (${r.pct}%), got: ${r.text}`);
+    assert.ok(r.text.includes(r.band), `the hero must name the band, got: ${r.text}`);
+    assert.ok(['Provisional', 'Developing', 'Established', 'High Reliability'].includes(r.band),
+      `unexpected band ${r.band}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// An impossible action must not offer a live-looking button. Rishi is
+// established, so there is no initial estimate left to correct.
+test('an unavailable review action is disabled and says why', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; currentUserName = 'Board';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+      if (b) b.click();
+      reviewSubject = 'Rishi'; renderManage();
+      document.querySelector('.review-tier').click();
+
+      const btn = document.querySelector('.review-decision[data-decision="CORRECT_INITIAL_CLASSIFICATION"]');
+      const before = reviewDraft ? reviewDraft.ratingDecision : null;
+      btn.click(); // must do nothing at all
+      const after = reviewDraft ? reviewDraft.ratingDecision : null;
+      return {
+        disabled: btn.disabled,
+        label: btn.textContent.trim(),
+        status: (V3_STATE.players.Rishi || {}).classificationStatus,
+        reasons: [...document.querySelectorAll('.reason-note')].map((e) => e.innerText),
+        before, after,
+      };
+    });
+    assert.strictEqual(r.status, 'ESTABLISHED', 'the fixture player must be established');
+    assert.strictEqual(r.disabled, true, 'the impossible branch is still clickable');
+    assert.strictEqual(r.label, 'Unavailable', 'a disabled action must not read "Choose"');
+    assert.ok(r.reasons.some((x) => /already established/i.test(x)),
+      `the reason must be shown in the panel, got: ${JSON.stringify(r.reasons)}`);
+    assert.strictEqual(r.after, r.before, 'clicking an unavailable branch changed the draft');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Removing a game and correcting one are different acts. One confirmation
+// serving both is how "Confirm removal?" ended up over "Correct and replay".
+test('remove and correct are separate actions with their own wording', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      isUnlocked = true; currentUserName = 'Board';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; renderGamesTab();
+      const yn = document.getElementById('gamesYourName'); if (yn) yn.value = 'Board';
+
+      const correctBtn = document.querySelector('#gamesView [data-edit]');
+      const removeBtn = document.querySelector('#gamesView [data-delete]');
+      const labels = { correct: correctBtn.innerText.trim(), remove: removeBtn.innerText.trim() };
+
+      // One click stages the removal: there is no invisible arming step.
+      await deleteMatch(removeBtn.dataset.delete);
+      const panel = [...document.querySelectorAll('#gamesView .callout-card')]
+        .find((e) => /re-derives every rating/i.test(e.textContent));
+      return {
+        labels,
+        staged: !!matchFixPlan,
+        changeType: matchFixPlan ? matchFixPlan.change.type : null,
+        panel: panel ? panel.innerText : null,
+        commit: document.getElementById('matchFixCommitBtn').textContent.trim(),
+        writes: window.__writes.length,
+      };
+    });
+    assert.match(r.labels.correct, /^Correct match/);
+    assert.match(r.labels.remove, /^Remove and replay/);
+    assert.strictEqual(r.staged, true, 'one click must stage the removal');
+    assert.strictEqual(r.changeType, 'delete');
+    assert.match(r.panel, /Confirm removal/i, 'the removal panel must say it is a removal');
+    assert.strictEqual(r.commit, 'Remove and replay',
+      'a removal must not be confirmed by a button reading "Correct and replay"');
+    assert.strictEqual(r.writes, 0, 'staging a removal must write nothing');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The audit trail stays whole; it just becomes readable. Superseded events are
+// still there, and the live one is identifiable without reading ids.
+test('the historical audit trail labels what is active and what was replaced', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; currentUserName = 'Board';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+      if (b) b.click();
+      renderManage();
+      // A synthetic trail: one superseded promotion, one live promotion, and
+      // the reassessment recorded with it.
+      const existing = [
+        { id: 'a', eventType: 'PROMOTION', previousTier: 'C', newTier: 'B',
+          previousPowerRating: 1103.4, newPowerRating: 1103.4, createdBy: 'seed-beta', superseded: true },
+        { id: 'b', eventType: 'PROMOTION', previousTier: 'C', newTier: 'B',
+          previousPowerRating: 1103.4, newPowerRating: 1103.4, createdBy: 'Shaun', superseded: false, revision: 2 },
+        { id: 'c', eventType: 'CLUB_RATING_REASSESSMENT', previousTier: 'B', newTier: 'B',
+          previousPowerRating: 1103.4, newPowerRating: 1352.5, createdBy: 'Shaun', superseded: false },
+      ];
+      const host = document.createElement('div');
+      host.innerHTML = existing.map((e) => buildAuditRowHtml(e, existing)).join('');
+      return {
+        rows: [...host.querySelectorAll('.audit-row')].map((el) => ({
+          text: el.innerText.replace(/\n+/g, ' | '),
+          faded: el.classList.contains('audit-row-superseded'),
+        })),
+      };
+    });
+    assert.strictEqual(r.rows.length, 3, 'every event stays in the trail');
+    assert.strictEqual(r.rows[0].faded, true, 'a superseded event must recede');
+    assert.match(r.rows[0].text, /Superseded/);
+    assert.strictEqual(r.rows[1].faded, false, 'the live event must not be faded');
+    assert.match(r.rows[1].text, /Promotion.*Active/s);
+    assert.match(r.rows[1].text, /revision 2/);
+    // The raw record says B -> B and 1103.4 -> 1103.4. Neither is readable.
+    assert.match(r.rows[2].text, /Rating reassessment after promotion/,
+      'a reassessment beside a promotion must say so');
+    assert.match(r.rows[2].text, /tier unchanged \(B\)/, '"B → B" must be said in English');
+    assert.match(r.rows[2].text, /1103\.4 → 1352\.5/);
+    assert.doesNotMatch(r.rows[2].text, /CLUB_RATING_REASSESSMENT/,
+      'a raw event constant must not be the label');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// A rating can move without anyone playing. The seeded fixture holds no club
+// decisions -- they were applied to the live beta -- so the case is provoked.
+test('club-decision movement stays labelled apart from movement on court', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = '2026-07'; minGames = 5; activeTab = 'power'; render();
+      // After render, so rebuilding MONTHLY_VIEWS cannot discard it.
+      // The biggest riser, so the row is certain to be one of the three shown.
+      const subject = MonthlyViews.ratingMovementTable(MONTHLY_VIEWS, '2026-07')[0];
+      subject.reassessmentChange = 40.5;
+      const box = document.createElement('div');
+      box.innerHTML = buildMonthlyStoriesHtml('2026-07');
+      document.body.appendChild(box);
+      [...box.querySelectorAll('.ms-fold')].forEach((f) => { f.open = true; });
+      const text = box.innerText.replace(/\n+/g, ' | ');
+      box.remove();
+      return { name: subject.playerId, text };
+    });
+    assert.match(r.text, new RegExp(`${r.name} \\| [^|]*\\(\\+40\\.5 by club decision\\)`),
+      `movement by decision must be called out separately for ${r.name}, got: ${r.text}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// All four monthly concepts survive the new hierarchy. Key takeaways summarises
+// on top; nothing below it is deleted.
+test('the monthly stories keep all four parts behind a takeaways summary', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = '2026-07'; minGames = 5; activeTab = 'power'; render();
+      const box = document.querySelector('.monthly-stories');
+      const folds = [...box.querySelectorAll('.ms-fold')];
+      folds.forEach((f) => { f.open = true; });
+      return {
+        head: box.querySelector('.ms-head').innerText,
+        takeaways: [...box.querySelectorAll('.ms-takeaway')].map((e) => e.innerText.replace(/\n+/g, ' ')),
+        titles: [...box.querySelectorAll('.ms-title, .ms-fold-title')].map((e) => e.innerText.trim()),
+        opened: box.innerText,
+      };
+    });
+    assert.match(r.head, /monthly summary/i);
+    assert.ok(r.takeaways.length >= 2, 'Key takeaways must actually summarise something');
+    assert.deepStrictEqual(r.titles, [
+      'Monthly Performance', 'Rating Movement', 'Ranking Movement',
+      'Moved without playing', 'Crossovers',
+    ], 'no monthly concept may be dropped by the new hierarchy');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
