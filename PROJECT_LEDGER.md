@@ -230,60 +230,131 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Accept session-cached cumulative reads for Ranking Movement while the journey is small | Shaun/CGPT, 17 Sep 2026: resolve Open Question 1a by accepting the current once-per-session cumulative `ratingJourney` read, cached for the session. Historical all-player ranks need prior state for inactive players. Keep Ranking Movement; no snapshot collection yet. Reopen when journey size, read cost or latency becomes material, including anticipated import/backfill growth; see Section 2. |
 | CGPT visual acceptance withheld pending presentation fixes | 18 Sep 2026 screenshot review: core architecture and premium visual direction accepted, but final beta sign-off waits on terminology, score-orientation, reliability visibility, Admin action-state, audit readability, correction/removal wording, monthly hierarchy and contrast fixes. No rating-model changes authorised. |
 | CGPT product/UX acceptance requirements satisfied | 18 Sep 2026 after `e0fdcbc`: all eight requested presentation fixes are implemented and regression-tested (242/242; 21 browser). The date-edit refusal and non-duplicative Key takeaways are approved departures from the mockup. Final pixel-level look check remains with Shaun/on-device because CGPT cannot render private-repo PNG pixels directly from the GitHub connector. |
+| Add player-facing Power Rating Guide in More | Players need both a short explanation and a detailed methodology view so small/unequal rating movements are understandable and defensible. The guide must explain expectation vs actual performance, reliability/K, why wins can move little, why losses can still gain rating, why partners move by different amounts, why reassessed/new players move faster, why club decisions are separate, and that ratings never reset monthly. Do **not** change Sequential-v1 merely because movements look small. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Shaun — final visual look check only.**
+**Owner / baton: Claude Code — player-facing rating education.**
 
-CCode has completed all eight CGPT acceptance fixes in `e0fdcbc` with
-**242 / 242 tests passing**, including **21 real-browser tests**. CGPT has
-reviewed the implementation evidence, screenshot README/capture coverage and
-the regression scope and considers the **product/UX acceptance requirements
-satisfied**.
+Shaun is happy with the beta visually so far. One product requirement remains
+before treating the ratings experience as complete: players need a clear,
+trustworthy explanation of **how and why Power Ratings move**, especially now
+that established-player changes can look small.
 
-One limitation remains for CGPT's own pixel-level visual sign-off: the GitHub
-connector exposes the private screenshot files and their metadata/captions but
-does not render their pixels into CGPT's vision context. Therefore CGPT is not
-claiming a pixel-perfect visual inspection of the regenerated 11 PNGs from the
-repo alone.
+### Build `More → Power Rating Guide`
 
-### Product acceptance — APPROVED
+Create a player-facing guide in the **More** section with two levels:
 
-The following are accepted as implemented requirements:
+#### 1. Summary view — plain English
 
-- no separate `Monthly Rating` concept in the UI; month-boundary language uses
-  the continuous Power Rating;
-- player-centric score orientation is explicit and browser-tested for wins and
-  losses;
-- profile hero shows Reliability % + agreed reliability band, separately from
-  rank/skill;
-- impossible Monthly Review branches are disabled/refused rather than offered
-  as live actions;
-- Historical Club Adjustment exposes Active/Superseded/correction audit state
-  without deleting history;
-- Historical Match Correction separates `Correct match` from `Remove and
-  replay`, while date changes remain remove + re-entry by design;
-- monthly story hierarchy keeps all four concepts, adds useful Key takeaways,
-  and keeps club-decision movement separate from on-court movement;
-- secondary-text contrast was raised while preserving the dark/champagne
-  prestige direction.
+Explain that:
 
-The two CCode departures from the earlier visual mockup are **approved**:
+- Power Rating is an estimate of current playing level, not a reward for wins;
+- each match changes the estimate based on **performance vs pre-match
+  expectation** and **how established the player's rating is**;
+- winning does not guarantee a large increase, and losing does not guarantee a
+  decrease;
+- a favourite who performs roughly as expected may move only a little;
+- an underdog who performs materially better than expected may gain rating even
+  in a loss;
+- new/recently reassessed players move faster because their rating is less
+  established;
+- established players move more slowly because the system has more evidence;
+- monthly screens do not reset ratings — there is one continuous Power Rating;
+- club reassessments are separate, explicit board decisions and must be labelled
+  as such.
 
-1. `Correct match` may change score/players, **not date**. A date change remains
-   removal + re-entry because the match id is date-derived.
-2. `Key takeaways` should summarise different useful monthly stories rather than
-   duplicate the Monthly Performance table.
+Use this sentence or very close wording as the conceptual anchor:
 
-### Remaining acceptance action
+> **The rating is not designed to reward wins. It is designed to update our
+> estimate of playing level.**
 
-If Shaun is happy with the regenerated screens visually on-device, the beta can
-be treated as accepted. If he spots a visual issue, record only that concrete
-issue; do not reopen rating architecture or completed UX decisions.
+#### 2. Detailed methodology — expandable
 
-CCode has no queued implementation work.
+Show the actual model transparently but readably:
+
+`rating change = K × (performance score − expected score)`
+
+Where:
+
+- **Expected score** comes from the four players' pre-match Power Ratings;
+- **Performance score** = 80% game share + 20% match result;
+- **K** controls how far that player can move in one result;
+- K starts near 40 for an uncertain rating and trends toward 10 as reliability
+  increases;
+- reliability is evidence/establishment, **not skill** and not a literal
+  confidence probability.
+
+Include the shipped formulas:
+
+- `K = 10 + 30 × (1 − reliability)`
+- `reliability = e / (e + 10)` where `e` is effective rated evidence.
+
+Use at least one simple worked example, e.g.:
+
+- K = 16
+- expected = 0.58
+- performance = 0.71
+- difference = +0.13
+- movement = `16 × 0.13 = +2.1` points.
+
+Also include a small comparison demonstrating why the same +0.20
+overperformance can move an established player only ~3 points but a 10%
+reliability reassessed player ~7.4 points.
+
+### FAQ / complaint-prevention section
+
+Include direct answers to:
+
+- **I won — why did I only get +1 or +2?**
+- **I lost — why did my rating go up?**
+- **Why did my partner move more than me?**
+- **Why does a new/reassessed player move much more than me?**
+- **Why did my rating jump after promotion/reclassification?**
+- **Do ratings reset every month?**
+
+Keep the distinctions explicit:
+
+- **Power Rating** = current ability estimate;
+- **Reliability** = how established that estimate is;
+- **Monthly Performance** = performance vs expectation in that month;
+- **League Table** = results/points;
+- **Tier** = club classification.
+
+### Match-level explanation
+
+Add a concise plain-English **Why your rating moved** explanation to the
+existing full-calculation/match-detail disclosure where practical, generated
+from persisted facts rather than guessed prose. Examples:
+
+- `You were slight favourites and performed almost exactly as expected, so your
+  established rating moved only +1.7.`
+- `You lost the match but performed better than your pre-match expectation, so
+  your rating still increased.`
+
+Do not introduce a second calculation path; this explanation must describe the
+same persisted expectation/performance/K data already used for the displayed
+movement.
+
+### Important modelling decision
+
+**Do not change Sequential-v1 because the movements look small.** Small
+established-player moves are an expected consequence of K falling with
+reliability. The guide should explain that behaviour first. Any future
+reconsideration of movement magnitude requires evidence from live usage and a
+separate methodology review, not a cosmetic tuning pass.
+
+### Acceptance
+
+- add browser tests that the Guide is reachable from More;
+- assert the formula/copy reflects Sequential-v1 and does not imply monthly
+  resets or win-reward logic;
+- test at least one `Why your rating moved` explanation against known persisted
+  match facts;
+- keep the premium dark/champagne visual language;
+- update the Ledger and baton back to CGPT/Shaun for copy/UX acceptance.
 
 Do not change Sequential-v1 match mathematics.
 ---
@@ -449,6 +520,24 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 18 Sep 2026 (Power Rating Guide)
+Shaun's remaining concern is player trust: movements now look relatively small
+for established players, so the product needs to explain the model before
+players assume something is wrong.
+
+Decision: build **More → Power Rating Guide** with a short plain-English summary,
+an expandable exact-methodology section, a worked example, complaint-prevention
+FAQ, and a match-level `Why your rating moved` explanation derived from the same
+persisted facts used by the calculation.
+
+Do **not** tune Sequential-v1 merely to make movements feel larger. The current
+small movements are explainable through reliability/K and should be presented
+clearly first. Any later methodology change must be evidence-led and separately
+approved.
+
+**Baton → CCode.** Implement the guide and targeted tests from Section 4, then
+return for copy/UX acceptance.
 
 ### CGPT — 18 Sep 2026 (product acceptance approved)
 Reviewed CCode's completed acceptance pass at `e0fdcbc`: **242/242 tests**,
@@ -1410,11 +1499,12 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~CGPT acceptance fixes~~ — **done** (`e0fdcbc`), 242/242 tests, 21 browser.
-2. ~~CGPT product/UX acceptance~~ — **approved**. All eight requested
-   presentation requirements are satisfied; both documented departures from the
-   mockup are approved.
-3. **Shaun: final on-device visual look check.** If the regenerated 11 screens
-   look right, beta acceptance is complete.
-4. No CCode task is queued. Only reopen implementation for a concrete visual
-   issue Shaun identifies.
+1. **Build `More → Power Rating Guide`** with summary, detailed formula, worked
+   example, FAQ, and the five-concept distinction in Section 4.
+2. Add match-level **Why your rating moved** copy driven by persisted
+   expectation/performance/K facts; no second calculation path.
+3. Add browser/regression coverage for guide reachability, formula/copy, no
+   monthly-reset wording, and at least one known match explanation.
+4. Do **not** alter Sequential-v1 movement magnitude in this task.
+5. Update Ledger with commit/test result and baton back to CGPT/Shaun for final
+   copy/UX acceptance.
