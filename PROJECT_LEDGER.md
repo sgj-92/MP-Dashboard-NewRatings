@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `7dcdd2e` |
-| Tests | **187 / 187 passing** |
+| Last verified implementation commit | `8d65edc` |
+| Tests | **202 / 202 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -84,8 +84,17 @@ writes a rating. The Admin Monthly Review is wired to it. Forward-only,
 attributed, confirmed against the exact document before anything is stored, and
 undone by recording a reversal rather than by deleting.
 
-**Not built:**
-replay-forward for historical edits · UI regression tests · final comparison
+**Games can be recorded again.** Approving a submission now rates it: it joins
+the v3 record via `replayForward.js`, the four players move, and the operator
+sees exactly who moves before confirming. This was broken — see Open Question 13.
+
+**Replay-forward exists** (`replayForward.js`): rebuilds the engine inputs from
+the stored record, applies an append/edit/delete, replays, and writes only what
+changed. Its precondition is that replaying with no change reproduces the
+record.
+
+**Not built:** the editing UI on top of replay-forward (the engine capability is
+there; exposing it is a product step) · UI regression tests · final comparison
 report and screenshots.
 
 ---
@@ -203,10 +212,11 @@ Shaun's decisions, including where an agent recommended otherwise.
 **Owner / baton: Claude Code.** The Real Rating Journey UI (`bd47757`), Kings of
 Tiers on historical tier (`6fd7a1c`), the retirement of the last two
 reconstructions (`19ffe21`) and the reassessment write path with Admin Monthly
-Review (`2a61943`) and beta diagnostics with the reset workflow (`7dcdd2e`) are
-complete. Next unblocked item is **replay-forward**, which Open Question 11
-should be decided before. On `Ledger CCode`, reconcile repository state and
-start the first approved, unblocked item without another Shaun decision.
+Review (`2a61943`), beta diagnostics with the reset workflow (`7dcdd2e`) and
+replay-forward (`8d65edc`) are complete. **NEXT is now a Shaun/CGPT decision,
+not an implementation task** — see Section 8. On `Ledger CCode`, reconcile
+repository state and start the first approved, unblocked item without another
+Shaun decision.
 
 **Three items need Shaun, none blocking:** Open Question 8 (Manny is Tier S and
 no tier-scoped view can show him), Open Question 9 (match cards now show four
@@ -317,7 +327,7 @@ concepts.
    representations of the same quantity — but it is engine code, so CCode has
    recorded it as a passing test (`KNOWN:` in `clubDecision.test.js`) rather
    than applying it. **Decide before replay-forward is built.**
-13. **BLOCKER, found 18 Sep 2026 — the beta cannot record a new game.**
+13. **RESOLVED (`8d65edc`) — the beta could not record a new game.**
    `getAllApprovedMatches()` returns the v3 `matches` collection only.
    `approveMatch()` still marks a submission approved in `extraMatchesState`,
    which no longer reaches the rated record. Verified in the browser: a
@@ -325,15 +335,31 @@ concepts.
    entirely and is never rated**. The club cannot add a result to the beta at
    all. This is not replay-forward's job — a new match at the end of the
    sequence is forward-only, like a club decision — it needs a match write path.
-   CCode is treating this as the priority within NEXT #1.
-14. **The approved hiding of Edit/Delete never happened, and they are worse
-   than inert.** Open Question 2 records Shaun/CGPT approving the hiding of the
+   Fixed: approving now plans an append through `replayForward.js`, shows which
+   players move, and writes on confirmation. Verified end to end.
+14. **RESOLVED (`8d65edc`) — the approved hiding of Edit/Delete had never
+   happened, and they were worse than inert.** Open Question 2 records Shaun/CGPT approving the hiding of the
    inert controls. The controls are still live. Verified: clicking Delete and
    confirming **persists `deletedIdsState` to shared storage and changes
    nothing** — the match remains, the rating is unchanged, because the legacy
    overlay is no longer applied. Editing likewise persists `matchEditsState`
    that does nothing. Both leave behind state that would desync matches from
-   their ratings if any code ever re-applied it.
+   their ratings if any code ever re-applied it. Both paths now refuse and say
+   why. Pending submissions keep their controls, because those are not in the
+   record.
+15. **Node and the browser do not agree in the last bit, and the record spans
+   both.** Found by replay-forward's no-op check. The record was seeded from
+   Node; replays happen in the browser; their `Math.pow` differs by 1 ULP, so an
+   expectation stored as `0.4803169324020399` replays as `0.48031693240203976`.
+   Exact-equality verification is therefore impossible across the two. Document
+   comparison now treats numbers as equal within a **relative 1e-9** — about
+   1.4e-6 at a rating of 1400, five orders of magnitude below the 0.1 the app
+   displays. **Recorded rather than buried:** anyone adding a checksum, a
+   signature, or a byte-equality check over these documents will hit this.
+16. **Open Question 11 is now lower urgency.** Replay-forward routes around it
+   by replaying INTENT rather than the recorded values — an event is replayed as
+   changing reliability only if it actually did. The one-line engine fix is still
+   worth making so other callers cannot hit it, but it no longer blocks anything.
 12. **A fourth false statement, now fixed, worth recording as a pattern.** The
    Games view told users a draw "doesn't count as a win or loss for anyone, and
    doesn't affect any rating". Draws are rated in v3 — one moved a player by
@@ -595,6 +621,44 @@ reversal.
 first** — it is the one-line engine precision fix, and replay-forward is exactly
 the thing that will replay those documents for real.
 
+### CCode — 18 Sep 2026 (replay-forward, and the blocker it uncovered)
+`8d65edc` on `main`. 202/202 tests (16 new). Verified end to end in the browser.
+
+**The headline is not replay-forward.** Starting it uncovered that **the beta
+could not record a game at all** (Open Question 13): approving a submission set
+a status in browser storage that nothing has read since the match source moved
+to the `matches` collection, so the game vanished and was never rated. That is
+now fixed — approving plans an append, shows which four players move and by how
+much, and writes on confirmation.
+
+**Replay-forward** rebuilds the engine inputs from the record, applies the
+change, and replays everything. Full re-derivation rather than a partial replay
+from a midpoint: every input is stored, so this is exact and has no
+partial-state bookkeeping to get subtly wrong. Appending costs 9 documents and
+4 players; editing one June match rewrites 634 and moves all 34 — and the plan
+says so before anything is written.
+
+**Its foundation is `verifyNoOp`** — replaying with no change must reproduce the
+record — and it is a precondition of planning any real change. It earned that by
+failing three times, each a real defect that reasoning had not caught:
+* Initialisations rebuilt without `classificationStatus`. The engine defaults it
+  to ESTABLISHED, so every provisional player was silently promoted.
+* The diff compared serialised JSON, so Firestore's key order made all 817
+  documents look changed.
+* **Open Question 15:** Node and the browser differ in the last bit of
+  `Math.pow`, so exact equality could never hold across the two.
+
+**Open Question 11 is now lower urgency (Open Question 16).** Replay-forward
+replays *intent* — an event is replayed as changing reliability only if it did —
+so it routes around the round-trip loss without pre-empting Shaun's decision.
+
+**Open Question 14 closed:** the inert Edit/Delete controls are gone, as
+approved long ago. They were worse than inert — a confirmed delete persisted an
+overlay and changed nothing.
+
+**Baton → CGPT.** There is no implementation item left in NEXT that CCode can
+start on its own. See Section 8: what remains needs a product decision.
+
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
 On Shaun's behalf, accepted the current once-per-session cumulative
@@ -742,6 +806,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `8d65edc` | Replay-forward (`replayForward.js`); approving a game now rates it; inert Edit/Delete controls removed |
 | `7dcdd2e` | Beta diagnostics (`betaDiagnostics.js`) and guarded reset workflow (`scripts/reset-beta.js`); backend `remove()` |
 | `2a61943` | Club reassessment write path (`clubDecision.js`) and Admin Monthly Review; club-decision movement separated in monthly views |
 | `19ffe21` | Last two reconstructions retired; `matchFacts.js`; per-player match deltas; draws shown as rated |
@@ -770,6 +835,19 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. Replay-forward — **required before any historical editing UI is exposed.**
-   Hiding inert Edit/Delete Match controls is already approved and must not
-   wait for replay-forward; restore them only when historical editing works.
+**Claude Code has no unblocked implementation item left.** Everything in the
+previous NEXT list is built. What remains needs Shaun or CGPT to choose:
+
+1. **Expose historical editing?** (Shaun.) `replayForward.js` can plan and
+   commit an edit or deletion safely, and reports the full blast radius first —
+   one June match moves all 34 players. Whether the club *should* be able to
+   rewrite a rated result, and who may, is a product and governance decision,
+   not an implementation one. Until it is made the controls stay hidden.
+2. **Open Question 11** (Shaun/CGPT): the one-line engine precision fix. No
+   longer blocking, still worth making.
+3. **Open Question 9** (Shaun): match cards now show four per-player rating
+   changes instead of one team figure.
+4. **Open Question 8** (Shaun): Manny is Tier S and no tier-scoped view can
+   show him.
+5. **UI regression tests, and the final comparison report and screenshots** —
+   CCode can start either of these without a decision if CGPT prefers.
