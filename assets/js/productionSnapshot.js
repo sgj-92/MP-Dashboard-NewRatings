@@ -336,3 +336,8 @@ const PRODUCTION_SNAPSHOT = {
     }
   ]
 };
+
+// Exported so tooling can read it without a browser. Read-only in every sense:
+// nothing here is ever an input to a calculation, and the comparison report is
+// generated FROM it, never written back TO it.
+if (typeof module === 'object' && module.exports) module.exports = { PRODUCTION_SNAPSHOT };

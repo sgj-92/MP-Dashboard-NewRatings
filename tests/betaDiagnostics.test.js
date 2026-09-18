@@ -191,3 +191,38 @@ test('the reset script cannot be pointed anywhere but the beta project', () => {
   assert.ok(/--i-mean-it/.test(code) && /--write/.test(code));
   assert.ok(/write && confirmed/.test(code), 'both flags must be required together');
 });
+
+// The comparison report is the artefact most likely to be read by someone who
+// was not here. It must not go stale silently, and it must not read as a
+// reconciliation -- the two systems rate different matches with different
+// engines, and presenting the differences as errors would be the most
+// misleading thing in the repository.
+test('the comparison report is truthful and still matches its generator', () => {
+  const { build, report } = require('../scripts/comparison-report.js');
+  const d = build();
+  const text = report();
+
+  // It leads with why the two are not supposed to agree.
+  assert.match(text, /not supposed to agree/);
+  assert.match(text, /a difference is not a defect/);
+  // Known caveats, not buried.
+  assert.match(text, /no join key/);
+  assert.match(text, /go stale/);
+  assert.match(text, /frozen snapshot/);
+  // The dominant effect is named, not left for the reader to infer.
+  assert.strictEqual(d.reseeded.length, 3);
+  assert.deepStrictEqual(d.reseeded.map((r) => r.name).sort(), ['Fatch', 'Shaun', 'Tom']);
+  const biggest = d.compared.slice().sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 3);
+  assert.deepStrictEqual(biggest.map((r) => r.name).sort(), ['Fatch', 'Shaun', 'Tom'],
+    'the reseeded players should be the largest differences, which is the report\'s central claim');
+
+  // Production figures are never an input.
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'comparison-report.js'), 'utf8');
+  assert.ok(!/PRODUCTION_SNAPSHOT[\s\S]{0,200}buildWritePlan/.test(src));
+
+  // The committed file is current. Dates aside, regenerating changes nothing.
+  const committed = fs.readFileSync(path.join(ROOT, 'COMPARISON_REPORT.md'), 'utf8');
+  const strip = (t) => t.split('\n').filter((l) => !l.startsWith('Generated ')).join('\n');
+  assert.strictEqual(strip(committed), strip(text),
+    'COMPARISON_REPORT.md is out of date — re-run scripts/comparison-report.js --write');
+});
