@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `94c3983` |
-| Tests | **255 / 255 passing** (21 of them drive a real browser) |
+| Last verified implementation commit | `9de1a88` |
+| Tests | **261 / 261 passing** (27 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -237,127 +237,34 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — player-facing rating education.**
+**Owner / baton: CGPT and Shaun — copy and UX acceptance of the Power Rating
+Guide.**
 
-Shaun is happy with the beta visually so far. One product requirement remains
-before treating the ratings experience as complete: players need a clear,
-trustworthy explanation of **how and why Power Ratings move**, especially now
-that established-player changes can look small.
+The guide, the FAQ and the match-level "Why your rating moved" explanation are
+built and covered by tests. Details are in the CCode handoff of 18 Sep in
+Section 6; the screens are shots 12–15 in `docs/screenshots/README.md`.
 
-### Build `More → Power Rating Guide`
+What is wanted back:
 
-Create a player-facing guide in the **More** section with two levels:
+1. Read the copy. It is the deliverable in this task, not a wrapper around one.
+   Anything that reads wrong is a one-line change — say which sentence.
+2. Confirm the guide belongs in More, or name where it should sit instead.
 
-#### 1. Summary view — plain English
+Two notes on what was deliberately not done:
 
-Explain that:
+- Sequential-v1 is unchanged. Small established-player movements are an expected
+  consequence of K falling with reliability, and the guide explains that rather
+  than the engine being tuned to hide it. Any reconsideration of movement
+  magnitude needs live-usage evidence and a separate methodology review.
+- The explanation on a match card is a *reading* of the facts the engine
+  recorded, never a recalculation. It quotes the stored expected score,
+  performance score, K and movement, and a test asserts it agrees with the
+  numbers printed directly above it.
 
-- Power Rating is an estimate of current playing level, not a reward for wins;
-- each match changes the estimate based on **performance vs pre-match
-  expectation** and **how established the player's rating is**;
-- winning does not guarantee a large increase, and losing does not guarantee a
-  decrease;
-- a favourite who performs roughly as expected may move only a little;
-- an underdog who performs materially better than expected may gain rating even
-  in a loss;
-- new/recently reassessed players move faster because their rating is less
-  established;
-- established players move more slowly because the system has more evidence;
-- monthly screens do not reset ratings — there is one continuous Power Rating;
-- club reassessments are separate, explicit board decisions and must be labelled
-  as such.
-
-Use this sentence or very close wording as the conceptual anchor:
-
-> **The rating is not designed to reward wins. It is designed to update our
-> estimate of playing level.**
-
-#### 2. Detailed methodology — expandable
-
-Show the actual model transparently but readably:
-
-`rating change = K × (performance score − expected score)`
-
-Where:
-
-- **Expected score** comes from the four players' pre-match Power Ratings;
-- **Performance score** = 80% game share + 20% match result;
-- **K** controls how far that player can move in one result;
-- K starts near 40 for an uncertain rating and trends toward 10 as reliability
-  increases;
-- reliability is evidence/establishment, **not skill** and not a literal
-  confidence probability.
-
-Include the shipped formulas:
-
-- `K = 10 + 30 × (1 − reliability)`
-- `reliability = e / (e + 10)` where `e` is effective rated evidence.
-
-Use at least one simple worked example, e.g.:
-
-- K = 16
-- expected = 0.58
-- performance = 0.71
-- difference = +0.13
-- movement = `16 × 0.13 = +2.1` points.
-
-Also include a small comparison demonstrating why the same +0.20
-overperformance can move an established player only ~3 points but a 10%
-reliability reassessed player ~7.4 points.
-
-### FAQ / complaint-prevention section
-
-Include direct answers to:
-
-- **I won — why did I only get +1 or +2?**
-- **I lost — why did my rating go up?**
-- **Why did my partner move more than me?**
-- **Why does a new/reassessed player move much more than me?**
-- **Why did my rating jump after promotion/reclassification?**
-- **Do ratings reset every month?**
-
-Keep the distinctions explicit:
-
-- **Power Rating** = current ability estimate;
-- **Reliability** = how established that estimate is;
-- **Monthly Performance** = performance vs expectation in that month;
-- **League Table** = results/points;
-- **Tier** = club classification.
-
-### Match-level explanation
-
-Add a concise plain-English **Why your rating moved** explanation to the
-existing full-calculation/match-detail disclosure where practical, generated
-from persisted facts rather than guessed prose. Examples:
-
-- `You were slight favourites and performed almost exactly as expected, so your
-  established rating moved only +1.7.`
-- `You lost the match but performed better than your pre-match expectation, so
-  your rating still increased.`
-
-Do not introduce a second calculation path; this explanation must describe the
-same persisted expectation/performance/K data already used for the displayed
-movement.
-
-### Important modelling decision
-
-**Do not change Sequential-v1 because the movements look small.** Small
-established-player moves are an expected consequence of K falling with
-reliability. The guide should explain that behaviour first. Any future
-reconsideration of movement magnitude requires evidence from live usage and a
-separate methodology review, not a cosmetic tuning pass.
-
-### Acceptance
-
-- add browser tests that the Guide is reachable from More;
-- assert the formula/copy reflects Sequential-v1 and does not imply monthly
-  resets or win-reward logic;
-- test at least one `Why your rating moved` explanation against known persisted
-  match facts;
-- keep the premium dark/champagne visual language;
-- update the Ledger and baton back to CGPT/Shaun for copy/UX acceptance.
+CCode has no other queued work.
 
 Do not change Sequential-v1 match mathematics.
+
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -521,6 +428,76 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 18 Sep 2026 (Power Rating Guide + "Why your rating moved")
+
+**Built. Baton to CGPT/Shaun for copy and UX acceptance.**
+Sequential-v1 is untouched.
+
+**`More → Power Rating Guide`** leads with the idea and keeps the arithmetic one
+tap away, on the reasoning that the usual reaction to a small movement is that
+the system is broken, and the honest answer — K falls as evidence builds — is
+not something a player should have to infer from a chart.
+
+Shaun's anchor sentence is used verbatim: *"The rating is not designed to reward
+wins. It is designed to update our estimate of playing level."*
+
+- **Summary** — the nine plain-English points, then the five things that sound
+  alike separated explicitly: Power Rating, Reliability, Monthly Performance,
+  League Table, Tier, with a note that a high Reliability does not make anyone
+  better.
+- **The actual calculation** (expandable) — the formula, expected score,
+  performance score at 80% games / 20% result, `K = 10 + 30 × (1 − reliability)`,
+  `reliability = e ÷ (e + 10)`, the worked example (16 × 0.13 = +2.1), and the
+  comparison: the same **+0.20** overperformance is **+2.9** at 85% reliability
+  and **+7.4** at 10% — roughly **2.6×**, with neither player having played
+  better than the other.
+- **Questions people actually ask** — all six from the brief, plus "my rating
+  barely moves any more, is it stuck?" Includes that a tier change on its own
+  moves **zero** points and zero reliability, and that nothing resets monthly.
+
+**Every constant is read from the running engine** — `KMAX`, `KMIN`, `RC`,
+`GAME_SHARE_WEIGHT`, `MATCH_RESULT_WEIGHT`, `RATING_MODEL_VERSION` — rather than
+transcribed beside it, so the guide cannot describe a model the app is not
+using. Without the engine it says so rather than falling back to remembered
+numbers, and it names the engine version it is describing.
+
+**`assets/js/ratingExplainer.js`** puts a plain-English *"Why your rating moved"*
+on the profile match card and the monthly breakdown card. It **calculates
+nothing**: the expected score, the performance score, K and the movement were
+all written when the match was rated and are read back through `MatchFacts`.
+There is no second calculation path. The pace language is decided from K rather
+than from the movement, so "moves it slowly" can never sit above "+7.4".
+
+A real example from the live record:
+
+> **Why Shaun's rating moved** — You went in as underdogs by 29 pts, so the
+> engine expected 45.9%. You delivered 28.6% — short of that. Your rating is
+> reasonably well established, so one result moves it at a moderate pace (K 21).
+> That comes to -3.7.
+> `K × (performance − expected) = 21 × (0.29 − 0.46) = -3.7`
+
+**Two defects found by looking at the render, not at the tests:**
+
+1. The long formula was set `nowrap` and cut off mid-line at phone width. A
+   formula the reader has to swipe to finish is one most readers will not
+   finish.
+2. The explanation read "underdogs by **28** pts" directly under the card's own
+   "underdogs by **29** pts going in". `Math.round(-28.5)` is −28 while
+   `Math.round(28.5)` is 29. The explainer now rounds the magnitude exactly as
+   the card does, and a browser test walks four players' cards asserting the two
+   always agree. A one-point disagreement is exactly what makes an explanation
+   look like a second calculation.
+
+| | |
+|---|---|
+| Tests | **261 / 261** (27 in a real browser) |
+| New tests | guide reachable from More and closes the sheet behind it · formulas and comparison match the engine's own constants · anchor sentence, five distinctions and all six questions present, no monthly-reset or win-reward wording · the explanation quotes the recorded expected/performance/K/movement and the same movement the card prints · the three complaint cases read correctly · card and explanation state the same gap |
+| Screenshots | 15 (four new: guide summary, the maths, the FAQ, and the explanation on a card) |
+
+**For CGPT and Shaun:** the copy is the deliverable here, so it is worth reading
+rather than glancing at — shots 12–15 in `docs/screenshots/README.md`. Anything
+that reads wrong is a one-line change; say which sentence.
 
 ### CCode — 18 Sep 2026 (production match-facts import: 7 new matches applied)
 
@@ -1558,6 +1535,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `9de1a88` | Power Rating Guide in More, and "Why your rating moved" on the match card, read from persisted facts |
 | `94c3983` | Production match-facts import applied: 7 new matches, 14 players moved, verified against a fresh re-read |
 | `f974fea` | Reusable, idempotent production match-facts importer; `appendMany` on replay-forward |
 | `e0fdcbc` | CGPT visual acceptance: all eight presentation fixes, plus a stored-vs-displayed score-orientation defect the new browser test caught |
@@ -1597,17 +1575,13 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-0. ~~Import the production match-facts export~~ — **done** (`94c3983`).
-   7 new matches, 0 conflicts, 50 pre-June rows excluded, 14 players moved
-   exactly as planned. Live record 157 · 666 · 34; replay-to-self 0 differences;
-   diagnostics 9/9; 255/255 tests. Re-running imports nothing. See
-   `PRODUCTION_IMPORT.md` and the CCode handoff of 18 Sep.
-1. **Build `More → Power Rating Guide`** with summary, detailed formula, worked
-   example, FAQ, and the five-concept distinction in Section 4.
-2. Add match-level **Why your rating moved** copy driven by persisted
-   expectation/performance/K facts; no second calculation path.
-3. Add browser/regression coverage for guide reachability, formula/copy, no
-   monthly-reset wording, and at least one known match explanation.
-4. Do **not** alter Sequential-v1 movement magnitude in this task.
-5. Update Ledger with commit/test result and baton back to CGPT/Shaun for final
-   copy/UX acceptance.
+1. ~~Build `More → Power Rating Guide`~~ — **done** (`9de1a88`). Summary,
+   expandable methodology with the real formulas read from the engine, worked
+   example, the established-vs-reassessed comparison, and the FAQ.
+2. ~~Match-level "Why your rating moved"~~ — **done**, on the profile match card
+   and the monthly breakdown card, from persisted facts only. No second
+   calculation path.
+3. ~~Regression coverage~~ — **done**. 6 new browser tests; 261/261 overall.
+4. ~~Do not alter Sequential-v1~~ — untouched.
+5. **Baton back to CGPT/Shaun for copy and UX acceptance** — the only open item,
+   and not CCode's to close.
