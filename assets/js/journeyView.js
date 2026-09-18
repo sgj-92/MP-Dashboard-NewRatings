@@ -36,12 +36,31 @@
     return 'other';
   }
 
-  const ORDER = { initialised: 0, correction: 1, tier: 1, reassessment: 1, match: 2, other: 1 };
+  // THE canonical order for events sharing a date and a player, defined once
+  // here and reused by MonthlyReview and ReplayForward. A tier move is recorded
+  // before the rating decision that accompanies it, because that is how a board
+  // makes it. Getting this wrong does not merely look odd: the chain of
+  // previous-to-new ratings stops joining up, and the record no longer
+  // reproduces itself on replay.
+  const SAME_DATE_ORDER = [
+    'PLAYER_INITIALISED',
+    'INITIAL_CLASSIFICATION_CORRECTION',
+    'INITIAL_CLASSIFICATION_CONFIRMED',
+    'PROMOTION',
+    'DEMOTION',
+    'TIER_RETAINED',
+    'CLUB_RATING_REASSESSMENT',
+    'MATCH_UPDATE',
+  ];
+  function eventRank(eventType) {
+    const i = SAME_DATE_ORDER.indexOf(eventType);
+    return i === -1 ? SAME_DATE_ORDER.length : i;
+  }
 
   function chronological(events) {
     return [...events].sort((a, b) => {
       if (a.effectiveDate !== b.effectiveDate) return a.effectiveDate < b.effectiveDate ? -1 : 1;
-      const ka = ORDER[kindOf(a)], kb = ORDER[kindOf(b)];
+      const ka = eventRank(a.eventType), kb = eventRank(b.eventType);
       if (ka !== kb) return ka - kb;
       // Match ids are `YYYY-MM-DD-N`, so they order matches within a day.
       return String(a.matchId || '').localeCompare(String(b.matchId || ''));
@@ -57,7 +76,15 @@
   // Shapes one player's events. Returns null when the player has no journey at
   // all -- the caller must say so plainly rather than invent a starting point.
   function forPlayer(allEvents, playerId) {
-    const mine = chronological((allEvents || []).filter((e) => e.playerId === playerId));
+    // A superseded decision stays in the record -- that is what makes a
+    // correction auditable rather than a rewrite -- but it is not part of the
+    // player's live story. Showing both would tell them their rating moved
+    // twice, and the chain would visibly fail to join up.
+    const superseded = {};
+    (allEvents || []).forEach((e) => { if (e.supersedes) superseded[e.supersedes] = true; });
+    const mine = chronological((allEvents || [])
+      .filter((e) => e.playerId === playerId)
+      .filter((e) => !superseded[e.id]));
     if (!mine.length) return null;
 
     const entries = mine.map((e) => {
@@ -176,5 +203,5 @@
     }));
   }
 
-  return { forPlayer, monthSlice, kindOf, chronological, chartSeries, tierEventsAreRatingNeutral, TIER_EVENTS };
+  return { forPlayer, monthSlice, kindOf, chronological, chartSeries, tierEventsAreRatingNeutral, TIER_EVENTS, SAME_DATE_ORDER, eventRank };
 });

@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 // Generate COMPARISON_REPORT.md: v3 beta against the frozen production snapshot.
 //
-//   node scripts/comparison-report.js            # print to stdout
-//   node scripts/comparison-report.js --write    # write COMPARISON_REPORT.md
+//   node scripts/comparison-report.js                  # from the seeded baseline
+//   node scripts/comparison-report.js --live           # from the live beta record
+//   node scripts/comparison-report.js --live --write   # ... and write the file
+//
+// The BASIS matters and is printed in the report. The seeded baseline is the
+// CSV replayed with no club decisions; the live record includes every decision
+// the board has since recorded. Once a historical adjustment exists the two are
+// materially different, and a report that did not say which one it came from
+// would be quietly wrong.
 //
 // WHAT THIS IS AND IS NOT. The two systems rate DIFFERENT MATCH SETS with
 // DIFFERENT ENGINES, so a per-player difference is not an error in either. The
@@ -25,8 +32,14 @@ const ROOT = path.join(__dirname, '..');
 function f1(v) { return (Math.round(v * 10) / 10).toFixed(1); }
 function signed(v) { const r = Math.round(v * 10) / 10; return (r > 0 ? '+' : '') + r.toFixed(1); }
 
-function build() {
+// `record` is an optional { state, matchCount, drawCount } read from the live
+// beta. Without it the report describes the seeded baseline.
+function build(record) {
   const b = buildBackfill();
+  const state = record ? record.state : b.replay.state;
+  const basis = record ? 'live' : 'baseline';
+  const matchCount = record ? record.matchCount : b.matches.length;
+  const drawCount = record ? record.drawCount : b.matches.filter((m) => m.outcome === Engine.OUTCOME.DRAW).length;
   const meta = PRODUCTION_SNAPSHOT.snapshot_metadata;
 
   const prod = {};
@@ -40,7 +53,7 @@ function build() {
   b.replay.journey.filter((e) => e.eventType === Engine.EVENT.PLAYER_INITIALISED)
     .forEach((e) => { startTier[e.playerId] = e.newTier; });
 
-  const rows = Object.entries(b.replay.state).map(([name, s]) => {
+  const rows = Object.entries(state).map(([name, s]) => {
     const p = prod[name];
     const reliability = Engine.reliability(s.effectiveEvidence);
     return {
@@ -67,17 +80,21 @@ function build() {
   const countDisagree = compared.filter((r) => r.matchDelta !== 0);
 
   const reseeded = compared.filter((r) => r.reseeded);
-  return { b, meta, rows, compared, onlyProd, absMean, tierDisagree, countDisagree, reseeded };
+  return { b, meta, rows, compared, onlyProd, absMean, tierDisagree, countDisagree, reseeded, basis, matchCount, drawCount };
 }
 
-function report() {
-  const d = build();
+function report(record) {
+  const d = build(record);
   const L = [];
   const today = new Date().toISOString().slice(0, 10);
 
   L.push('# Money Padel Prestige v3 — comparison report');
   L.push('');
   L.push(`Generated ${today} by \`scripts/comparison-report.js\`. Regenerate rather than edit.`);
+  L.push('');
+  L.push(d.basis === 'live'
+    ? '**Basis: the live beta record**, including every club decision the board has recorded.'
+    : '**Basis: the seeded baseline** \u2014 the CSV replayed with no club decisions applied.');
   L.push('');
   L.push('## Read this first');
   L.push('');
@@ -88,8 +105,8 @@ function report() {
   L.push('| | v3 beta | Legacy production |');
   L.push('|---|---|---|');
   L.push(`| Engine | \`${Engine.RATING_MODEL_VERSION}\` — sequential, one pass, applied per match | Iterative joint-equilibrium solver, K=28, 300 epochs over the whole set |`);
-  L.push(`| Matches rated | ${d.b.matches.length} | ${d.meta.total_matches_used_in_rating_engine} |`);
-  L.push(`| Draws rated | ${d.b.matches.filter((m) => m.outcome === Engine.OUTCOME.DRAW).length} | 0 — the legacy solver cannot rate a match with no winner |`);
+  L.push(`| Matches rated | ${d.matchCount} | ${d.meta.total_matches_used_in_rating_engine} |`);
+  L.push(`| Draws rated | ${d.drawCount} | 0 — the legacy solver cannot rate a match with no winner |`);
   L.push('| Rating moves | Once, when the match is played, weighted by how established the player is | Re-solved from scratch across every match on every computation |');
   L.push('| Monthly figures | A window on one continuous rating | A separate rating solved from that month alone |');
   L.push(`| Snapshot taken | live | ${d.meta.export_timestamp_utc} |`);
@@ -101,7 +118,7 @@ function report() {
 
   L.push('## What is already known not to reconcile');
   L.push('');
-  L.push(`- **Match counts differ for ${d.countDisagree.length} of ${d.compared.length} players.** v3 rates ${d.b.matches.length} matches, the snapshot ${d.meta.total_matches_used_in_rating_engine}.`);
+  L.push(`- **Match counts differ for ${d.countDisagree.length} of ${d.compared.length} players.** v3 rates ${d.matchCount} matches, the snapshot ${d.meta.total_matches_used_in_rating_engine}.`);
   L.push('  Not explained by draws alone. Recorded in `PROJECT_LEDGER.md` as an approximate reference, not a reconcilable truth.');
   L.push('- **The snapshot has no join key.** Every `player_id` is `null`, so players are matched by name. All');
   L.push(`  ${d.compared.length} map today; a rename would break it silently.`);
@@ -120,11 +137,15 @@ function report() {
   if (d.reseeded.length) {
     const biggest = d.compared.slice().sort((a, b2) => Math.abs(b2.delta) - Math.abs(a.delta)).slice(0, d.reseeded.length);
     const allTop = d.reseeded.every((r) => biggest.some((x) => x.name === r.name));
-    L.push(`**The ${d.reseeded.length} largest differences are explained before any match is played.**`);
+    L.push(allTop
+      ? `**The ${d.reseeded.length} largest differences are explained before any match is played.**`
+      : `**${d.reseeded.length} players are seeded differently by the two systems.**`);
     L.push(`${d.reseeded.map((r) => `${r.name} (started Tier ${r.startTier}, now Tier ${r.tier}, ${signed(r.delta)})`).join('; ')}.`);
     L.push('v3 seeds a player at the tier that was true when they first played; production seeds from the');
     L.push('tier they hold today. For these players the two systems begin 300 points apart, and evidence has');
-    L.push(`damped rather than erased that gap.${allTop ? ' They are exactly the largest differences in the table.' : ''}`);
+    L.push(`damped rather than erased that gap.${allTop
+      ? ' They are exactly the largest differences in the table.'
+      : ' They are no longer the largest differences: a club decision has since been recorded for each of them, which supersedes the seeding gap as the explanation.'}`);
     L.push('');
     const rest = d.compared.filter((r) => !r.reseeded);
     const restMean = rest.reduce((s2, r) => s2 + Math.abs(r.delta), 0) / (rest.length || 1);
@@ -166,8 +187,27 @@ function report() {
   return L.join('\n') + '\n';
 }
 
-function main() {
-  const text = report();
+async function liveRecord() {
+  const Store = require('../assets/js/ratingStore.js');
+  const { PROJECT_ID } = require('./seed-beta.js');
+  const backend = Store.firestoreRestBackend({ projectId: PROJECT_ID });
+  const [players, matches] = await Promise.all([
+    backend.getAll(Store.COLLECTIONS.players),
+    backend.getAll(Store.COLLECTIONS.matches),
+  ]);
+  const state = {};
+  players.forEach((p) => {
+    state[p.id] = {
+      rating: p.rating, effectiveEvidence: p.effectiveEvidence,
+      lifetimeMatches: p.lifetimeMatches, tier: p.tier,
+    };
+  });
+  return { state, matchCount: matches.length, drawCount: matches.filter((m) => m.outcome === 'DRAW').length };
+}
+
+async function main() {
+  const record = process.argv.includes('--live') ? await liveRecord() : null;
+  const text = report(record);
   if (process.argv.includes('--write')) {
     const at = path.join(ROOT, 'COMPARISON_REPORT.md');
     fs.writeFileSync(at, text);
@@ -178,5 +218,5 @@ function main() {
   }
 }
 
-if (require.main === module) main();
-module.exports = { build, report };
+if (require.main === module) main().catch((e) => { console.error(e.message); process.exitCode = 1; });
+module.exports = { build, report, liveRecord };

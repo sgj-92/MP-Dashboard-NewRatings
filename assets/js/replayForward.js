@@ -191,6 +191,11 @@
   const EPSILON = 1e-9;
 
   function sameValue(a, b) {
+    // The store writes null for a field that does not apply, and a document
+    // stored before a field existed simply has no key. Both mean the same
+    // thing, and treating them as different made every pre-existing document
+    // differ from its own rebuild the moment a field was added to the schema.
+    if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
     if (typeof a === 'number' && typeof b === 'number') {
       return a === b || Math.abs(a - b) <= EPSILON * Math.max(1, Math.abs(a), Math.abs(b));
     }

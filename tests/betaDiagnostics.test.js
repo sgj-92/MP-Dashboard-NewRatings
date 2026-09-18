@@ -220,9 +220,21 @@ test('the comparison report is truthful and still matches its generator', () => 
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'comparison-report.js'), 'utf8');
   assert.ok(!/PRODUCTION_SNAPSHOT[\s\S]{0,200}buildWritePlan/.test(src));
 
-  // The committed file is current. Dates aside, regenerating changes nothing.
+  // The committed report is generated from the LIVE beta, which these tests
+  // cannot reach, so it is not compared byte-for-byte against a baseline
+  // regeneration. What is checked is that it says which basis it came from --
+  // a report that did not would be quietly wrong now that club decisions
+  // exist and the two bases differ materially.
   const committed = fs.readFileSync(path.join(ROOT, 'COMPARISON_REPORT.md'), 'utf8');
-  const strip = (t) => t.split('\n').filter((l) => !l.startsWith('Generated ')).join('\n');
-  assert.strictEqual(strip(committed), strip(text),
-    'COMPARISON_REPORT.md is out of date — re-run scripts/comparison-report.js --write');
+  assert.match(committed, /\*\*Basis: the live beta record\*\*/,
+    'the committed report must be generated with --live and say so');
+  assert.match(committed, /not supposed to agree/);
+  assert.match(committed, /no join key/);
+  // The seeded-differently players are a fact about seeding, not about the
+  // current ratings, so they hold whichever basis was used.
+  d.reseeded.forEach((r) => assert.ok(committed.includes(r.name)));
+
+  // And the baseline generator still works, since it is the fallback when the
+  // beta cannot be reached.
+  assert.match(text, /\*\*Basis: the seeded baseline\*\*/);
 });

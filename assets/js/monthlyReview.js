@@ -24,11 +24,12 @@
 (function (root, factory) {
   const api = factory(
     typeof require === 'function' ? require('./ratingEngine.js') : root.RatingEngine,
-    typeof require === 'function' ? require('./reassessment.js') : root.Reassessment
+    typeof require === 'function' ? require('./reassessment.js') : root.Reassessment,
+    typeof require === 'function' ? require('./journeyView.js') : root.JourneyView
   );
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.MonthlyReview = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (Engine, Reassessment) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Engine, Reassessment, JourneyView) {
   'use strict';
 
   const DECISION = {
@@ -51,22 +52,12 @@
     TIER_RETAINED: Engine.EVENT.TIER_RETAINED,
   };
 
-  // Recorded and replayed in this order when two events share a date and a
-  // player. Alphabetical ordering put the rating decision BEFORE the tier move,
-  // which is backwards from how a board makes it and meant the record did not
-  // reproduce itself on replay.
-  const SAME_DATE_ORDER = [
-    Engine.EVENT.INITIAL_CLASSIFICATION_CORRECTION,
-    Engine.EVENT.INITIAL_CLASSIFICATION_CONFIRMED,
-    Engine.EVENT.PROMOTION,
-    Engine.EVENT.DEMOTION,
-    Engine.EVENT.TIER_RETAINED,
-    Engine.EVENT.CLUB_RATING_REASSESSMENT,
-  ];
-  function eventRank(eventType) {
-    const i = SAME_DATE_ORDER.indexOf(eventType);
-    return i === -1 ? SAME_DATE_ORDER.length : i;
-  }
+  // Defined once in journeyView so the order the record is written in, the
+  // order it is replayed in, and the order it is displayed in cannot drift
+  // apart. They did: the display ordered the rating decision before the tier
+  // move, and the chain of previous-to-new ratings stopped joining up.
+  const SAME_DATE_ORDER = JourneyView.SAME_DATE_ORDER;
+  const eventRank = JourneyView.eventRank;
 
   // Where every player stood immediately BEFORE the review date, read back from
   // the journey. Not re-derived: each field is the value the engine recorded on

@@ -94,12 +94,19 @@
           played[e.playerId].last = e;
         });
 
-      // A club reassessment moves a rating without a ball being hit. Rolled up
-      // separately so no screen can present it as a month's play. Until the
+      // ANY club decision moves a rating without a ball being hit -- a
+      // reassessment, and equally a correction of an initial classification.
+      // Counting only reassessments let a correction be presented as a month's
+      // form, which is the thing this separation exists to prevent. Superseded
+      // decisions are excluded: they are history, not movement. Until the
       // first decision is recorded this is 0 for everyone, which is why the
       // distinction only became reachable when the write path shipped.
       const decided = {};
-      events.filter((e) => e.eventType === Engine.EVENT.CLUB_RATING_REASSESSMENT
+      const supersededHere = {};
+      events.forEach((e) => { if (e.supersedes) supersededHere[e.supersedes] = true; });
+      events.filter((e) => e.eventType !== Engine.EVENT.MATCH_UPDATE
+        && e.eventType !== Engine.EVENT.PLAYER_INITIALISED
+        && !supersededHere[e.id]
         && monthOf(e.effectiveDate) === month
         && typeof e.previousPowerRating === 'number' && typeof e.newPowerRating === 'number')
         .forEach((e) => {

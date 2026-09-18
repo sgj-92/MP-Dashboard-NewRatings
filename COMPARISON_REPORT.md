@@ -2,6 +2,8 @@
 
 Generated 2026-09-18 by `scripts/comparison-report.js`. Regenerate rather than edit.
 
+**Basis: the live beta record**, including every club decision the board has recorded.
+
 ## Read this first
 
 **These two systems are not supposed to agree, and a difference is not a defect in either.**
@@ -31,17 +33,17 @@ receiving matches. They are reference data and are never an input to anything in
 ## Summary
 
 - Players compared: **34**
-- Mean absolute difference: **31.9 points**
-- Largest difference: **220.3 points**
+- Mean absolute difference: **18.0 points**
+- Largest difference: **97.8 points**
 - Tier disagreements: **0**
 
-**The 3 largest differences are explained before any match is played.**
-Shaun (started Tier C, now Tier B, -220.3); Tom (started Tier C, now Tier B, -193.0); Fatch (started Tier C, now Tier B, -100.1).
+**3 players are seeded differently by the two systems.**
+Shaun (started Tier C, now Tier B, -24.7); Tom (started Tier C, now Tier B, -6.0); Fatch (started Tier C, now Tier B, +97.8).
 v3 seeds a player at the tier that was true when they first played; production seeds from the
 tier they hold today. For these players the two systems begin 300 points apart, and evidence has
-damped rather than erased that gap. They are exactly the largest differences in the table.
+damped rather than erased that gap. They are no longer the largest differences: a club decision has since been recorded for each of them, which supersedes the seeding gap as the explanation.
 
-Excluding them, the mean absolute difference is **18.4 points** across 31 players.
+Excluding them, the mean absolute difference is **15.6 points** across 31 players.
 
 A tier disagreement is expected where v3 recorded a promotion after the snapshot was taken.
 
@@ -53,40 +55,40 @@ systems disagreeing about confidence, not about ability.
 
 | Player | Tier | Started | v3 | Snapshot | Diff | v3 matches | Snapshot matches | Reliability |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| Manny | S | S | 2010.8 | 2012.7 | -1.9 | 3 | 2 (+1) | 23% |
-| Kaz | A | A | 1734.5 | 1768.1 | -33.6 | 23 | 22 (+1) | 70% |
-| Erf | A | A | 1733.9 | 1722.0 | +11.9 | 26 | 26 | 72% |
-| KC | A | A | 1721.2 | 1702.2 | +19.0 | 26 | 28 (-2) | 72% |
+| Manny | S | S | 2010.3 | 2012.7 | -2.4 | 3 | 2 (+1) | 23% |
+| Erf | A | A | 1734.7 | 1722.0 | +12.7 | 26 | 26 | 72% |
+| Kaz | A | A | 1731.2 | 1768.1 | -36.9 | 23 | 22 (+1) | 70% |
+| KC | A | A | 1711.5 | 1702.2 | +9.3 | 26 | 28 (-2) | 72% |
 | Del | A | A | 1708.4 | 1709.0 | -0.6 | 1 | 1 | 9% |
-| Osh | A | A | 1707.0 | 1704.3 | +2.7 | 30 | 30 | 75% |
-| Len | A | A | 1675.1 | 1658.1 | +17.0 | 32 | 31 (+1) | 76% |
-| Dennis | A | A | 1671.3 | 1641.9 | +29.4 | 9 | 9 | 47% |
-| Eli | A | A | 1648.0 | 1590.7 | +57.3 | 31 | 32 (-1) | 76% |
-| Ant Slice | A | A | 1635.7 | 1615.1 | +20.6 | 7 | 6 (+1) | 41% |
-| Rishi | B | B | 1439.3 | 1483.9 | -44.6 | 72 | 71 (+1) | 88% |
-| PDM | B | B | 1429.9 | 1485.9 | -56.0 | 34 | 35 (-1) | 77% |
-| Antz | B | B | 1407.0 | 1417.6 | -10.6 | 18 | 18 | 64% |
-| Harry | B | B | 1405.3 | 1434.4 | -29.1 | 29 | 29 | 74% |
-| Max | B | B | 1400.4 | 1425.7 | -25.3 | 50 | 50 | 83% |
-| Mulley | B | B | 1399.9 | 1405.1 | -5.2 | 1 | 1 | 9% |
-| Omar | B | B | 1393.6 | 1423.6 | -30.0 | 9 | 10 (-1) | 47% |
-| Carla | B | B | 1383.9 | 1389.8 | -5.9 | 1 | 1 | 9% |
-| MK | B | B | 1383.5 | 1430.9 | -47.4 | 14 | 14 | 58% |
-| Rocky | B | B | 1383.3 | 1353.8 | +29.5 | 16 | 16 | 62% |
-| Stormzy | B | B | 1376.9 | 1389.0 | -12.1 | 17 | 18 (-1) | 63% |
-| Chloe | B | B | 1371.8 | 1366.9 | +4.9 | 7 | 7 | 41% |
-| Tarique | B | B | 1357.3 | 1352.1 | +5.2 | 6 | 6 | 38% |
-| Jords | B | B | 1327.3 | 1311.3 | +16.0 | 36 | 35 (+1) | 78% |
-| Shaun | B | **C** | 1178.7 | 1399.0 | -220.3 | 21 | 21 | 68% |
-| Tom | B | **C** | 1158.9 | 1351.9 | -193.0 | 21 | 20 (+1) | 68% |
-| Fatch | B | **C** | 1144.2 | 1244.3 | -100.1 | 25 | 25 | 71% |
-| Jams | C | C | 1109.9 | 1101.2 | +8.7 | 6 | 7 (-1) | 38% |
-| Skapz | C | C | 1106.6 | 1108.3 | -1.7 | 2 | 1 (+1) | 17% |
-| Aubyn | C | C | 1102.4 | 1115.8 | -13.4 | 5 | 4 (+1) | 33% |
-| Rhys | C | C | 1094.1 | 1097.6 | -3.5 | 4 | 3 (+1) | 29% |
+| Osh | A | A | 1705.5 | 1704.3 | +1.2 | 30 | 30 | 75% |
+| Len | A | A | 1675.8 | 1658.1 | +17.7 | 32 | 31 (+1) | 76% |
+| Dennis | A | A | 1671.5 | 1641.9 | +29.6 | 9 | 9 | 47% |
+| Eli | A | A | 1652.5 | 1590.7 | +61.8 | 31 | 32 (-1) | 76% |
+| Ant Slice | A | A | 1636.5 | 1615.1 | +21.4 | 7 | 6 (+1) | 41% |
+| Rishi | B | B | 1454.1 | 1483.9 | -29.8 | 72 | 71 (+1) | 88% |
+| PDM | B | B | 1446.1 | 1485.9 | -39.8 | 34 | 35 (-1) | 77% |
+| Antz | B | B | 1422.0 | 1417.6 | +4.4 | 18 | 18 | 64% |
+| Harry | B | B | 1414.9 | 1434.4 | -19.5 | 29 | 29 | 74% |
+| Max | B | B | 1410.6 | 1425.7 | -15.1 | 50 | 50 | 83% |
+| Mulley | B | B | 1405.5 | 1405.1 | +0.4 | 1 | 1 | 9% |
+| Omar | B | B | 1403.4 | 1423.6 | -20.2 | 9 | 10 (-1) | 47% |
+| Rocky | B | B | 1395.6 | 1353.8 | +41.8 | 16 | 16 | 62% |
+| MK | B | B | 1392.7 | 1430.9 | -38.2 | 14 | 14 | 58% |
+| Carla | B | B | 1391.0 | 1389.8 | +1.2 | 1 | 1 | 9% |
+| Stormzy | B | B | 1384.3 | 1389.0 | -4.7 | 17 | 18 (-1) | 63% |
+| Shaun | B | **C** | 1374.3 | 1399.0 | -24.7 | 21 | 21 | 63% |
+| Chloe | B | B | 1371.1 | 1366.9 | +4.2 | 7 | 7 | 41% |
+| Tarique | B | B | 1361.7 | 1352.1 | +9.6 | 6 | 6 | 38% |
+| Tom | B | **C** | 1345.9 | 1351.9 | -6.0 | 21 | 20 (+1) | 64% |
+| Fatch | B | **C** | 1342.1 | 1244.3 | +97.8 | 25 | 25 | 55% |
+| Jords | B | B | 1336.1 | 1311.3 | +24.8 | 36 | 35 (+1) | 78% |
+| Jams | C | C | 1116.0 | 1101.2 | +14.8 | 6 | 7 (-1) | 38% |
+| Aubyn | C | C | 1111.3 | 1115.8 | -4.5 | 5 | 4 (+1) | 33% |
+| Skapz | C | C | 1107.1 | 1108.3 | -1.2 | 2 | 1 (+1) | 17% |
+| Tee | C | C | 1103.0 | 1114.1 | -11.1 | 8 | 8 | 44% |
+| Rhys | C | C | 1094.3 | 1097.6 | -3.3 | 4 | 3 (+1) | 29% |
 | M.R | C | C | 1089.5 | 1088.7 | +0.8 | 1 | 1 | 9% |
-| Tee | C | C | 1087.0 | 1114.1 | -27.1 | 8 | 8 | 44% |
-| Fee | C | C | 1085.8 | 1084.9 | +0.9 | 5 | 4 (+1) | 33% |
+| Fee | C | C | 1085.6 | 1084.9 | +0.7 | 5 | 4 (+1) | 33% |
 
 ## How to read a large difference
 
