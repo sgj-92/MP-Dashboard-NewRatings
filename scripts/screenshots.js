@@ -66,6 +66,14 @@ const SHOTS = [
     note: 'Two separate actions with their own words. A removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.' },
   { file: '11-full-calculation.png', title: 'The full calculation',
     note: 'The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.' },
+  { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
+    note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
+  { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
+    note: 'One tap away. The formulas are read from the running engine rather than written out beside it, so the guide cannot describe a model the app is not using. The comparison shows why the same overperformance moves an established player ~2.9 points and a newly reassessed one 7.4.' },
+  { file: '14-rating-guide-faq.png', title: 'Power Rating Guide — questions people actually ask',
+    note: 'The complaints the guide exists to pre-empt, answered directly: a small move after a win, a rating rising after a loss, a partner moving further, and whether anything resets monthly.' },
+  { file: '15-why-your-rating-moved.png', title: 'Why your rating moved',
+    note: 'On the match card itself, built from the same persisted expectation, performance and K the movement above it came from — a reading of those facts, never a second calculation.' },
 ];
 
 async function main() {
@@ -188,6 +196,36 @@ async function main() {
       return deleteMatch(del.dataset.delete);
     },
     () => { const el = [...document.querySelectorAll('#gamesView .callout-card')].find((e) => /re-derives every rating/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+
+  const openGuide = () => {
+    const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+    closeSheet();
+    const b = document.querySelector('#tabrow .tab-btn[data-tab="power"]'); if (b) b.click();
+    selectedMonth = 'all'; minGames = 10; render();
+    openPowerRatingGuide();
+  };
+  await shot('12-rating-guide-summary.png', openGuide,
+    () => { const el = document.querySelector('.rg-anchor'); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('13-rating-guide-maths.png',
+    () => { const f = document.querySelector('.rg-fold'); if (f) f.open = true; },
+    () => { const el = document.querySelector('.rg-formula'); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('14-rating-guide-faq.png',
+    () => {
+      const f = document.querySelector('.rg-fold'); if (f) f.open = false;
+      const faqs = [...document.querySelectorAll('.rg-faq')];
+      faqs.slice(0, 2).forEach((d) => { d.open = true; });
+    },
+    () => { const el = [...document.querySelectorAll('.rg-h')].find((e) => /questions people/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('15-why-your-rating-moved.png',
+    () => {
+      const g = document.getElementById('ratingGuideModal'); if (g) g.classList.remove('show');
+      selectedMonth = 'all'; minGames = 10; render();
+      openSheet('Shaun');
+      const host = document.getElementById('ppMatchesHost');
+      const row = host && host.querySelector('.pp-match-row');
+      if (row) row.click();
+    },
+    () => { const el = document.querySelector('.why-moved'); if (el) el.scrollIntoView({ block: 'center' }); });
 
   // Back to the monthly breakdown for the calculation disclosure, which is
   // the one place the engine describes its own arithmetic.

@@ -3395,6 +3395,7 @@ function buildMonthlyMatchCardsHtml(ctx){
       <div style="margin-top:2px; font-size:12.5px; font-weight:700;">${scoreForViewer(m, playerIsOnStoredWinningSide(m, ctx.name))}</div>
       <div style="font-size:11.5px; color:var(--text-dim);"><span class="${deltaClass}" style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} pts</span> for ${ctx.name} → ${Math.round(e.rating)}</div>
       ${buildMatchDetailBlock(m, true)}
+      ${whyYourRatingMovedHtml(m.id, ctx.name, m.isDraw ? 'draw' : (d && d.won ? 'win' : 'loss'))}
     </div>`;
   }).join('');
 }
@@ -3620,6 +3621,7 @@ function openSheet(name, matchFilter){
       </div>
       <div style="margin-top:4px;">${perfLabel}</div>
       ${deltaLabel}
+      ${whyYourRatingMovedHtml(m.id, name, m.isDraw ? 'draw' : (won ? 'win' : 'loss'))}
       ${adminButtons}
     </div>`;
   }).join('');
@@ -5166,6 +5168,26 @@ let addGameExpanded = false;
 // variant: K is per-player, so the four players move by four different amounts,
 // and the rating is continuous, so a match moved it by exactly one amount
 // whichever month filter happens to be on screen.
+// "Why your rating moved", in plain English, for ONE named player. Everything
+// in it is read back from the facts the engine recorded at the time -- there is
+// no second calculation path, and the movement quoted is the stored movement,
+// not a re-derivation of it. Only shown where the app knows whose card this is;
+// a neutral match card has no "you" to address.
+function whyYourRatingMovedHtml(matchId, name, result){
+  if(typeof RatingExplainer === 'undefined') return '';
+  const facts = V3_MATCH_FACTS[matchId];
+  if(!facts) return '';
+  const view = MatchFacts.forPlayer(facts, name);
+  if(!view) return '';
+  const e = RatingExplainer.explain(view, result);
+  if(!e) return '';
+  return `<div class="why-moved">
+    <div class="why-moved-head">Why ${name}'s rating moved</div>
+    <div class="why-moved-body">${e.text}</div>
+    ${e.arithmetic ? `<div class="why-moved-sum">K × (performance − expected) = ${e.arithmetic}</div>` : ''}
+  </div>`;
+}
+
 function matchDeltaLineHtml(m){
   if(!m.deltas) return '';
   const side = (names) => names.map(n=>{

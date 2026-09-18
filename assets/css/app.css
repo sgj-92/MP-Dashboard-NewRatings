@@ -1069,6 +1069,99 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .pp-hero-rating-label{ font-family: var(--font-interface); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); margin-top: 2px; }
 .pp-hero-sub{ font-family: var(--font-interface); font-size: 11.5px; color: var(--text-dim); margin-top: 8px; }
 
+/* ---- Power Rating Guide -------------------------------------------------
+   Leads with the idea and keeps the arithmetic one tap away. Premium dark /
+   champagne throughout; nothing here introduces a new colour. */
+.rg-panel{ padding-bottom: 8px; }
+.rg-sub{ font-family: var(--font-interface); font-size: 11.5px; color: var(--text-dim); margin-bottom: 12px; }
+.rg-anchor{
+  font-family: 'Georgia', serif; font-size: 14.5px; line-height: 1.5;
+  color: var(--gold-bright); border-left: 2px solid var(--gold-dim);
+  padding: 2px 0 2px 12px; margin-bottom: 16px;
+}
+.rg-section{ margin-bottom: 18px; }
+.rg-h{
+  font-family: var(--font-interface); font-size: 10px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--gold-soft);
+  margin-bottom: 7px;
+}
+.rg-h2{
+  font-family: var(--font-interface); font-size: 12.5px; font-weight: 700;
+  color: var(--text); margin: 14px 0 4px;
+}
+.rg-p{ font-family: var(--font-interface); font-size: 12px; color: var(--text-soft); line-height: 1.6; margin-bottom: 6px; }
+.rg-warn{ color: var(--gold-bright); }
+.rg-note{ font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); line-height: 1.5; margin-top: 8px; }
+.rg-list{ margin: 0; padding-left: 18px; }
+.rg-list li{ font-family: var(--font-interface); font-size: 12px; color: var(--text-soft); line-height: 1.6; margin-bottom: 7px; }
+
+.rg-concept{ display: flex; gap: 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--surface-border-soft); }
+.rg-concept:last-of-type{ border-bottom: none; }
+.rg-concept-name{ font-family: var(--font-interface); font-size: 12px; font-weight: 700; color: var(--text); flex: 0 0 38%; }
+.rg-concept-what{ font-family: var(--font-interface); font-size: 11.5px; color: var(--text-dim); line-height: 1.45; }
+
+.rg-fold{ border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 18px; }
+.rg-fold-summary{ list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 8px; }
+.rg-fold-summary::-webkit-details-marker{ display: none; }
+.rg-fold-summary::after{ content: '›'; margin-left: auto; color: var(--gold-soft); font-size: 15px; line-height: 1; }
+.rg-fold[open] > .rg-fold-summary::after{ content: '⌄'; }
+.rg-fold-title{ font-family: var(--font-interface); font-size: 13px; font-weight: 700; color: var(--text); }
+.rg-fold-sub{ font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); }
+.rg-fold-body{ margin-top: 10px; }
+
+.rg-formula{
+  font-family: 'Menlo', 'Consolas', monospace; font-size: 12px;
+  color: var(--gold-bright); background: rgba(212,175,55,.06);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; margin: 6px 0;
+  /* Wraps rather than scrolls: a formula the reader has to swipe to finish is
+     a formula most readers will not finish. */
+  white-space: pre-wrap; word-break: break-word; line-height: 1.5;
+}
+.rg-worked{ border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; margin-top: 6px; }
+.rg-worked-row{ display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--surface-border-soft); font-family: var(--font-interface); font-size: 12px; color: var(--text-dim); }
+.rg-worked-row b{ color: var(--text); }
+.rg-worked-total{ border-bottom: none; }
+.rg-worked-total b{ color: var(--gold-bright); }
+
+.rg-compare{ display: flex; gap: 8px; margin: 8px 0; }
+.rg-compare-col{ flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.rg-compare-label{ font-family: var(--font-interface); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-dim); }
+.rg-compare-detail{ font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); line-height: 1.4; margin-top: 3px; }
+.rg-compare-value{ font-family: var(--font-interface); font-size: 18px; font-weight: 700; color: var(--gold-bright); margin-top: 5px; }
+
+.rg-faq{ border-bottom: 1px solid var(--surface-border-soft); padding: 9px 0; }
+.rg-faq:last-of-type{ border-bottom: none; }
+.rg-faq-q{
+  list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 8px;
+  font-family: var(--font-interface); font-size: 12.5px; font-weight: 700; color: var(--text);
+}
+.rg-faq-q::-webkit-details-marker{ display: none; }
+.rg-faq-q::after{ content: '›'; margin-left: auto; color: var(--gold-soft); font-size: 15px; line-height: 1; flex: none; }
+.rg-faq[open] > .rg-faq-q::after{ content: '⌄'; }
+.rg-faq-a{ font-family: var(--font-interface); font-size: 11.5px; color: var(--text-soft); line-height: 1.6; margin-top: 6px; }
+.rg-closing{ border-top: 1px solid var(--surface-border-soft); padding-top: 14px; }
+
+/* "Why your rating moved" -- the plain-English reading of facts already on the
+   card. Set apart so it reads as explanation, not as another statistic. */
+.why-moved{
+  margin-top:8px; padding:8px 10px;
+  border-left:2px solid var(--gold-soft); border-radius:0 8px 8px 0;
+  background:rgba(212,175,55,.05);
+}
+.why-moved-head{
+  font-family:'Helvetica Neue', Arial, sans-serif; font-size:9.5px;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--gold-soft); font-weight:700;
+}
+.why-moved-body{
+  font-family:'Helvetica Neue', Arial, sans-serif; font-size:11.5px;
+  color:var(--text-soft); line-height:1.55; margin-top:3px;
+}
+.why-moved-sum{
+  font-family:'Helvetica Neue', Arial, sans-serif; font-size:10.5px;
+  color:var(--text-dim); margin-top:4px;
+}
+
 /* Correct vs remove: two actions, each saying what it does. The destructive
    one is marked as destructive rather than relying on a hidden arming click. */
 .match-action{ text-align:left; line-height:1.3; padding:7px 10px; }

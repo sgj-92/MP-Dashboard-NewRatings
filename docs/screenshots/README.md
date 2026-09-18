@@ -71,3 +71,27 @@ Two separate actions with their own words. A removal is confirmed by a button th
 ![The full calculation](11-full-calculation.png)
 
 The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.
+
+### Power Rating Guide — in short
+
+![Power Rating Guide — in short](12-rating-guide-summary.png)
+
+Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.
+
+### Power Rating Guide — the actual calculation
+
+![Power Rating Guide — the actual calculation](13-rating-guide-maths.png)
+
+One tap away. The formulas are read from the running engine rather than written out beside it, so the guide cannot describe a model the app is not using. The comparison shows why the same overperformance moves an established player ~2.9 points and a newly reassessed one 7.4.
+
+### Power Rating Guide — questions people actually ask
+
+![Power Rating Guide — questions people actually ask](14-rating-guide-faq.png)
+
+The complaints the guide exists to pre-empt, answered directly: a small move after a win, a rating rising after a loss, a partner moving further, and whether anything resets monthly.
+
+### Why your rating moved
+
+![Why your rating moved](15-why-your-rating-moved.png)
+
+On the match card itself, built from the same persisted expectation, performance and K the movement above it came from — a reading of those facts, never a second calculation.

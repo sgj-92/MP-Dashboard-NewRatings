@@ -635,3 +635,244 @@ test('the monthly stories keep all four parts behind a takeaways summary', { ski
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== POWER RATING GUIDE (18 Sep 2026) =====================
+// The guide exists to pre-empt three complaints: small moves after a win, a
+// rating rising after a loss, and a partner moving further. These check it is
+// reachable, that it describes the model the app is actually running, and that
+// it does not say the two things it must never say.
+
+test('the Power Rating Guide is reachable from More', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      goToSection('more');
+      const item = [...document.querySelectorAll('#shellMoreSheet .shell-more-item')]
+        .find((b) => /power rating guide/i.test(b.textContent));
+      if (!item) return { found: false };
+      item.click();
+      const modal = document.getElementById('ratingGuideModal');
+      return {
+        found: true,
+        shown: !!modal && modal.classList.contains('show'),
+        moreSheetClosed: !document.getElementById('shellMoreSheet').classList.contains('show'),
+        title: modal ? modal.querySelector('h3').textContent.trim() : null,
+      };
+    });
+    assert.strictEqual(r.found, true, 'the More sheet must offer the guide');
+    assert.strictEqual(r.shown, true, 'tapping it must open the guide');
+    assert.strictEqual(r.moreSheetClosed, true, 'the More sheet must close behind it');
+    assert.strictEqual(r.title, 'Power Rating Guide');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the guide states sequential-v1 as the app actually runs it', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      openPowerRatingGuide();
+      const modal = document.getElementById('ratingGuideModal');
+      [...modal.querySelectorAll('details')].forEach((d) => { d.open = true; });
+      return {
+        text: modal.innerText,
+        engine: {
+          kMax: RatingEngine.KMAX, kMin: RatingEngine.KMIN, rc: RatingEngine.RC,
+          gameWeight: RatingEngine.GAME_SHARE_WEIGHT,
+          resultWeight: RatingEngine.MATCH_RESULT_WEIGHT,
+          version: RatingEngine.RATING_MODEL_VERSION,
+          // The comparison the guide draws, computed here from the engine.
+          establishedMove: RatingEngine.kFactor(0.85) * 0.20,
+          reassessedMove: RatingEngine.kFactor(0.10) * 0.20,
+        },
+      };
+    });
+    const { text, engine } = r;
+
+    assert.match(text, /rating change = K × \(performance score − expected score\)/);
+    assert.ok(text.includes(`K = ${engine.kMin} + ${engine.kMax - engine.kMin} × (1 − reliability)`),
+      `the K formula must match the engine, got:\n${text.slice(0, 400)}`);
+    assert.ok(text.includes(`reliability = e ÷ (e + ${engine.rc})`), 'the reliability formula must match the engine');
+    assert.ok(text.includes(`${Math.round(engine.gameWeight * 100)}% the share of games`));
+    assert.ok(text.includes(`${Math.round(engine.resultWeight * 100)}% the result`));
+    assert.ok(text.includes(engine.version), 'the guide must name the engine it describes');
+
+    // The worked example from the brief.
+    assert.match(text, /16 × 0\.13 = \+2\.1/);
+
+    // The comparison, and its numbers taken from the engine rather than prose.
+    assert.ok(text.includes(`+${engine.establishedMove.toFixed(1)} pts`),
+      `established move should read +${engine.establishedMove.toFixed(1)}`);
+    assert.ok(text.includes(`+${engine.reassessedMove.toFixed(1)} pts`),
+      `reassessed move should read +${engine.reassessedMove.toFixed(1)}`);
+    assert.ok(engine.reassessedMove > engine.establishedMove * 2,
+      'the comparison is only worth drawing if the gap is large');
+
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the guide never implies a monthly reset or a reward for winning', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const text = await app.run(() => {
+      openPowerRatingGuide();
+      const modal = document.getElementById('ratingGuideModal');
+      [...modal.querySelectorAll('details')].forEach((d) => { d.open = true; });
+      return modal.innerText;
+    });
+
+    // The anchor sentence, as Shaun wrote it.
+    assert.match(text, /The rating is not designed to reward wins\. It is designed to update our estimate of playing level\./);
+
+    // The six required plain-English points, and the five distinctions.
+    assert.match(text, /one continuous Power Rating/i);
+    assert.match(text, /gain rating in a loss/i);
+    assert.match(text, /Reliability/);
+    assert.match(text, /evidence/i);
+    ['Power Rating', 'Reliability', 'Monthly Performance', 'League Table', 'Tier']
+      .forEach((c) => assert.ok(text.includes(c), `the guide must distinguish ${c}`));
+
+    // Reliability must not be sold as skill or as a probability.
+    assert.match(text, /Reliability is <?b?>?evidence<?\/?b?>?, not skill|Reliability is evidence, not skill/i);
+
+    // The six questions the brief names.
+    [/I won — why did I only get/i, /I lost — why did my rating go up/i,
+      /why did my partner move more than me/i, /new or reassessed player/i,
+      /promotion or a reclassification/i, /Do ratings reset every month/i]
+      .forEach((re) => assert.match(text, re));
+
+    // A tier change moves no points -- said, not implied.
+    assert.match(text, /tier change on its own moves\s+zero\s+points/i);
+
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The explanation must describe the SAME persisted facts the card already
+// shows. If it ever disagreed with the movement printed above it, it would be a
+// second calculation path, which is the one thing it must not be.
+test('"Why your rating moved" describes the persisted facts, not a recalculation', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = 'all'; minGames = 10; render();
+      openSheet('Shaun');
+      const card = [...document.querySelectorAll('.match')].find((el) => el.querySelector('.why-moved'));
+      if (!card) return { found: false };
+
+      const matchId = MATCHES
+        .filter((m) => m.winners.includes('Shaun') || m.losers.includes('Shaun'))
+        .sort((a, b) => (a.date < b.date ? 1 : -1))[0].id;
+      const facts = MatchFacts.forPlayer(V3_MATCH_FACTS[matchId], 'Shaun');
+      const m = MATCHES.find((x) => x.id === matchId);
+      const won = m.winners.includes('Shaun');
+
+      return {
+        found: true,
+        cardText: card.innerText.replace(/\n+/g, ' | '),
+        why: card.querySelector('.why-moved').innerText.replace(/\n+/g, ' '),
+        // Straight from the record, to compare the prose against.
+        recorded: {
+          expected: facts.mine.expected,
+          actual: facts.mine.actual,
+          kUsed: facts.me.kUsed,
+          delta: facts.me.ratingDelta,
+          reliability: facts.me.previousReliability,
+        },
+        won,
+      };
+    });
+
+    assert.strictEqual(r.found, true, 'a profile match card must carry the explanation');
+    const rec = r.recorded;
+
+    // Every number in the sentence is the recorded one.
+    assert.ok(r.why.includes(`K ${Math.round(rec.kUsed)}`),
+      `the explanation must quote the recorded K (${rec.kUsed}), got: ${r.why}`);
+    assert.ok(r.why.includes((rec.expected * 100).toFixed(1)),
+      `must quote the recorded expected score, got: ${r.why}`);
+    assert.ok(r.why.includes((rec.actual * 100).toFixed(1)),
+      `must quote the recorded performance score, got: ${r.why}`);
+    const deltaText = (rec.delta > 0 ? '+' : '') + rec.delta.toFixed(1);
+    assert.ok(r.why.includes(deltaText),
+      `must quote the recorded movement ${deltaText}, got: ${r.why}`);
+
+    // And the card above it prints that same movement, so the two agree.
+    assert.ok(r.cardText.includes(`${deltaText} pts`),
+      'the card and its explanation must quote the same movement');
+
+    // The restated arithmetic is the recorded numbers, not a fresh sum.
+    assert.match(r.why, new RegExp(`${Math.round(rec.kUsed)} × \\(${rec.actual.toFixed(2)} − ${rec.expected.toFixed(2)}\\)`));
+
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The three complaints, each against a case constructed from real recorded
+// shapes, so the wording is checked and not just the presence of a sentence.
+test('the explanation answers the three complaints it exists for', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const mk = (k, rel, delta, expected, actual, mine, theirs) => ({
+        me: { playerId: 'X', kUsed: k, previousReliability: rel, ratingDelta: delta },
+        mine: { expected, actual, preRating: mine }, theirs: { preRating: theirs },
+      });
+      return {
+        smallWin: RatingExplainer.explain(mk(11, 0.88, 1.4, 0.62, 0.63, 1450, 1380), 'win').text,
+        riseOnLoss: RatingExplainer.explain(mk(13, 0.78, 3.1, 0.40, 0.55, 1300, 1500), 'loss').text,
+        fallOnWin: RatingExplainer.explain(mk(12, 0.85, -1.8, 0.75, 0.60, 1600, 1300), 'win').text,
+        newPlayer: RatingExplainer.explain(mk(37, 0.10, 7.4, 0.45, 0.65, 1400, 1420), 'win').text,
+      };
+    });
+
+    assert.match(r.smallWin, /moves it slowly \(K 11\)/);
+    assert.match(r.smallWin, /tells the engine nothing it did not already believe/);
+    assert.match(r.riseOnLoss, /You lost the match and your rating still went up, by \+3\.1/);
+    assert.match(r.riseOnLoss, /not who won/);
+    assert.match(r.fallOnWin, /You won and your rating still went down, by -1\.8/);
+    assert.match(r.newPlayer, /barely established yet/);
+    assert.match(r.newPlayer, /moves it a long way \(K 37\)/);
+
+    // The pace language comes from K, so it can never contradict the movement.
+    assert.doesNotMatch(r.smallWin, /a long way/);
+    assert.doesNotMatch(r.newPlayer, /moves it slowly/);
+  } finally { await app.close(); }
+});
+
+// The explanation sits directly under the card's own "underdogs by N pts going
+// in". If the two round differently they disagree by a point, and the
+// explanation reads like a second calculation. Math.round(-28.5) is -28 while
+// Math.round(28.5) is 29, which is exactly how that happened once.
+test('the explanation states the same pairing gap as the card above it', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = 'all'; minGames = 10; render();
+      const out = [];
+      ['Shaun', 'Rishi', 'Eli', 'Osh'].forEach((name) => {
+        openSheet(name);
+        [...document.querySelectorAll('.match')].forEach((card) => {
+          const why = card.querySelector('.why-moved');
+          if (!why) return;
+          const body = card.innerText;
+          const cardGap = body.match(/(favoured|underdogs) by (\d+) pts going in/);
+          const whyGap = why.innerText.match(/(favourites|underdogs) by (\d+) pts/);
+          const cardClose = body.match(/evenly matched going in \((\d+) pt gap\)/);
+          const whyClose = why.innerText.match(/evenly matched \((\d+) pts between/);
+          if (cardGap && whyGap) out.push({ name, card: cardGap[2], why: whyGap[2] });
+          else if (cardClose && whyClose) out.push({ name, card: cardClose[1], why: whyClose[1] });
+          else out.push({ name, card: cardGap || cardClose ? 'gap' : 'none', why: whyGap || whyClose ? 'gap' : 'none' });
+        });
+        closeSheet();
+      });
+      return out;
+    });
+    assert.ok(r.length > 10, `not enough cards checked (${r.length})`);
+    const wrong = r.filter((x) => x.card !== x.why);
+    assert.deepStrictEqual(wrong, [],
+      'the card and its explanation must state the same gap');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
