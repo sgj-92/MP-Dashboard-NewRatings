@@ -219,6 +219,7 @@
         (data[collection] = data[collection] || {})[id] = doc;
       },
       async getAll(collection) { return Object.values(data[collection] || {}); },
+      async remove(collection, id) { delete (data[collection] || {})[id]; },
       raw: data,
     };
   }
@@ -232,6 +233,11 @@
     return {
       name: 'firestore-compat',
       async set(collection, id, doc) { await db.collection(collection).doc(id).set(doc); },
+      // Deliberately present but unused by the application. Nothing in the UI
+      // deletes a document: the record is forward-only, and a decision is undone
+      // by recording a reversal. This exists so the beta reset workflow can run
+      // through the same backend interface as everything else.
+      async remove(collection, id) { await db.collection(collection).doc(id).delete(); },
       async getAll(collection) {
         const snap = await db.collection(collection).get();
         return snap.docs.map((d) => d.data());
@@ -251,6 +257,10 @@
           body: JSON.stringify({ fields: toFirestoreFields(doc) }),
         });
         if (!res.ok) throw new Error(`write ${collection}/${id} failed: ${res.status} ${await res.text()}`);
+      },
+      async remove(collection, id) {
+        const res = await doFetch(`${base}/${collection}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`delete ${collection}/${id} failed: ${res.status} ${await res.text()}`);
       },
       // Firestore caps a page by response size, not just pageSize, so a large
       // collection comes back in pieces. Following nextPageToken is required --
