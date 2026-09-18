@@ -3523,9 +3523,10 @@ function openSheet(name, matchFilter){
     }
 
     const isArmed = armedDeleteId === m.id;
-    // Deliberately absent. See MATCH_EDITING_UNAVAILABLE_NOTE.
+    // One place owns correction, so a blast radius is never shown twice or
+    // acted on from two screens at once.
     const adminButtons = isUnlocked
-      ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>`
+      ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">To correct or remove this game, open it in the Games tab.</div>`
       : '';
 
     return `<div class="match">
@@ -4901,8 +4902,99 @@ function renderPlayerTagsList(){
 // the game in place, the rating unchanged, and a hidden record behind that
 // would desync a match from its rating if anything ever re-applied it.
 // Approved by Shaun/CGPT in PROJECT_LEDGER.md Open Question 2.
-const MATCH_EDITING_UNAVAILABLE_NOTE =
-  'Editing and deleting a rated game are not available yet — both change every rating that came after, and the screen that does that safely is still to come.';
+const MATCH_CORRECTION_NOTE =
+  'Correcting a rated game re-derives every rating that came after it. You will see exactly who moves before anything is written.';
+// ===================== HISTORICAL MATCH CORRECTION =====================
+// Admin-only. Repairs what happened ON COURT: a wrong score, the wrong players,
+// a game that never happened. Deliberately separate from Historical Club
+// Adjustment, which records what the club decided about a player's level.
+//
+// Editing a rated match changes the inputs to every rating that followed it, so
+// there is no such thing as a small correction here: one June result re-derives
+// the whole season. The blast radius is therefore shown in full, measured by
+// replaying rather than estimated, before anything is written.
+//
+// The controls are behind the admin unlock. That is a UI gate rather than a
+// security boundary -- beta storage is open by decision -- so what actually
+// protects the record is that every correction is replayed, verified, and
+// leaves the history reconstructible.
+
+let matchFixPlan = null;     // a planned correction awaiting confirmation
+let matchFixMessage = '';
+let matchFixBusy = false;
+
+function matchFixReset(){ matchFixPlan = null; matchFixMessage = ''; }
+
+// The date is part of the match's identity: ids are `YYYY-MM-DD-N`, and letting
+// an edit change it would leave the identifier describing a day the match no
+// longer belongs to. Correcting a date is a removal and a re-entry, which the
+// Admin can do as two deliberate steps.
+function matchFixDateChangeRefusal(original, next){
+  return `This correction changes the date from ${original} to ${next}. A match's identifier is built from its date, so changing it here would leave the record describing the wrong day. Delete this game and add it again on the correct date instead. Nothing was changed.`;
+}
+
+async function stageMatchCorrection(change, describe){
+  matchFixBusy = true; matchFixMessage = 'Replaying…'; renderGamesTab();
+  try {
+    if(!db) throw new Error('No database connection.');
+    const stored = await readStoredRecord(RatingStore.firestoreCompatBackend(db));
+    const planned = ReplayForward.plan({
+      stored, change,
+      provenance: { createdBy: reviewActor(), recordedAt: new Date().toISOString(), source: 'Historical Match Correction' },
+    });
+    matchFixPlan = { ...planned, describe };
+    matchFixMessage = '';
+  } catch(e){
+    matchFixPlan = null;
+    matchFixMessage = e.message;
+  }
+  matchFixBusy = false;
+  renderGamesTab();
+}
+
+async function commitMatchCorrection(){
+  if(!matchFixPlan) return;
+  matchFixBusy = true; matchFixMessage = 'Writing…'; renderGamesTab();
+  try {
+    await ReplayForward.commit(RatingStore.firestoreCompatBackend(db), matchFixPlan);
+    const what = matchFixPlan.describe;
+    matchFixReset();
+    editingMatchId = null;
+    armedDeleteId = null;
+    await loadV3State();
+    recomputeAll();
+    matchFixMessage = 'Corrected and replayed. ' + what;
+  } catch(e){
+    matchFixMessage = 'Write failed: ' + e.message;
+  }
+  matchFixBusy = false;
+  render();
+  renderGamesTab();
+}
+
+function buildMatchFixConfirmHtml(){
+  const p = matchFixPlan;
+  if(!p) return '';
+  const moved = p.playersMoved;
+  return `<div class="callout-card" style="padding:12px; margin-top:8px; border-color:var(--gold-dim);">
+    <div style="font-weight:700; color:var(--gold-bright);">Confirm — this re-derives every rating after this game</div>
+    <div class="section-sub" style="margin-top:4px; color:var(--text);">${p.describe}</div>
+    <div class="section-sub" style="font-size:10.5px;">${p.documentsToWrite} documents rewritten, ${p.documentsToDelete} removed. Nothing is silently dropped: the record is replayed from the corrected history and verified afterwards.</div>
+    <div class="section-sub" style="margin-top:6px; font-weight:700; color:var(--text);">${moved.length} player${moved.length===1?'':'s'} end on a different rating</div>
+    <div class="section-sub" style="font-size:10.5px; max-height:160px; overflow:auto;">${moved.length ? moved.map(m=>`${m.playerId} ${m.delta>0?'+':''}${m.delta} → ${Math.round(m.to*10)/10}`).join(' &nbsp;·&nbsp; ') : 'Nobody — this correction changes no rating.'}</div>
+    <div class="difficulty-row" style="margin-top:8px;">
+      <button class="preset-btn" id="matchFixCommitBtn" style="flex:1;" ${matchFixBusy?'disabled':''}>Correct and replay</button>
+      <button class="preset-btn" id="matchFixCancelBtn" style="flex:1;">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function wireMatchFix(){
+  const c = document.getElementById('matchFixCommitBtn');
+  if(c) c.onclick = commitMatchCorrection;
+  const x = document.getElementById('matchFixCancelBtn');
+  if(x) x.onclick = ()=>{ matchFixReset(); renderGamesTab(); };
+}
 
 let editingMatchId = null;
 let armedDeleteId = null;
@@ -5155,7 +5247,7 @@ function renderH2H(){
       const aPartner = aTeam.filter(n=>n!==h2hPlayerA)[0];
       const bPartner = bTeam.filter(n=>n!==h2hPlayerB)[0];
       const adminButtons = isUnlocked
-        ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>`
+        ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">To correct or remove this game, open it in the Games tab.</div>`
         : '';
       html += `<div class="callout-card">
         <div class="cc-title" style="color:${aWon?'var(--green)':'var(--red)'};">${aWon ? h2hPlayerA : h2hPlayerB} won</div>
@@ -5179,7 +5271,7 @@ function renderH2H(){
       const won = m.winners.includes(h2hPlayerA);
       const oppTeam = won ? m.losers : m.winners;
       const adminButtons = isUnlocked
-        ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>`
+        ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">To correct or remove this game, open it in the Games tab.</div>`
         : '';
       html += `<div class="callout-card">
         <div class="cc-title" style="color:${won?'var(--green)':'var(--red)'};">${won?'WIN':'LOSS'}</div>
@@ -5958,7 +6050,12 @@ Player C &amp; Player D"></textarea>
         <div class="cc-detail">${m.sets.map(s=>s.join('-')).join(', ')}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
         ${detailContent}
       </div>
-      ${isUnlocked ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">${MATCH_EDITING_UNAVAILABLE_NOTE}</div>` : ''}
+      ${isUnlocked ? `<div class="difficulty-row" style="margin-top:8px;">
+        <button class="preset-btn" data-edit="${m.id}" style="flex:1;">Correct</button>
+        <button class="preset-btn" data-delete="${m.id}" style="flex:1; ${isArmed?'color:#e8a5a1; border-color:var(--red);':''}">${isArmed ? 'Confirm removal?' : 'Remove'}</button>
+      </div>
+      <div class="section-sub" style="margin-top:4px; font-size:10.5px;">${MATCH_CORRECTION_NOTE}</div>
+      ${matchFixPlan && matchFixPlan.change && (matchFixPlan.change.matchId === m.id || (matchFixPlan.change.match && matchFixPlan.change.match.id === m.id)) ? buildMatchFixConfirmHtml() : ''}` : ''}
     </div>`;
   });
 
@@ -6092,6 +6189,12 @@ Player C &amp; Player D"></textarea>
     applyTabVisibility();
     renderGamesTab();
   };
+
+  wireMatchFix();
+  if(matchFixMessage){
+    const msg = document.getElementById('gamesMessage');
+    if(msg) msg.innerHTML = `<span style="color:${/failed|cannot|Nothing was changed/.test(matchFixMessage)?'var(--red)':'var(--gold-bright)'};">${matchFixMessage}</span>`;
+  }
 
   box.querySelectorAll('[data-approve]').forEach(btn=>{
     btn.onclick = ()=> prepareApproval(btn.dataset.approve);
@@ -6249,11 +6352,11 @@ async function deleteMatch(id){
   if(!name) return;
   const pendingMatch = extraMatchesState.find(x=>x.id===id && x.status==='pending');
   if(!pendingMatch){
-    const msg = document.getElementById('gamesMessage');
-    const text = MATCH_EDITING_UNAVAILABLE_NOTE + ' Nothing was changed.';
-    if(msg) msg.textContent = text; else alert(text);
-    armedDeleteId = null;
-    if(document.getElementById('gamesView')) renderGamesTab();
+    // A rated game is removed by replaying the record without it, not by
+    // hiding it. Nothing is written until the blast radius is confirmed.
+    const m = MATCHES.find(x=>x.id===id) || getDisplayMatches().find(x=>x.id===id);
+    await stageMatchCorrection({ type: 'delete', matchId: id },
+      `Remove ${m ? `${m.winners.join(' & ')} vs ${m.losers.join(' & ')} on ${m.date}` : id} from the record.`);
     return;
   }
   extraMatchesState = extraMatchesState.filter(x=>x.id!==id);
@@ -6389,11 +6492,18 @@ function wireEditForm(id){
       const ok = await saveExtraMatches(extraMatchesState);
       if(!ok){ msg.textContent='Save failed.'; return; }
     } else {
-      // Same refusal as deleteMatch: editing a rated game changes the inputs to
-      // every rating after it. The old path saved an overlay no v3 read has
-      // looked at since the match source moved, so it reported success and did
-      // nothing.
-      msg.textContent = MATCH_EDITING_UNAVAILABLE_NOTE + ' Nothing was changed.';
+      if(date !== m.date){ msg.textContent = matchFixDateChangeRefusal(m.date, date); return; }
+      const corrected = {
+        id: m.id,
+        date: m.date,
+        sourceIndex: Number(String(m.id).slice(m.date.length + 1)) || 1,
+        teamA: winners, teamB: losers, sets,
+        outcome: isDraw ? RatingEngine.OUTCOME.DRAW : RatingEngine.OUTCOME.A_WINS,
+        type: isSingles ? 'singles' : 'doubles',
+        drawSideAssignmentArbitrary: !!isDraw,
+      };
+      await stageMatchCorrection({ type: 'edit', match: corrected },
+        `Correct ${m.date}: ${winners.join(' & ')} vs ${losers.join(' & ')}, ${sets.map(x=>x.join('-')).join(', ')}${isDraw ? ' (draw)' : ''}.`);
       return;
     }
     editingMatchId = null;

@@ -216,28 +216,67 @@ test('approving a submitted game rates it', { skip }, async () => {
   } finally { await app.close(); }
 });
 
-// Shipped defect: a confirmed delete pushed an id into deletedIdsState, saved
-// it, and changed nothing -- which looked exactly like success.
-test('deleting a rated game is refused and persists nothing', { skip }, async () => {
+// Correcting a rated game re-derives every rating after it, so the whole
+// consequence is shown before anything is written -- and nothing is written
+// until it is confirmed. The controls were once worse than missing: a confirmed
+// delete persisted an overlay and changed nothing at all.
+test('correcting a rated game shows the blast radius and writes only on confirmation', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(async () => {
       isUnlocked = true; currentUserName = 'Tester';
-      const id = MATCHES[0].id;
-      const before = ALL_MATCHES.length;
-      await deleteMatch(id);
-      return {
-        deletedState: deletedIdsState.slice(),
-        stillThere: ALL_MATCHES.some((m) => m.id === id),
-        count: ALL_MATCHES.length === before,
-        writes: window.__writes.length,
-      };
+      const target = MATCHES.find((m) => m.date === '2026-06-02');
+      const out = { id: target.id, writesBefore: window.__writes.length };
+
+      // Removal: planned, not written.
+      armedDeleteId = target.id;
+      await deleteMatch(target.id);
+      out.removeMoved = matchFixPlan ? matchFixPlan.playersMoved.length : -1;
+      out.removeDeletes = matchFixPlan ? matchFixPlan.documentsToDelete : -1;
+      out.writesAfterPlan = window.__writes.length;
+      matchFixReset();
+      out.writesAfterCancel = window.__writes.length;
+      out.stillThere = ALL_MATCHES.some((m) => m.id === target.id);
+
+      // Correction: planned, confirmed, replayed.
+      await stageMatchCorrection({
+        type: 'edit',
+        match: {
+          id: target.id, date: target.date, sourceIndex: 1,
+          teamA: target.winners, teamB: target.losers, sets: [[6, 0], [6, 0]],
+          outcome: RatingEngine.OUTCOME.A_WINS, type: 'doubles', drawSideAssignmentArbitrary: false,
+        },
+      }, 'Correct the score.');
+      out.editMoved = matchFixPlan ? matchFixPlan.playersMoved.length : -1;
+      await commitMatchCorrection();
+      const after = MATCHES.find((m) => m.id === target.id);
+      out.correctedScore = after ? after.score : null;
+
+      const stored = await readStoredRecord(RatingStore.firestoreCompatBackend(db));
+      out.replays = ReplayForward.verifyNoOp(stored, {}).count;
+      const players = {};
+      stored.players.forEach((d) => { players[d.id] = d; });
+      out.healthy = BetaDiagnostics.run({ players, matches: stored.matches, journey: stored.journey }).healthy;
+      return out;
     });
-    assert.deepStrictEqual(r.deletedState, [], 'nothing may be persisted for a refused deletion');
-    assert.strictEqual(r.stillThere, true);
-    assert.strictEqual(r.count, true);
-    assert.strictEqual(r.writes, 0);
+    assert.strictEqual(r.writesBefore, 0);
+    assert.strictEqual(r.writesAfterPlan, 0, 'planning a removal must write nothing');
+    assert.strictEqual(r.writesAfterCancel, 0, 'cancelling must write nothing');
+    assert.strictEqual(r.stillThere, true, 'an unconfirmed removal must not remove anything');
+    assert.ok(r.removeMoved > 20, 'removing a June game reaches most of the club');
+    assert.strictEqual(r.removeDeletes, 5, 'the match and its four events');
+    assert.ok(r.editMoved > 20);
+    assert.strictEqual(r.correctedScore, '6-0, 6-0');
+    assert.strictEqual(r.replays, 0, 'the corrected record must still replay to itself');
+    assert.strictEqual(r.healthy, true);
+    assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
+});
+
+test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
+  const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
+  assert.match(msg, /identifier is built from its date/);
+  assert.match(msg, /Nothing was changed/);
 });
 
 test('diagnostics notices a document tampered with behind the app', { skip }, async () => {
