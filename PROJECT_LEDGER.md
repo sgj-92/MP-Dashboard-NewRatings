@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `6fd7a1c` |
-| Tests | **147 / 147 passing** |
+| Last verified implementation commit | `19ffe21` |
+| Tests | **157 / 157 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -54,12 +54,11 @@ all 34 players, so there is no second number to caveat. Per-match rating changes
 on profile cards are the engine's own per-player deltas. Costs no extra read —
 `V3_JOURNEY` is already in memory for the monthly views.
 
-**Still legacy — two reconstructions remain, both newly specified in Open
-Questions 6 and 7:** `computeMonthlyJourney` (legacy joint solver, restarts each
-player at their tier seed) and `enrichMatches` expectations (recomputed in the
-browser). The legacy monthly solver is **retired** — `computeMonthlyRating` no
-longer exists; all 11 call sites now read real month-end Power Ratings via
-`monthEndRatings`.
+**No reconstructions remain.** Every rating, expectation, pre-match rating and
+per-match movement shown anywhere in the application is read back from the
+persisted journey via `matchFacts.js`. `computeElo` is kept per Shaun's decision
+that the legacy solver stays available through the beta, but nothing calls it
+and a test fails if anything does.
 
 Kings of Tiers, the rankings podium and the tier filter now scope tier to the
 selected month via a single `tierInScope()` helper. This uncovered a defect
@@ -187,19 +186,18 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code.** The Real Rating Journey UI (`bd47757`) and
-Kings of Tiers on historical tier (`6fd7a1c`) are complete. Next unblocked item
-is retiring the last two reconstructions (Open Questions 6 and 7), unless CGPT
-resequences. On `Ledger CCode`, reconcile repository state and start the first
-approved, unblocked item without another Shaun decision.
+**Owner / baton: Claude Code.** The Real Rating Journey UI (`bd47757`), Kings of
+Tiers on historical tier (`6fd7a1c`) and the retirement of the last two
+reconstructions (`19ffe21`) are complete. Next unblocked item is the
+reassessment write path and Admin Monthly Review. On `Ledger CCode`, reconcile
+repository state and start the first approved, unblocked item without another
+Shaun decision.
 
-**Needs a look from CGPT/CChat before it is built on:** Open Questions 6 and 7
-below record the last two places in the application that still present a
-reconstruction. Question 6 is a **standing-constraint conflict**, not a
-preference — the constraint says historical expectations are never recomputed in
-the browser, and `enrichMatches` does exactly that on every match card. Both are
-now read swaps rather than calculations, because the authoritative figures are
-persisted for every rated match.
+**Two items need Shaun, neither blocking:** Open Question 8 (Manny is Tier S and
+no tier-scoped view can show him) and Open Question 9 (match cards now show four
+different per-player rating changes instead of one team figure — a visible
+change, made because there is no other truthful rendering of a per-player K
+model, but worth a look).
 
 Open Question 1a remains resolved. Preserve the small-journey session cache
 exception and review trigger, the frozen engine, and all four distinct monthly
@@ -246,7 +244,7 @@ concepts.
    over 144 matches; measured is −42.8 (Stage 1) / −39.1 (Stage 2). Every other
    figure reproduces exactly, so this is most likely a different metric —
    recorded rather than quietly reconciled.
-6. **Standing-constraint conflict: expectations are still recomputed in the
+6. **RESOLVED (`19ffe21`) — expectations were recomputed in the
    browser.** Raised by CCode, 17 Sep 2026, while building the Rating Journey.
    The standing constraint is *"Never recompute historical expectations in the
    browser."* `enrichMatches` in `assets/js/app.js` does precisely that: it
@@ -262,7 +260,7 @@ concepts.
    Not fixed inside the Rating Journey task because it spans the Games view as
    well, and a half-fix would put two different expectation figures on screen at
    once. **Recommendation: schedule as its own item before beta review.**
-7. **`computeMonthlyJourney` still runs the legacy joint solver.** It restarts
+7. **RESOLVED (`19ffe21`) — `computeMonthlyJourney` ran the legacy joint solver.** It restarts
    every player from their tier seed, which v3 does not do — there is one
    continuous rating and no monthly reset. Live in two places: the Monthly Rating
    breakdown modal and the head-to-head month view, the latter still telling the
@@ -275,6 +273,20 @@ concepts.
    can never appear in either. Not changed — whether Tier S is a real tier, a
    legacy artefact or a data error is Shaun's call, not an implementation
    detail. **Low urgency, but it should not stay unanswered before beta.**
+9. **Match cards changed shape, and Shaun should see it.** A match used to
+   report one rating figure: "+X pts for winners · −X pts for losers". In v3
+   that figure is true for nobody — K is per-player, so the four players in a
+   match move by four different amounts. Cards now list each player's own
+   change. This is a visible product change, made because there is no other
+   truthful rendering of a per-player model, and the previous number was an
+   invention (84 × overperformance) in any case. **Recorded for review, not
+   presented as settled.**
+10. **A fourth false statement, now fixed, worth recording as a pattern.** The
+   Games view told users a draw "doesn't count as a win or loss for anyone, and
+   doesn't affect any rating". Draws are rated in v3 — one moved a player by
+   10.25 points. This is the fourth time a retired calculation left its
+   sentence behind. Copy that describes engine behaviour should be treated as
+   code and checked whenever the engine changes.
 
 ---
 
@@ -398,6 +410,46 @@ Tier S is real, legacy or an error is Shaun's call.
 
 **Baton → CGPT.** Questions 6 and 7 are still unsequenced and Question 8 is new.
 Absent a steer, CCode takes Questions 6 and 7 next on `Ledger CCode`.
+
+### CCode — 18 Sep 2026 (last two reconstructions retired)
+`19ffe21` on `main`. 157/157 tests (10 new). Verified in-browser across profile
+cards, Games cards, draws, the Monthly Rating breakdown, the head-to-head month
+view, every month and every tier filter — zero page errors.
+
+**Open Questions 6 and 7 are resolved.** New pure module `matchFacts.js` indexes
+what the engine recorded for all 150 matches: each player's pre-match rating,
+the expectation used, the score delivered, the K applied, the points moved.
+`enrichMatches` reads that instead of deriving a logistic from today's ratings,
+so every consumer — cards, aggregates, upset flags, CSV export — became correct
+without being individually rewritten.
+
+Worth knowing beyond the two questions as written:
+* The old expectation was not merely forbidden, it was **unstable**. Being
+  derived from current ratings, the same June match reported a different
+  expectation every time anybody played. Nobody would have noticed.
+* "Rating impact" on each card was invented outright: 84 × overperformance with
+  a neutral band. No engine ever produced it.
+* The Monthly Rating breakdown showed a **real** month-end rating underneath a
+  fabricated explanation ("solved every player's rating jointly… K=28, 300
+  passes"), sitting directly below a paragraph correctly stating the rating
+  never resets. Both were on screen at once.
+* Ratings printed beside a past match were today's ratings. They are now the
+  ratings that played it, so "favoured by 126 pts going in" is a statement about
+  that day. Upsets are settled the same way and no later month can change one.
+* The profile match card and the Rating Journey now print the same performance
+  score for the same match. They previously could not.
+
+**New Open Question 9:** match cards now show four per-player rating changes
+instead of one team figure. Visible change, no other truthful option, but it is
+Shaun's to look at.
+
+**New Open Question 10 — a pattern, not an incident.** The Games view claimed a
+draw "doesn't affect any rating". Draws are rated; one moved a player by 10.25
+points. That is the fourth stale sentence found after its calculation was
+retired. Suggest treating copy that describes engine behaviour as code.
+
+**Baton → CGPT.** NEXT is now the reassessment write path. Questions 8, 9 and 10
+are for Shaun and do not block it.
 
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
@@ -546,6 +598,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `19ffe21` | Last two reconstructions retired; `matchFacts.js`; per-player match deltas; draws shown as rated |
 | `6fd7a1c` | Kings of Tiers / podium / tier filter on historical tier; fixed empty-TIER_MAP defect erasing all historical tiers |
 | `bd47757` | Real Rating Journey UI: persisted events replace the reconstruction; "story estimate" disclaimer deleted |
 | `707f6e8` | Monthly acceptance: tier-change rank guard, inactive boundary state, fallers/slides, stale methodology copy removed |
@@ -571,14 +624,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Retire the last two reconstructions — Open Questions 6 and 7.** Swap the
-   browser-recomputed match expectations for the persisted
-   `preMatchExpectedScore`/`ratingDelta` (Q6, a standing-constraint conflict,
-   and it requires a card redesign because K is per-player), and replace
-   `computeMonthlyJourney` in the Monthly Rating breakdown modal and the
-   head-to-head month view (Q7). **Sequencing is CGPT's call.**
-2. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
-3. Beta diagnostics and beta reset workflow.
-4. Replay-forward — **required before any historical editing UI is exposed.**
+1. Reassessment write path (`applyClubDecision`) and Admin Monthly Review.
+2. Beta diagnostics and beta reset workflow.
+3. Replay-forward — **required before any historical editing UI is exposed.**
    Hiding inert Edit/Delete Match controls is already approved and must not
    wait for replay-forward; restore them only when historical editing works.
