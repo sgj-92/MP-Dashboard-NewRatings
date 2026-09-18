@@ -322,3 +322,41 @@ test('a failed v3 read shows an error and invents no rating', { skip }, async ()
     assert.ok(!/\b1400\b/.test(r.body), 'the legacy default rating must never appear');
   } finally { await app.close(); }
 });
+
+// Tier S is a real tier the club uses, and Manny is in it. It must appear in
+// tier-aware views -- but a "king" of a field of one has won nothing, so no
+// crown is awarded and the card says why. Shaun's rule, 18 Sep 2026.
+test('Tier S is supported, and a sole qualifier is not crowned', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const out = {};
+      activeTab = 'power'; activeSortP = 'rating'; query = '';
+      selectedMonth = 'all'; activeTier = 'All'; minGames = 10;
+
+      out.tierFilters = [...document.querySelectorAll('.tierbtn')].map((b) => b.dataset.tier);
+      out.leagueGroupsBy = TIER_ORDER_LIST.slice();
+      activeTier = 'S';
+      out.tierSPlayers = PLAYERS.filter(matchesActiveTier).map((p) => p.name);
+      activeTier = 'All';
+
+      // Make Manny the single qualifying Tier S player.
+      const manny = PLAYERS.find((p) => p.name === 'Manny');
+      manny.total = 20; manny.wins = 12; manny.losses = 8;
+      window.isRankingEligible = () => true;
+      const kings = computeKingsOfTiers();
+      out.field = kings._fieldSize.S;
+      out.crowned = kings.S ? kings.S.name : null;
+      renderKingsOfTiersPanel();
+      out.panel = document.getElementById('kingsOfTiersPanel').innerText.replace(/\n+/g, ' | ');
+      return out;
+    });
+    assert.ok(r.tierFilters.includes('S'), 'Tier S must be offered as a filter');
+    assert.deepStrictEqual(r.tierSPlayers, ['Manny']);
+    assert.deepStrictEqual(r.leagueGroupsBy, ['S', 'A', 'B', 'C'], 'the league table must group every tier');
+    assert.strictEqual(r.field, 1, 'exactly one qualifier, which is the case under test');
+    assert.strictEqual(r.crowned, null, 'a sole qualifier must not be crowned');
+    assert.match(r.panel, /TIER S \| only one qualified/);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

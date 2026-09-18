@@ -5683,7 +5683,9 @@ function renderSummaryLeagueTable(){
   </div>`;
 
   if(leagueGrouped){
-    const tiers = ['A','B','C'];
+    // Every tier the club actually uses, so a Tier S player is not silently
+    // dropped from the grouped table.
+    const tiers = TIER_ORDER_LIST;
     let anyTierShown = false;
     tiers.forEach(tier=>{
       const rows = Object.values(rowsByName).filter(s => s.tier === tier && s.games > 0);

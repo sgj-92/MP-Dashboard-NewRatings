@@ -914,8 +914,15 @@ function computeKingsOfTiers(){
   // be an active-enough part of the group right now.
   if(!inMonthView) rows = rows.filter(p => isRankingEligible(p.name));
 
+  // A king of a field of one is not a king. Where only one player qualifies in
+  // a tier there is nothing to have won, so no crown is awarded and the card
+  // says why. This applies to every tier, not just Tier S -- the principle is
+  // about the size of the field, and hardcoding it to S would make it look
+  // like a rule about Manny.
+  const MIN_FIELD = 2;
   const kings = {};
-  ['A','B','C'].forEach(tier=>{
+  const fieldSize = {};
+  TIER_ORDER_LIST.forEach(tier=>{
     // Historical tier, not today's. Without this, June's Tier C king vanishes
     // the moment he is promoted in July and reappears in Tier B's June board.
     const tierRows = rows.filter(p=>tierInScope(p)===tier).sort((a,b)=>{
@@ -923,7 +930,8 @@ function computeKingsOfTiers(){
       const bv = inMonthView ? b.month_rating : b.rating;
       return bv - av;
     });
-    if(tierRows.length){
+    fieldSize[tier] = tierRows.length;
+    if(tierRows.length >= MIN_FIELD){
       const p = tierRows[0];
       kings[tier] = { name: p.name, rating: Math.round(inMonthView ? p.month_rating : p.rating),
         // Carried so the panel can say why a past king sits in a tier they are
@@ -931,7 +939,8 @@ function computeKingsOfTiers(){
         currentTier: p.tier };
     }
   });
-  if(!kings.A && !kings.B && !kings.C) return null;
+  if(!TIER_ORDER_LIST.some(t=>kings[t])) return null;
+  kings._fieldSize = fieldSize;
   return kings;
 }
 
@@ -946,10 +955,10 @@ function renderKingsOfTiersPanel(){
   if(!list) return;
 
   const periodLabel = selectedMonth === 'all' ? 'All Time' : monthLabel(selectedMonth);
-  const tierNames = { A: 'Tier A', B: 'Tier B', C: 'Tier C' };
+  const tierNames = Object.fromEntries(TIER_ORDER_LIST.map(t=>[t, 'Tier ' + t]));
   // A king of Tier C in June who is Tier B today is not a mistake, and the
   // panel says so rather than leaving the reader to assume it is one.
-  const movedSince = ['A','B','C']
+  const movedSince = TIER_ORDER_LIST
     .filter(t => kings[t] && kings[t].currentTier && kings[t].currentTier !== t)
     .map(t => `${kings[t].name} is Tier ${kings[t].currentTier} now.`);
 
@@ -962,8 +971,9 @@ function renderKingsOfTiersPanel(){
       <span class="kings-panel-period">${periodLabel}</span>
     </div>
     <div class="kings-row">
-      ${['A','B','C'].map(tier=>{
+      ${TIER_ORDER_LIST.filter(tier=>kings[tier] || (kings._fieldSize||{})[tier]).map(tier=>{
         const k = kings[tier];
+        const field = (kings._fieldSize || {})[tier] || 0;
         return `<div class="kings-card kings-tier-${tier.toLowerCase()}" ${k ? `data-player="${k.name}"` : ''}>
           <div class="kings-crown-wrap"><img class="kings-crown" src="assets/rankings/podium-crown-laurel.png" alt="" onerror="this.style.display='none'"></div>
           ${k ? `
@@ -973,6 +983,7 @@ function renderKingsOfTiersPanel(){
           ` : `
             <div class="kings-name kings-name-empty">—</div>
             <div class="kings-tier-label">${tierNames[tier]}</div>
+            <div class="kings-rating" style="font-size:10px; font-weight:400; color:var(--text-dim);">${field === 1 ? 'only one qualified' : 'nobody qualified'}</div>
           `}
         </div>`;
       }).join('')}
