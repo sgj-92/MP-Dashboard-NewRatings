@@ -33,7 +33,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `__COMMIT__` |
+| Last verified implementation commit | `7178544` |
 | Tests | **234 / 234 passing** (14 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
@@ -1219,7 +1219,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
-| `__COMMIT__` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
+| `7178544` | Review screenshots from the live record; Rating Journey correction display fixed (markers and copy now follow the delta, not the event type) |
 | `0f7c2ed` | Three authorised historical club decisions applied to the beta; four defects fixed en route |
 | `9cc3c13` | Historical Club Adjustment: Admin tool over replay-forward, superseding audited corrections |
 | `17ed790` | Phase B historical dry run (`HISTORICAL_REVIEW_DRYRUN.md`); no write path |
