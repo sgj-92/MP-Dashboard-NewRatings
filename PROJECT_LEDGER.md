@@ -232,39 +232,59 @@ Shaun's decisions, including where an agent recommended otherwise.
 | CGPT visual acceptance withheld pending presentation fixes | 18 Sep 2026 screenshot review: core architecture and premium visual direction accepted, but final beta sign-off waits on terminology, score-orientation, reliability visibility, Admin action-state, audit readability, correction/removal wording, monthly hierarchy and contrast fixes. No rating-model changes authorised. |
 | CGPT product/UX acceptance requirements satisfied | 18 Sep 2026 after `e0fdcbc`: all eight requested presentation fixes are implemented and regression-tested (242/242; 21 browser). The date-edit refusal and non-duplicative Key takeaways are approved departures from the mockup. Final pixel-level look check remains with Shaun/on-device because CGPT cannot render private-repo PNG pixels directly from the GitHub connector. |
 | Add player-facing Power Rating Guide in More | Players need both a short explanation and a detailed methodology view so small/unequal rating movements are understandable and defensible. The guide must explain expectation vs actual performance, reliability/K, why wins can move little, why losses can still gain rating, why partners move by different amounts, why reassessed/new players move faster, why club decisions are separate, and that ratings never reset monthly. Do **not** change Sequential-v1 merely because movements look small. |
+| Historical correction controls are admin-on-demand | The Play history must remain a player-facing results surface. `Correct match`, `Remove and replay`, and replay-warning copy must not render permanently on every game card. Hide them entirely for non-admin users; for admin, expose a compact per-card `…` / `Manage` control that reveals the maintenance actions only on demand. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun — copy and UX acceptance of the Power Rating
-Guide.**
+**Owner / baton: Claude Code — Play history admin-control cleanup.**
 
-The guide, the FAQ and the match-level "Why your rating moved" explanation are
-built and covered by tests. Details are in the CCode handoff of 18 Sep in
-Section 6; the screens are shots 12–15 in `docs/screenshots/README.md`.
+Shaun has identified a UX regression in the live Play history: every rated game
+card now permanently shows `Correct match`, `Remove and replay`, and the
+replay/blast-radius warning. This makes the normal results feed read like an
+Admin maintenance console.
 
-What is wanted back:
+### Required behavior
 
-1. Read the copy. It is the deliverable in this task, not a wrapper around one.
-   Anything that reads wrong is a one-line change — say which sentence.
-2. Confirm the guide belongs in More, or name where it should sit instead.
+- **Non-admin users:** show none of the historical correction/removal controls
+  and none of the replay warning copy.
+- **Admin users:** keep the capability, but collapse it behind a small per-card
+  `…` or `Manage` control in the card header.
+- Tapping the Admin control reveals:
+  - `Correct match`
+  - `Remove and replay`
+  - the existing explanatory/replay warning copy.
+- The actions should collapse again when dismissed/closed; only the card being
+  managed should need to expand.
+- Preserve the existing correction/removal semantics, confirmation steps and
+  blast-radius preview. This is a presentation/permission-surface cleanup, not
+  a replay-forward redesign.
 
-Two notes on what was deliberately not done:
+### Normal card hierarchy
 
-- Sequential-v1 is unchanged. Small established-player movements are an expected
-  consequence of K falling with reliability, and the guide explains that rather
-  than the engine being tuned to hide it. Any reconsideration of movement
-  magnitude needs live-usage evidence and a separate methodology review.
-- The explanation on a match card is a *reading* of the facts the engine
-  recorded, never a recalculation. It quotes the stored expected score,
-  performance score, K and movement, and a test asserts it agrees with the
-  numbers printed directly above it.
+Default player-facing state should prioritise:
 
-CCode has no other queued work.
+- teams/result;
+- score;
+- draw/not-finished badge where relevant;
+- submission/date metadata;
+- optional compact Admin manage affordance only when Admin is unlocked.
 
-Do not change Sequential-v1 match mathematics.
+Do not repeat maintenance warning copy under every result.
 
+### Acceptance
+
+- browser test: non-admin result cards contain no correction/removal controls;
+- browser test: Admin sees a compact manage affordance but actions are initially
+  collapsed;
+- browser test: opening one card reveals the two existing actions and warning;
+- browser test: another card remains collapsed;
+- no changes to match facts, replay-forward mathematics or Sequential-v1;
+- update Ledger and return baton to CGPT/Shaun for visual/UX acceptance.
+
+The completed Power Rating Guide (`9de1a88`) remains accepted as implemented
+work and should not be disturbed by this cleanup.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -428,6 +448,19 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 18 Sep 2026 (Play history admin controls)
+Shaun reviewed the live Play screen and found that historical maintenance
+actions are now rendered permanently on every game card. Product decision:
+restore Play history as a clean player-facing results feed.
+
+`Correct match`, `Remove and replay`, and replay-warning copy are **Admin-only
+and on-demand**. Non-admin users see none of them. Admin gets a compact per-card
+`…` / `Manage` affordance; opening it reveals the existing actions and warning
+for that card only. Preserve all replay/correction behavior underneath.
+
+**Baton → CCode.** Implement the collapse/visibility behavior plus targeted
+browser tests, then return for visual/UX acceptance.
 
 ### CCode — 18 Sep 2026 (Power Rating Guide + "Why your rating moved")
 
@@ -1575,13 +1608,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Build `More → Power Rating Guide`~~ — **done** (`9de1a88`). Summary,
-   expandable methodology with the real formulas read from the engine, worked
-   example, the established-vs-reassessed comparison, and the FAQ.
-2. ~~Match-level "Why your rating moved"~~ — **done**, on the profile match card
-   and the monthly breakdown card, from persisted facts only. No second
-   calculation path.
-3. ~~Regression coverage~~ — **done**. 6 new browser tests; 261/261 overall.
-4. ~~Do not alter Sequential-v1~~ — untouched.
-5. **Baton back to CGPT/Shaun for copy and UX acceptance** — the only open item,
-   and not CCode's to close.
+1. **Fix Play history admin-control visibility** per Section 4.
+2. Hide correction/removal controls entirely for non-admin users.
+3. For Admin, collapse them behind a compact per-card `…` / `Manage` control;
+   reveal actions/warning only for the selected card.
+4. Add targeted browser coverage for non-admin hidden state and Admin collapsed/
+   expanded behavior.
+5. Leave replay-forward, match data and Sequential-v1 unchanged.
+6. Update Ledger with commit/tests and baton back to CGPT/Shaun.
