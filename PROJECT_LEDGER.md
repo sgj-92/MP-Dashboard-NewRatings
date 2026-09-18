@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `9de1a88` |
-| Tests | **261 / 261 passing** (27 of them drive a real browser) |
+| Last verified implementation commit | `346ed66` |
+| Tests | **265 / 265 passing** (31 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -238,53 +238,27 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — Play history admin-control cleanup.**
+**Owner / baton: CGPT and Shaun — visual/UX acceptance of the Play history.**
 
-Shaun has identified a UX regression in the live Play history: every rated game
-card now permanently shows `Correct match`, `Remove and replay`, and the
-replay/blast-radius warning. This makes the normal results feed read like an
-Admin maintenance console.
+The admin controls are collapsed behind a per-card `··· Manage` affordance and
+are absent entirely for a non-admin. Details in the CCode handoff of 18 Sep in
+Section 6; the two states are shots 10 and 10b in `docs/screenshots/README.md`.
 
-### Required behavior
+What is wanted back:
 
-- **Non-admin users:** show none of the historical correction/removal controls
-  and none of the replay warning copy.
-- **Admin users:** keep the capability, but collapse it behind a small per-card
-  `…` or `Manage` control in the card header.
-- Tapping the Admin control reveals:
-  - `Correct match`
-  - `Remove and replay`
-  - the existing explanatory/replay warning copy.
-- The actions should collapse again when dismissed/closed; only the card being
-  managed should need to expand.
-- Preserve the existing correction/removal semantics, confirmation steps and
-  blast-radius preview. This is a presentation/permission-surface cleanup, not
-  a replay-forward redesign.
+1. Confirm the player-facing feed now reads as a results feed.
+2. Confirm `··· Manage` is the right affordance and the right label. It is a
+   one-line change if something else reads better.
 
-### Normal card hierarchy
+Note: closing a card that has a correction staged **cancels** that correction
+rather than hiding it. A plan left alive behind a collapsed card is a write
+waiting to happen where nobody can see it. Say if the board would rather it
+stayed staged.
 
-Default player-facing state should prioritise:
+CCode has no other queued work.
 
-- teams/result;
-- score;
-- draw/not-finished badge where relevant;
-- submission/date metadata;
-- optional compact Admin manage affordance only when Admin is unlocked.
+Do not change Sequential-v1 match mathematics.
 
-Do not repeat maintenance warning copy under every result.
-
-### Acceptance
-
-- browser test: non-admin result cards contain no correction/removal controls;
-- browser test: Admin sees a compact manage affordance but actions are initially
-  collapsed;
-- browser test: opening one card reveals the two existing actions and warning;
-- browser test: another card remains collapsed;
-- no changes to match facts, replay-forward mathematics or Sequential-v1;
-- update Ledger and return baton to CGPT/Shaun for visual/UX acceptance.
-
-The completed Power Rating Guide (`9de1a88`) remains accepted as implemented
-work and should not be disturbed by this cleanup.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -448,6 +422,48 @@ work and should not be disturbed by this cleanup.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 18 Sep 2026 (Play history: admin controls collapsed)
+
+**Done. Baton to CGPT/Shaun for visual/UX acceptance.** Presentation and
+permission surface only — match facts, replay-forward and Sequential-v1 are
+untouched.
+
+Shaun was right that the feed had become a maintenance console, and the cause
+was mine: the correct-vs-remove split earlier today put two labelled actions and
+the replay warning on every rated card permanently.
+
+**Non-admin** now sees none of it — no correction control, no removal control,
+no manage affordance, and none of the replay warning copy. That copy is
+maintenance guidance and does not belong under every result.
+
+**Admin** gets a compact `··· Manage` in the card header. Opening one card
+reveals the two existing actions and the warning; opening another moves it;
+tapping **Close** collapses it again. One card at a time, because the point is
+that maintenance is something you ask for rather than scroll past.
+
+Default card hierarchy is now teams and result, score, draw badge where
+relevant, then submission metadata — and nothing else.
+
+**The one thing collapsing must not break:** a staged correction keeps its own
+card open, so the blast-radius panel can never be hidden while it waits to be
+confirmed. Closing that card **cancels** the staged plan rather than leaving it
+hanging invisibly behind a collapsed card.
+
+Everything else is as it was: the two actions keep their own wording, a removal
+is still confirmed by a button reading *Remove and replay*, and the blast radius
+is still measured by replaying and shown in full before anything is written.
+
+| | |
+|---|---|
+| Tests | **265 / 265** (31 in a real browser) |
+| New tests | a non-admin card carries none of it · an admin sees the affordance with actions collapsed and the warning not repeated · opening one card reveals its own actions and leaves the others collapsed, and a second card takes over · a staged correction keeps its card open, and closing it cancels rather than hides the plan |
+| Screenshots | 16 — `10-games-feed.png` is what a player sees, `10b-games-correction.png` is Manage opened |
+
+The existing remove-vs-correct test now opens Manage first. That is the
+behaviour change it should have to account for, not a weakening of it.
+
+The Power Rating Guide (`9de1a88`) was not touched.
 
 ### CGPT — 18 Sep 2026 (Play history admin controls)
 Shaun reviewed the live Play screen and found that historical maintenance
@@ -1568,6 +1584,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `346ed66` | Play history: correction/removal controls collapsed behind a per-card Manage affordance, and absent for non-admins |
 | `9de1a88` | Power Rating Guide in More, and "Why your rating moved" on the match card, read from persisted facts |
 | `94c3983` | Production match-facts import applied: 7 new matches, 14 players moved, verified against a fresh re-read |
 | `f974fea` | Reusable, idempotent production match-facts importer; `appendMany` on replay-forward |
@@ -1608,11 +1625,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Fix Play history admin-control visibility** per Section 4.
-2. Hide correction/removal controls entirely for non-admin users.
-3. For Admin, collapse them behind a compact per-card `…` / `Manage` control;
-   reveal actions/warning only for the selected card.
-4. Add targeted browser coverage for non-admin hidden state and Admin collapsed/
-   expanded behavior.
-5. Leave replay-forward, match data and Sequential-v1 unchanged.
-6. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+1. ~~Collapse the historical match admin controls in Play history~~ — **done**
+   (`346ed66`). Non-admin sees none of it; admin gets a per-card
+   `··· Manage`, one open at a time, with the actions, the warning and the
+   blast-radius preview unchanged behind it.
+2. ~~Browser coverage for all four acceptance cases~~ — **done**. 265/265.
+3. ~~No change to match facts, replay-forward or Sequential-v1~~ — untouched.
+4. **Baton back to CGPT/Shaun for visual/UX acceptance** — the only open item,
+   and not CCode's to close.
