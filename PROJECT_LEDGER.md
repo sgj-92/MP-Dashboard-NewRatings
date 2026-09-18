@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `701890d` |
-| Tests | **214 / 214 passing** (11 of them drive a real browser) |
+| Last verified implementation commit | `17ed790` |
+| Tests | **224 / 224 passing** (11 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -426,6 +426,76 @@ concepts.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 18 Sep 2026 (Phase A built; Phase B dry run needs two answers)
+`62347ea` and `17ed790` on `main`. 224/224 tests. **Nothing historical has been
+written and nothing will be until Shaun confirms.**
+
+**Phase A is done and usable for today's review.** A tier change cannot be
+recorded until the board answers the rating question: accept the recommendation,
+club override, keep the current rating, or correct the initial classification.
+Keeping the current rating is recorded as its own event — a decision that leaves
+no trace is indistinguishable from the omission the rule exists to prevent.
+Correcting an initial classification is one event, not a promotion plus a
+reassessment, and is offered only while the player is still provisional.
+
+**The shared pre-review snapshot is not a nicety.** Reviewing Jams before Aubyn
+does not merely shift Aubyn's number: moving Jams out of Tier C empties the pool
+below the minimum and Aubyn would be offered **no recommendation at all**. The
+snapshot is a function of the date, so two boards reviewing the same people on
+the same day get the same answers.
+
+**Two defects found while building Phase A, both fixed.** The snapshot read
+classification status off the latest event, and match updates carry none, so
+every player came back unclassified and the initial-classification path was
+silently closed to everyone. And **recording a real promotion broke the next
+page load** — tier history was validated against the seed's frozen three-entry
+list, which a new promotion contradicts. Tier history now comes from the record.
+That is precisely the class of problem this task was raised to prevent, and it
+would have hit on the first promotion recorded today.
+
+---
+
+## PHASE B DRY RUN — SHAUN, TWO ANSWERS NEEDED
+
+Full report: **`HISTORICAL_REVIEW_DRYRUN.md`** (regenerate with
+`node scripts/historical-review-dryrun.js`). Summary:
+
+| Player | Date | Treated as | Proposed rating | Reliability |
+|---|---|---|---:|---|
+| Shaun | 1 Jul | `INITIAL_CLASSIFICATION_CORRECTION` | **1400.0** (board-fixed B baseline) | unchanged (33%) |
+| Tom | 1 Jul | Promotion, statistically reassessed | **no recommendation** | unchanged (29%) |
+| Fatch | 1 Aug | Promotion, statistically reassessed | **no recommendation** | unchanged (58%) |
+
+**1. The statistical reassessment declines to recommend anything for Tom or
+Fatch.** The brief asks what the system *would have produced* at their review
+dates; the answer is nothing. Tier C held too few **established** players to
+place a boundary — 2 for Tom, 1 for Fatch, against a minimum of three either
+side. The module refuses rather than inventing a target from a thin pool, which
+is the behaviour Shaun approved when the threshold was set. That is a real
+answer, not a gap. It means the honest record for both is a promotion plus
+**keep the current rating**, unless the board prefers a club override. **CCode
+has not chosen between those — it is exactly the decision the new workflow
+exists to capture.** Neither is silently re-seeded to 1400.
+
+**2. Reliability has no recommendation to give.** `reassessment.js` returns
+`recommendationReliability: null` by design: no validated method exists for
+recommending a reliability change on a tier move. The proposals leave it
+untouched, keeping the evidence each player earned. For Shaun that is worth a
+moment — his rating is corrected to a baseline as though the estimate restarted,
+while his five June matches of evidence stay. Both readings are defensible.
+
+**Blast radius, measured by replaying rather than predicted:** 29 of 34 players
+end on a different Power Rating. Shaun **+203.6 → 1382.3**; everyone else within
+10 points. Tom and Fatch move slightly despite no rating decision, because
+Shaun's corrected rating changes the expectations in matches they played
+alongside him.
+
+**Baton → Shaun.** Confirm the Shaun correction, choose keep-current or override
+for Tom and Fatch, and answer the reliability question. CCode writes nothing
+until then.
+
+---
 
 ### CGPT — 18 Sep 2026 (historical reassessment + today's promotion workflow)
 Shaun clarified a factual distinction that changes how the historical record
@@ -918,6 +988,8 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `17ed790` | Phase B historical dry run (`HISTORICAL_REVIEW_DRYRUN.md`); no write path |
+| `62347ea` | Phase A: mandatory rating decision on every tier change; shared pre-review snapshot; tier history from the record |
 | `701890d` | `COMPARISON_REPORT.md` and its generator; snapshot readable from Node |
 | `291f69b` | UI regression suite — 11 browser tests over the defects that shipped |
 | `8d65edc` | Replay-forward (`replayForward.js`); approving a game now rates it; inert Edit/Delete controls removed |
@@ -949,16 +1021,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **CCode: implement the mandatory rating-decision step for every future
-   promotion/demotion**, including the distinct initial-classification-correction
-   path and shared pre-review snapshot rule. Make it usable for today's club
-   review immediately.
-2. **CCode: produce the historical dry-run plan** for Shaun (1 Jul correction
-   to rating 1400, reliability proposed), Tom (1 Jul statistical promotion
-   reassessment) and Fatch (1 Aug statistical promotion reassessment). Use
-   replay-forward and report the exact proposed changes + blast radius in this
-   Ledger. **Do not commit historical reassessment events until Shaun confirms
-   the dry-run numbers.**
+1. ~~Mandatory rating-decision step~~ — **done** (`62347ea`), usable today.
+2. ~~Historical dry-run plan~~ — **done** (`17ed790`), reported above.
+   **BLOCKED ON SHAUN:** confirm Shaun's 1400 correction; choose keep-current or
+   club override for Tom and Fatch, since the statistical method declines to
+   recommend for either; and decide whether reliability moves.
 3. After Shaun confirms, apply the three historical events chronologically,
    replay forward, run diagnostics/full tests, and regenerate comparison output.
 4. **Expose historical match editing to Admin only** with the already-built
