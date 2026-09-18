@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `17ed790` |
-| Tests | **224 / 224 passing** (11 of them drive a real browser) |
+| Last verified implementation commit | `9cc3c13` |
+| Tests | **231 / 231 passing** (11 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -463,6 +463,51 @@ tools even though both use replay-forward underneath.
 **Baton → CCode:** build the Historical Club Adjustment flow first and use
 Shaun/Tom/Fatch as acceptance fixtures. Do not commit those three historical
 events until Shaun confirms Tom/Fatch outcomes and reliability treatment.
+
+### CCode — 18 Sep 2026 (Historical Club Adjustment built; still blocked on Shaun)
+`9cc3c13` on `main`. 231/231 tests. **No historical decision has been written.**
+
+Built as the permanent Admin tool the decision asked for, not a repair script.
+Pick a player and a past date; the state immediately before it is reconstructed
+from the journey; what is already recorded on that date is shown; the same four
+decisions the prospective review offers are presented; a reason and a name are
+required; the full replay consequence is shown before anything is written.
+Separate from historical match correction, with a test enforcing it — one
+repairs a result, the other records a judgement, and merging them would let a
+rating be changed under cover of fixing a score.
+
+**Your correction on "no recommendation ≠ keep-current" is implemented as a
+refusal, not a caption.** Choosing "accept" where no recommendation exists is
+rejected with the reason; nothing maps absence to a decision.
+
+**Three defects found while building it, each of which would have silently
+broken the audit guarantee** the supersession model exists to provide:
+* `applyStateEvent` builds its own return shape and drops `revision` and
+  `supersedes`, so the superseding correction was written with the **base id and
+  overwrote the decision it was meant to preserve**. The engine is frozen, so the
+  fields are re-attached during the replay.
+* The superseded event then looked orphaned to the diff and **was deleted**.
+* `verifyNoOp` counted it as "would disappear", which would have meant any
+  record containing a correction could never verify again.
+
+**Acceptance case proven end to end** (in the browser, against a stub — the real
+beta is untouched). Shaun's 1 July correction to 1400: one superseding event, 0
+deletions, 32 players re-derived, Shaun 1178.7 → **1380.2**. Both decisions
+remain in the record, diagnostics pass, and the result still replays to itself,
+so a further correction could be planned on top of it.
+
+**Still blocked on Shaun, unchanged from the dry run:**
+1. **Tom** — keep-current or club override? No statistical recommendation exists
+   at 1 Jul (2 established in C, 3 needed).
+2. **Fatch** — same question at 1 Aug (1 established in C).
+3. **Reliability treatment** for all three. There is no recommendation to give:
+   `reassessment.js` returns null by design because no validated method exists
+   for a reliability change on a tier move. Leaving it untouched keeps the
+   evidence each player earned, which is the conservative reading, but it is a
+   board choice.
+
+Once those three answers arrive the tool applies them directly — no further
+build is needed.
 
 ### CCode — 18 Sep 2026 (Phase A built; Phase B dry run needs two answers)
 `62347ea` and `17ed790` on `main`. 224/224 tests. **Nothing historical has been
@@ -1025,6 +1070,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `9cc3c13` | Historical Club Adjustment: Admin tool over replay-forward, superseding audited corrections |
 | `17ed790` | Phase B historical dry run (`HISTORICAL_REVIEW_DRYRUN.md`); no write path |
 | `62347ea` | Phase A: mandatory rating decision on every tier change; shared pre-review snapshot; tier history from the record |
 | `701890d` | `COMPARISON_REPORT.md` and its generator; snapshot readable from Node |
@@ -1058,11 +1104,9 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Build Admin-only Historical Club Adjustment** over replay-forward, with
-   historical pre-date state reconstruction, prospective-equivalent decision
-   choices, reason/attribution, blast-radius preview, and audited superseding
-   correction events. Keep it separate from Historical Match Correction.
-2. Use Shaun/Tom/Fatch as acceptance cases. **No historical write yet.**
+1. ~~Build Admin-only Historical Club Adjustment~~ — **done** (`9cc3c13`).
+2. ~~Shaun/Tom/Fatch as acceptance cases~~ — **Shaun's case proven end to end
+   against a stub; nothing written to the beta.**
 3. **BLOCKED ON SHAUN for the three writes:**
    - Shaun rating = **1400** is fixed; choose reliability treatment.
    - Tom: choose **Keep current** or **Club override**, because historical
