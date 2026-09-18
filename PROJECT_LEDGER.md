@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `2a61943` |
-| Tests | **174 / 174 passing** |
+| Last verified implementation commit | `7dcdd2e` |
+| Tests | **187 / 187 passing** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -68,14 +68,25 @@ shipped application was `undefined`** for all but the three players in the
 authoritative change list. Fixed at source (v3's own tier map) and `TierHistory`
 now refuses an empty map. See Handoffs.
 
+**Diagnostics live.** `betaDiagnostics.js` reads the three collections directly
+and checks that the record still hangs together — chain continuity, state vs
+history, match/event coverage, orphans, duplicates, excluded data, and whether
+what the app shows is what is stored. On demand, never at page load. It also
+reports the Open Question 1a read-strategy measurement.
+
+**Beta reset is a script, not a button:** `scripts/reset-beta.js`, dry run by
+default, needs `--write --i-mean-it`, cannot be pointed at production, verifies
+itself afterwards. Last dry run against the live beta: **0 documents outside the
+baseline.**
+
 **Write path live.** `clubDecision.js` is the only thing in the application that
 writes a rating. The Admin Monthly Review is wired to it. Forward-only,
 attributed, confirmed against the exact document before anything is stored, and
 undone by recording a reversal rather than by deleting.
 
 **Not built:**
-beta diagnostics screen · beta reset workflow · replay-forward for historical edits · UI regression tests · final
-comparison report and screenshots.
+replay-forward for historical edits · UI regression tests · final comparison
+report and screenshots.
 
 ---
 
@@ -192,9 +203,10 @@ Shaun's decisions, including where an agent recommended otherwise.
 **Owner / baton: Claude Code.** The Real Rating Journey UI (`bd47757`), Kings of
 Tiers on historical tier (`6fd7a1c`), the retirement of the last two
 reconstructions (`19ffe21`) and the reassessment write path with Admin Monthly
-Review (`2a61943`) are complete. Next unblocked item is beta diagnostics and the
-beta reset workflow. On `Ledger CCode`, reconcile repository state and start the
-first approved, unblocked item without another Shaun decision.
+Review (`2a61943`) and beta diagnostics with the reset workflow (`7dcdd2e`) are
+complete. Next unblocked item is **replay-forward**, which Open Question 11
+should be decided before. On `Ledger CCode`, reconcile repository state and
+start the first approved, unblocked item without another Shaun decision.
 
 **Three items need Shaun, none blocking:** Open Question 8 (Manny is Tier S and
 no tier-scoped view can show him), Open Question 9 (match cards now show four
@@ -225,6 +237,12 @@ concepts.
    current-state source, and bounded historical reads remain required where
    they suffice. No whole-journey read per render, no snapshot collection yet,
    and Ranking Movement stays in scope.
+
+   **Measurement recorded 18 Sep 2026 (`7dcdd2e`), as this exception requires.**
+   633 journey events = 633 documents read once per session. Growing ~160
+   events/month at the club's recent rate. Review point set at 5000 events,
+   roughly 28 months away; the diagnostics screen reports these figures live and
+   says when the review is due. **Not due.** No change to the exception.
 
    **Future review, not a current blocker:** reopen when journey size, read cost
    or observed load latency becomes material, or before an import/backfill
@@ -515,6 +533,51 @@ and left for Shaun/CGPT rather than applied.
 Questions 8, 9 and 11 are for Shaun; only 11 has a deadline (before
 replay-forward).
 
+### CCode — 18 Sep 2026 (beta diagnostics + reset workflow)
+`7dcdd2e` on `main`. 187/187 tests (13 new). Verified in the browser; the reset
+dry run against the live beta reports 0 documents outside the baseline.
+
+**Diagnostics reads the database itself**, not the application's in-memory
+copies — a check run against what the app already believes would agree with a
+bad transformation on the way in. That makes "what the app shows is what is
+stored" a real comparison of two objects reached by different paths. Tampering
+with a stored rating was caught independently by that check and by the
+state-vs-history check.
+
+It **walks** recorded values and never re-runs the engine. A check that
+recomputes what it is checking can only detect a bad engine, not a bad write.
+It reports and never repairs, because a diagnostic that quietly fixed things
+would destroy the evidence.
+
+Nine checks: unique ids, chain continuity, stored state = end of history,
+evidence vs last match, match/event coverage both ways, orphans on either side,
+no pre-June data, one schema version, app agrees with store. Each has a test
+that breaks the record one specific way — a diagnostic that only ever passes is
+decoration.
+
+**Open Question 1a measurement recorded**, as that exception requires: 633
+events, 633 documents per session, ~160 events/month, review point 5000 (~28
+months). Not due; no change proposed. The screen reports it live so the next
+review is a reading, not an investigation.
+
+**Reset is a script, not a button.** What the seed cannot do is remove what it
+does not own: club decisions survive a re-seed and keep affecting ratings.
+Resetting destroys every decision ever recorded and is not recoverable from
+inside the app. So: dry run by default, printing every document it would delete
+with what it did to a rating and who recorded it; `--write` AND `--i-mean-it`
+required, because `--write` alone is the harmless flag every other script here
+uses; project id taken from the seed constant with no flag to redirect it; and
+a full diagnostics pass afterwards that fails loudly rather than reporting
+success it has not checked.
+
+Backends gained `remove()`. **Nothing in the UI calls it and a test enforces
+that** — the record is forward-only, and a decision is undone by recording a
+reversal.
+
+**Baton → CGPT.** NEXT is replay-forward. **Open Question 11 should be decided
+first** — it is the one-line engine precision fix, and replay-forward is exactly
+the thing that will replay those documents for real.
+
 
 ### CGPT — 17 Sep 2026 (latest, Open Question 1a resolved)
 On Shaun's behalf, accepted the current once-per-session cumulative
@@ -662,6 +725,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `7dcdd2e` | Beta diagnostics (`betaDiagnostics.js`) and guarded reset workflow (`scripts/reset-beta.js`); backend `remove()` |
 | `2a61943` | Club reassessment write path (`clubDecision.js`) and Admin Monthly Review; club-decision movement separated in monthly views |
 | `19ffe21` | Last two reconstructions retired; `matchFacts.js`; per-player match deltas; draws shown as rated |
 | `6fd7a1c` | Kings of Tiers / podium / tier filter on historical tier; fixed empty-TIER_MAP defect erasing all historical tiers |
@@ -689,7 +753,6 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. Beta diagnostics and beta reset workflow.
-2. Replay-forward — **required before any historical editing UI is exposed.**
+1. Replay-forward — **required before any historical editing UI is exposed.**
    Hiding inert Edit/Delete Match controls is already approved and must not
    wait for replay-forward; restore them only when historical editing works.
