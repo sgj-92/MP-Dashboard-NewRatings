@@ -175,10 +175,21 @@ the Ledger at that review, and propose a scalable historical-boundary strategy
 reads. This is a temporary small-journey allowance, not permanent architecture;
 the review trigger is not a blocker for the current monthly UI pass.
 
-**Club reassessment:** forward-only and audited; never rewrites history. Two
+**Club reassessment:** forward-only and audited in normal operation. Two
 modes — recommended statistical reassessment, and explicit club override of
 rating *and* reliability. Promotion/demotion and rating reassessment are
-separate events.
+separate events. A missing statistical recommendation is **not** itself a club
+decision to keep the current rating; it means the board must explicitly choose
+keep-current or an override.
+
+**Historical Club Adjustment:** Admin-only escape hatch for factual corrections,
+late-entered board decisions and repair of bugs/errors. It is distinct from
+Historical Match Correction. The Admin selects player + effective review date,
+the app reconstructs the state immediately before that date, presents the same
+reassessment choices used prospectively, requires attribution/reason, previews
+the replay blast radius, and only then commits through replay-forward. Never
+silently mutates or deletes an old decision: corrections are represented by a
+new/superseding audited event and the downstream record is replayed.
 
 **Storage:** `matches/{matchId}` · `ratingJourney/{eventId}` · `players/{playerId}`.
 Normal current-state rendering reads `players`; historical views use targeted
@@ -209,6 +220,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
 | Monthly Rating is replaced, not monthly rating progress | Monthly Performance becomes the performance metric, while real Power Rating movement, rank movement/crossovers and League Table remain visible as separate monthly stories. No new monthly rating solver. |
 | Historical reassessments must record factual club decisions, not hindsight | Shaun: 1 Jul 2026 was an **INITIAL_CLASSIFICATION_CORRECTION**, because he entered C only as an unknown and the club then determined the initial estimate was wrong. The club's factual assessment was **normal B baseline = 1400**. Tom (1 Jul 2026 C→B) and Fatch (1 Aug 2026 C→B) were genuine promotions/development and should receive the same **statistical reassessment process** used for future promotions, not an automatic B re-seed. |
+| Historical Club Adjustment is a permanent Admin safety tool, not a one-off script | Build a narrow Admin UI over replay-forward for factual historical club-rating decisions/corrections. Separate it from Historical Match Correction. Require player, effective date, reason/attribution, old state, chosen decision, and replay blast-radius confirmation. Use a superseding/correction event rather than silent deletion. |
+| No statistical recommendation ≠ keep-current | The dry run found Tom/Fatch had too few established C players for the T2 method to recommend a target. That does **not** mean the historical club decision was keep-current; it means the board must choose keep-current or a club override, exactly as it would prospectively. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
 | Same-review recommendations use one shared pre-review snapshot | If multiple players are reviewed on the same effective date, calculate all statistical recommendations from the same pre-review state so one player's accepted decision cannot alter another player's recommendation merely because of processing order. Apply confirmed events afterwards in deterministic order. |
 | Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
@@ -218,62 +231,58 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code.** A new approved, time-sensitive task supersedes
-the screenshot checkpoint: make historical/future club reassessment handling
-consistent before today's promotions create another backdating problem.
+**Owner / baton: Claude Code.** Phase A is complete (`62347ea`): today's
+promotion workflow now requires an explicit rating decision and uses a shared
+pre-review snapshot. Phase B dry-run is complete (`17ed790`): the historical
+states and replay consequences are known.
 
-### Phase A — future monthly-review workflow (implement now)
+### NEXT — build Historical Club Adjustment before writing the three old cases
 
-A tier change remains a zero-rating event by itself, but **Promote/Demote may not
-finish the review without an explicit rating decision** immediately afterwards:
+Do **not** treat Shaun/Tom/Fatch as a one-off data repair. Build a narrow
+Admin-only **Historical Club Adjustment** workflow on top of the already-built
+`replayForward.js` so future bugs, missed review decisions or factual corrections
+can be repaired safely without bespoke scripts.
 
-1. **Accept statistical recommendation**
-2. **Club override** — board enters rating and reliability
-3. **Keep current rating** — explicit decision, not an accidental omission
-4. **Correct initial classification** — distinct path where the board is
-   replacing an initial estimate it knows was wrong, not rewarding development
+Required flow:
 
-When several players are reviewed on the same effective date, compute all
-recommendations from **one shared pre-review snapshot**. Do not let accepting
-player A's decision move the boundary/target used to recommend player B merely
-because A was processed first. Persist confirmed events afterwards in the
-existing deterministic ordering.
+1. Admin selects **player + effective review date**.
+2. Reconstruct and show the player's **state immediately before that date**:
+   tier, Power Rating, reliability/evidence, and relevant review context.
+3. Present the same club decision semantics as the prospective review:
+   **Accept recommendation / Club override / Keep current rating / Correct
+   initial classification** where applicable.
+4. If the statistical method has no recommendation, say why, but **do not map
+   that automatically to Keep current**.
+5. Require a reason and attribution. Historical correction is an audited club
+   action, not an invisible database edit.
+6. Preview exact proposed rating/reliability changes and the replay blast
+   radius before confirmation.
+7. Commit via replay-forward only after confirmation; run the existing no-op
+   safety check first.
+8. Never silently delete or mutate an earlier club decision. A correction is
+   represented by a superseding/correction event and downstream replay.
 
-This workflow must be usable for the players being promoted **today**, so their
-next rated match starts from the club-reviewed state rather than requiring
-backdating later.
+Keep **Historical Match Correction** separate. One repairs match/result data;
+the other records/corrects club assessment of player level.
 
-### Phase B — historical dry-run plan (calculate now; do not write yet)
+### Historical cases to use as acceptance tests
 
-Use replay-forward and the historical state at the actual review dates:
+- **Shaun — 1 Jul 2026:** initial classification correction, C→B, club override
+  to **1400**. Reliability is still a board choice.
+- **Tom — 1 Jul 2026:** genuine C→B promotion. Dry run correctly found **no
+  statistical recommendation** because the C pool was too thin. The board must
+  therefore explicitly choose Keep current or Club override; do not infer the
+  answer from the missing recommendation.
+- **Fatch — 1 Aug 2026:** same principle as Tom; genuine promotion, no
+  statistical recommendation available from the historical pool, board decision
+  required.
 
-- **Shaun — 1 Jul 2026:** C→B was a factual
-  `INITIAL_CLASSIFICATION_CORRECTION`. The club's rating decision is fixed:
-  **rebase to 1400 (normal B baseline)**. Do **not** rewrite June as though he
-  entered as B. Preserve June, then correct the estimate on 1 July. Calculate
-  and report the reliability recommendation/choice for this correction rather
-  than inventing one silently.
-- **Tom — 1 Jul 2026:** genuine C→B promotion. Calculate the statistical
-  reassessment that the current recommendation system would have produced from
-  the shared 1 July pre-review snapshot. Do **not** automatically re-seed to
-  1400.
-- **Fatch — 1 Aug 2026:** genuine C→B promotion. Calculate the statistical
-  reassessment that the current recommendation system would have produced from
-  the 1 August pre-review snapshot. Do **not** automatically re-seed to 1400.
+Do not write any of the three historical decisions until Shaun has chosen the
+Tom/Fatch board outcomes and the reliability treatment. The new UI/tool should
+be capable of applying them once confirmed.
 
-Before committing any of these historical reassessment events, report to Shaun
-via this Ledger: old rating/reliability, recommendation target and method,
-proposed new rating/reliability, event type/reason, replay blast radius, and the
-resulting current Power Rating for each affected player. **No historical write
-until Shaun confirms those dry-run numbers.**
+Do not change Sequential-v1 match mathematics.
 
-Do not alter the frozen Sequential-v1 match mathematics. This task is about
-recording factual board evidence and using the already-agreed reassessment
-layer.
-
-Open Question 1a remains resolved. Preserve the small-journey session cache
-exception and review trigger, the frozen engine, and all four distinct monthly
-concepts.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -344,16 +353,24 @@ concepts.
    reader "Each player starts the month at their tier baseline." These are the
    last screens in the app showing a reconstruction. The four monthly views in
    `monthlyViews.js` already carry the real figures.
-17. **APPROVED — historical reassessment correction and mandatory future rating decision.**
+17. **APPROVED — Historical Club Adjustment + historical reassessment correction.**
    Shaun confirmed the factual history on 18 Sep 2026. Shaun's 1 Jul C→B was an
-   initial-classification error correction, with the club assessment explicitly
-   **normal B baseline = 1400**. Tom's 1 Jul and Fatch's 1 Aug C→B moves were
-   genuine promotions and should use the statistical reassessment mechanism at
-   their historical review dates. CCode must dry-run and report the historical
-   rating/reliability outcomes before writing them. Going forward every
-   promotion/demotion must include an explicit rating decision in the same
-   monthly review. Multiple decisions on one review date use a shared pre-review
-   recommendation snapshot to avoid processing-order bias.
+   initial-classification error correction with the club assessment **normal B
+   baseline = 1400**. Tom's 1 Jul and Fatch's 1 Aug C→B moves were genuine
+   promotions and should be processed through the same club reassessment decision
+   semantics as future reviews.
+
+   Phase B (`17ed790`) found the statistical recommender returns **no target** for
+   Tom/Fatch because too few established C players existed at those dates. This
+   is not equivalent to Keep current. The board still has to choose Keep current
+   or a Club override. Reliability likewise has no validated automatic
+   recommendation and remains a board choice.
+
+   Rather than handle these as a one-off script, CCode is approved to build a
+   permanent Admin-only Historical Club Adjustment tool over replay-forward, with
+   historical state reconstruction, reason/attribution, blast-radius preview, and
+   superseding/correction events rather than silent deletion.
+
 8. **Manny is Tier S and is invisible to every tier-scoped view.** Noticed
    while fixing Kings of Tiers: current tiers are A 9 · B 17 · C 7 · **S 1**.
    The Kings panel hardcodes A/B/C and the tier filter offers A/B/C, so Manny
@@ -426,6 +443,26 @@ concepts.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 18 Sep 2026 (Historical Club Adjustment approved)
+Shaun asked whether historical reassessment should remain a bespoke three-player
+repair. Decision: **no**. Build a narrow permanent Admin-only Historical Club
+Adjustment workflow on top of replay-forward. The replay engine, historical
+state and reassessment logic already exist; the remaining work is controlled UI,
+validation, audit semantics and tests.
+
+Important correction to the earlier wording: Tom and Fatch were historically
+reassessed by the club when promoted. The fact that `t2-quartile-v1` cannot
+produce a recommendation at their dates does **not** mean the club chose
+keep-current. It means the statistical adviser abstains and the board must
+explicitly choose Keep current or Club override.
+
+Historical Match Correction and Historical Club Adjustment remain separate Admin
+tools even though both use replay-forward underneath.
+
+**Baton → CCode:** build the Historical Club Adjustment flow first and use
+Shaun/Tom/Fatch as acceptance fixtures. Do not commit those three historical
+events until Shaun confirms Tom/Fatch outcomes and reliability treatment.
 
 ### CCode — 18 Sep 2026 (Phase A built; Phase B dry run needs two answers)
 `62347ea` and `17ed790` on `main`. 224/224 tests. **Nothing historical has been
@@ -1021,20 +1058,25 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Mandatory rating-decision step~~ — **done** (`62347ea`), usable today.
-2. ~~Historical dry-run plan~~ — **done** (`17ed790`), reported above.
-   **BLOCKED ON SHAUN:** confirm Shaun's 1400 correction; choose keep-current or
-   club override for Tom and Fatch, since the statistical method declines to
-   recommend for either; and decide whether reliability moves.
-3. After Shaun confirms, apply the three historical events chronologically,
+1. **Build Admin-only Historical Club Adjustment** over replay-forward, with
+   historical pre-date state reconstruction, prospective-equivalent decision
+   choices, reason/attribution, blast-radius preview, and audited superseding
+   correction events. Keep it separate from Historical Match Correction.
+2. Use Shaun/Tom/Fatch as acceptance cases. **No historical write yet.**
+3. **BLOCKED ON SHAUN for the three writes:**
+   - Shaun rating = **1400** is fixed; choose reliability treatment.
+   - Tom: choose **Keep current** or **Club override**, because historical
+     statistical recommendation is unavailable.
+   - Fatch: choose **Keep current** or **Club override**, same reason.
+   - choose reliability treatment for Tom/Fatch if overriding.
+4. After Shaun confirms, apply the three historical events chronologically,
    replay forward, run diagnostics/full tests, and regenerate comparison output.
-4. **Expose historical match editing to Admin only** with the already-built
-   replay blast-radius confirmation. Genuine correction is allowed; ordinary
-   users do not get historical rewrite controls.
-5. Apply the already-approved one-line exact-evidence precision fix before this
-   beta is considered final.
-6. Ensure Tier S is supported throughout tier-aware UI. Manny remains S; do not
-   award an S King merely because he is the only eligible S player.
-7. Keep the truthful four per-player rating movements on match cards.
-8. Then return to **screenshots/product acceptance**. Screenshots are review
-   aids for CGPT/Shaun, not release documentation at this stage.
+5. **Expose Historical Match Correction to Admin only** with the existing
+   replay blast-radius confirmation.
+6. Apply the already-approved one-line exact-evidence precision fix before beta
+   finalisation.
+7. Ensure Tier S is supported throughout tier-aware UI; Manny remains S and a
+   sole eligible S player is not automatically crowned King.
+8. Keep the truthful four per-player rating movements on match cards.
+9. Return to screenshots/product acceptance after the historical correction
+   workflow and data are settled.
