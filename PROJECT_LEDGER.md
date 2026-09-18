@@ -33,10 +33,10 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `9cc3c13` |
-| Tests | **231 / 231 passing** (11 of them drive a real browser) |
+| Last verified implementation commit | `0f7c2ed` |
+| Tests | **230 / 230 passing** (11 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
-| Firestore | 150 matches · 633 journey events · 34 players = **817 docs** |
+| Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
 | Production | never touched; comparison is a dated static snapshot |
 
 **Wired to v3:** `recomputeAll` hydrates `PLAYERS[]` from the compact `players`
@@ -477,6 +477,53 @@ tools even though both use replay-forward underneath.
 **Baton → CCode:** build the Historical Club Adjustment flow first and use
 Shaun/Tom/Fatch as acceptance fixtures. Do not commit those three historical
 events until Shaun confirms Tom/Fatch outcomes and reliability treatment.
+
+### CCode — 18 Sep 2026 (the three historical decisions are APPLIED)
+`0f7c2ed` on `main`. 230 tests + 11 browser tests. **Written to the live beta.**
+
+| Player | Date | Decision | Anchor | After decision | Current |
+|---|---|---|---|---:|---:|
+| Shaun | 1 Jul | Initial classification correction | Board-fixed B baseline | 1400.0 @ 10% | **1374.3** (63%) |
+| Tom | 1 Jul | Promotion + club override | Jords immediately before the review | **1352.5** @ 10% | **1345.9** (64%) |
+| Fatch | 1 Aug | Promotion + club override | Tom immediately before the review, after his corrected July | **1358.6** @ 10% | **1342.1** (55%) |
+
+**Two anchors were resolved, not given, and the order mattered.** Both 1 July
+decisions came from the same pre-review snapshot, so processing Shaun first
+could not move the Jords figure Tom was anchored to — the purpose of the
+shared-snapshot rule, doing real work. Fatch could only be resolved afterwards:
+on the old record Tom entered August at **1133.0**; after the corrections,
+**1358.6**. Resolving all three up front would have anchored Fatch to a Tom who
+no longer existed.
+
+**Four defects surfaced by doing it**, each caught by a check rather than by
+reasoning, each fixed before the result was accepted:
+* `verifyNoOp` refused to run at all — adding `supersedes`/`revision` to the
+  schema made every pre-existing document "differ" from its own rebuild (absent
+  vs null). Both mean not applicable and now compare equal.
+* The **Rating Journey showed superseded decisions beside their replacements**,
+  telling a player their rating moved twice.
+* The display ordered the rating decision **before** the tier move while the
+  engine applied them the other way, so the chain stopped joining up. The
+  canonical same-date order is now defined once and reused everywhere.
+* Monthly movement counted only reassessments, so **Shaun's correction would
+  have been shown as a month's form**. Any club decision counts now.
+
+**Verified on the live record:** nine diagnostics pass, it replays to itself
+with 0 differences, and monthly movement separates decision from play —
+Shaun July +255.1 (**+263.2 by decision**, −8.1 on court); Tom +255.2 (**+249.1
+by decision**); Fatch August +205.7 (**+222.3 by decision**, so he lost 16.6 on
+court).
+
+**Comparison against production improved materially.** `COMPARISON_REPORT.md`
+now states its basis, because the seeded baseline and the live record differ
+once club decisions exist. Regenerated live: mean absolute difference **31.9 →
+18.0 points**, largest **220.3 → 97.8**. The seeded-differently players are no
+longer the largest differences, and the report says so instead of repeating a
+claim that has stopped being true.
+
+`HISTORICAL_REVIEW_DRYRUN.md` is superseded by the applied result.
+
+**Baton → CGPT/Shaun.** Section 8 items 3–7 remain; none is blocked.
 
 ### CCode — 18 Sep 2026 (Historical Club Adjustment built; still blocked on Shaun)
 `9cc3c13` on `main`. 231/231 tests. **No historical decision has been written.**
@@ -1084,6 +1131,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `0f7c2ed` | Three authorised historical club decisions applied to the beta; four defects fixed en route |
 | `9cc3c13` | Historical Club Adjustment: Admin tool over replay-forward, superseding audited corrections |
 | `17ed790` | Phase B historical dry run (`HISTORICAL_REVIEW_DRYRUN.md`); no write path |
 | `62347ea` | Phase A: mandatory rating decision on every tier change; shared pre-review snapshot; tier history from the record |
@@ -1118,11 +1166,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Apply the three authorised historical club adjustments now**:
-   Shaun 1 Jul = 1400 / 10%; Tom 1 Jul = Jords' 1 Jul pre-review rating / 10%;
-   Fatch 1 Aug = Tom's 1 Aug pre-review rating after corrected July / 10%.
-2. Replay forward, run diagnostics + full tests, regenerate comparison outputs,
-   and record the exact resolved anchor/current ratings in this Ledger.
+1. ~~Apply the three authorised historical club adjustments~~ — **done**
+   (`0f7c2ed`). Resolved anchors: Tom = **1352.5** (Jords), Fatch = **1358.6**
+   (Tom, after corrected July). Current: Shaun 1374.3, Tom 1345.9, Fatch 1342.1.
+2. ~~Replay, diagnostics, tests, comparison outputs, Ledger record~~ — **done**;
+   all verified against the live record.
 3. **Expose Historical Match Correction to Admin only** with the existing
    replay blast-radius confirmation.
 4. Apply the already-approved one-line exact-evidence precision fix before beta
