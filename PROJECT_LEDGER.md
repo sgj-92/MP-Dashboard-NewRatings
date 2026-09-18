@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `0f7c2ed` |
-| Tests | **230 / 230 passing** (11 of them drive a real browser) |
+| Last verified implementation commit | `1c120c7` |
+| Tests | **233 / 233 passing** (14 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 150 matches · 638 journey events · 34 players = **822 docs** |
 | Production | never touched; comparison is a dated static snapshot |
@@ -477,6 +477,52 @@ tools even though both use replay-forward underneath.
 **Baton → CCode:** build the Historical Club Adjustment flow first and use
 Shaun/Tom/Fatch as acceptance fixtures. Do not commit those three historical
 events until Shaun confirms Tom/Fatch outcomes and reliability treatment.
+
+### CCode — 18 Sep 2026 (NEXT 3, 4 and 5 done)
+`0925479`, `3fbdc57`, `1c120c7` on `main`. 233 tests, 14 of them in a browser.
+**The live beta is untouched by this pass** — it holds exactly the five
+documents beyond the seeded baseline that are the three authorised board
+decisions, and nothing else.
+
+**#4 — exact-evidence precision fix applied.** `applyStateEvent` preferred the
+derived reliability over the exact evidence beside it, so a replay sent the
+number back through `reliability = e / (e + 10)` inverted and lost a bit:
+evidence of 21 replayed as 20.999999999999996. No mathematics changed — both
+fields describe the same quantity and K is identical either way; the engine now
+prefers the lossless representation. `replayForward` passes the exact evidence
+for any event that changed reliability, so it no longer has to route around the
+problem by replaying intent. Verified against the live beta afterwards: still
+replays to itself with 0 differences, all nine diagnostics pass.
+
+**#3 — Historical Match Correction is exposed to Admin**, over replay-forward.
+The controls come back meaning what they say: a correction re-derives every
+rating that followed, so the blast radius is measured by replaying and shown in
+full before anything is written, and cancelling leaves no trace. Removal
+replays the record *without* the match rather than hiding it. Kept in one place
+(the Games tab) so a blast radius is never shown twice or acted on from two
+screens; profile and head-to-head cards point there.
+
+  **Bounded limitation, recorded rather than papered over:** a correction that
+  changes the DATE is refused with the reason. Match ids are `YYYY-MM-DD-N`, so
+  allowing it would leave the identifier describing a day the match no longer
+  belongs to. Moving a game is a removal and a re-entry — two deliberate steps
+  the Admin can already take.
+
+**#5 — Tier S supported throughout.** Kings of Tiers and the grouped League
+Table both hardcoded A/B/C, so a Tier S player was silently absent from both.
+Shaun's "do not crown a sole eligible S player" is implemented as a rule about
+**the size of the field**, not about Tier S: a king of a field of one has won
+nothing whichever tier it is, and hardcoding it to S would have made it look
+like a rule about Manny. Proven in the browser by forcing Manny to be the single
+qualifying S player — the card reads "only one qualified" and no crown is
+awarded. He meets no qualifying threshold today, so the case cannot arise live,
+which is why it had to be forced rather than taken on trust.
+
+**#6 — per-player match movements** are unchanged and covered by a browser test.
+
+**Baton → CGPT/Shaun.** Only **screenshots / product acceptance** (#7) remains,
+and it still needs to be said what they are for: CCode has taken them as review
+aids for CGPT and Shaun per the earlier note, but has not produced them.
 
 ### CCode — 18 Sep 2026 (the three historical decisions are APPLIED)
 `0f7c2ed` on `main`. 230 tests + 11 browser tests. **Written to the live beta.**
@@ -1171,12 +1217,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    (Tom, after corrected July). Current: Shaun 1374.3, Tom 1345.9, Fatch 1342.1.
 2. ~~Replay, diagnostics, tests, comparison outputs, Ledger record~~ — **done**;
    all verified against the live record.
-3. **Expose Historical Match Correction to Admin only** with the existing
-   replay blast-radius confirmation.
-4. Apply the already-approved one-line exact-evidence precision fix before beta
-   finalisation.
-5. Ensure Tier S is supported throughout tier-aware UI; Manny remains S and a
-   sole eligible S player is not automatically crowned King.
-6. Keep the truthful four per-player rating movements on match cards.
-7. Return to screenshots/product acceptance after these data/technical items are
-   settled.
+3. ~~Expose Historical Match Correction to Admin only~~ — **done** (`3fbdc57`).
+   Date changes are refused; moving a game is a removal and a re-entry.
+4. ~~Exact-evidence precision fix~~ — **done** (`0925479`).
+5. ~~Tier S supported throughout; no crown for a sole qualifier~~ — **done**
+   (`1c120c7`), implemented as a rule about field size rather than about S.
+6. ~~Keep the truthful four per-player rating movements on match cards~~ —
+   unchanged, covered by a browser test.
+7. **Screenshots / product acceptance** — the only item left. Taken as review
+   aids for CGPT and Shaun rather than release documentation, per the earlier
+   note. CCode can produce them on the next `Ledger CCode`; say if a different
+   set is wanted.
