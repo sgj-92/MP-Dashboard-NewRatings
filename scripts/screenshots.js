@@ -62,8 +62,10 @@ const SHOTS = [
     note: 'A board decision entered late. State reconstructed as at that date, and the decisions already on it labelled: what is Active, what was Superseded, and what each one actually did. Nothing earlier is deleted or rewritten.' },
   { file: '09-admin-diagnostics.png', title: 'Admin — Beta diagnostics',
     note: 'Reads the three collections directly and checks the record still hangs together. Also carries the read-strategy measurement.' },
-  { file: '10-games-correction.png', title: 'Games — historical match correction',
-    note: 'Two separate actions with their own words. A removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.' },
+  { file: '10-games-feed.png', title: 'Play — the results feed',
+    note: 'What a player sees. Teams, result, score, badge, submission metadata — and nothing else. The correction controls exist for one person and do not appear here at all.' },
+  { file: '10b-games-correction.png', title: 'Play — Manage, opened by an admin',
+    note: 'Unlocked, one card at a time, behind a compact Manage affordance in the card header. Two separate actions with their own words: a removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.' },
   { file: '11-full-calculation.png', title: 'The full calculation',
     note: 'The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
@@ -183,16 +185,25 @@ async function main() {
   // reached through its legacy tab button. Staging a removal PLANS the replay
   // and shows the consequence; it is never confirmed, and the stubbed
   // Firestore has no write path in any case.
-  await shot('10-games-correction.png',
+  // The player-facing feed first: no admin surface anywhere on it.
+  await shot('10-games-feed.png',
     () => {
       const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
       if (b) b.click();
+      selectedMonth = 'all'; isUnlocked = false; currentUserName = '';
+      renderGamesTab();
+    },
+    () => { const el = document.querySelector('#gamesView .callout-card'); if (el) el.scrollIntoView({ block: 'start' }); });
+  await shot('10b-games-correction.png',
+    () => {
       selectedMonth = 'all'; isUnlocked = true; currentUserName = 'Board';
       renderGamesTab();
       const yn = document.getElementById('gamesYourName'); if (yn) yn.value = 'Board';
+      const manage = document.querySelector('#gamesView [data-manage]');
+      if (!manage) return null;
+      manage.click();
       const del = document.querySelector('#gamesView [data-delete]');
       if (!del) return null;
-      armedDeleteId = del.dataset.delete;
       return deleteMatch(del.dataset.delete);
     },
     () => { const el = [...document.querySelectorAll('#gamesView .callout-card')].find((e) => /re-derives every rating/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });

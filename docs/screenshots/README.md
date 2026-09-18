@@ -60,11 +60,17 @@ A board decision entered late. State reconstructed as at that date, and the deci
 
 Reads the three collections directly and checks the record still hangs together. Also carries the read-strategy measurement.
 
-### Games — historical match correction
+### Play — the results feed
 
-![Games — historical match correction](10-games-correction.png)
+![Play — the results feed](10-games-feed.png)
 
-Two separate actions with their own words. A removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.
+What a player sees. Teams, result, score, badge, submission metadata — and nothing else. The correction controls exist for one person and do not appear here at all.
+
+### Play — Manage, opened by an admin
+
+![Play — Manage, opened by an admin](10b-games-correction.png)
+
+Unlocked, one card at a time, behind a compact Manage affordance in the card header. Two separate actions with their own words: a removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.
 
 ### The full calculation
 

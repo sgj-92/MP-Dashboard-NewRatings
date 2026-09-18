@@ -509,6 +509,8 @@ test('remove and correct are separate actions with their own wording', { skip },
       selectedMonth = 'all'; renderGamesTab();
       const yn = document.getElementById('gamesYourName'); if (yn) yn.value = 'Board';
 
+      // The actions live behind the per-card Manage affordance now.
+      document.querySelector('#gamesView [data-manage]').click();
       const correctBtn = document.querySelector('#gamesView [data-edit]');
       const removeBtn = document.querySelector('#gamesView [data-delete]');
       const labels = { correct: correctBtn.innerText.trim(), remove: removeBtn.innerText.trim() };
@@ -873,6 +875,185 @@ test('the explanation states the same pairing gap as the card above it', { skip 
     const wrong = r.filter((x) => x.card !== x.why);
     assert.deepStrictEqual(wrong, [],
       'the card and its explanation must state the same gap');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// ===================== PLAY HISTORY, ADMIN SURFACE (18 Sep 2026) =============
+// The Play tab is a results feed. Correction controls exist for one person and
+// must not make every game read like a maintenance ticket.
+
+test('a non-admin result card carries no correction or removal controls', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = false; currentUserName = '';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; renderGamesTab();
+      const view = document.getElementById('gamesView');
+      return {
+        cards: view.querySelectorAll('.game-card-clickable').length,
+        edit: view.querySelectorAll('[data-edit]').length,
+        del: view.querySelectorAll('[data-delete]').length,
+        manage: view.querySelectorAll('[data-manage]').length,
+        text: view.innerText,
+      };
+    });
+    assert.ok(r.cards > 10, 'the feed must actually be showing games');
+    assert.strictEqual(r.edit, 0, 'no correction control may be offered');
+    assert.strictEqual(r.del, 0, 'no removal control may be offered');
+    assert.strictEqual(r.manage, 0, 'not even the manage affordance');
+    assert.doesNotMatch(r.text, /Correct match|Remove and replay/);
+    assert.doesNotMatch(r.text, /re-derives every rating that came after it/,
+      'the replay warning is maintenance copy and must not sit under every result');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('an admin sees a compact manage affordance, with the actions collapsed', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; currentUserName = 'Board';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; renderGamesTab();
+      const view = document.getElementById('gamesView');
+      const manage = [...view.querySelectorAll('[data-manage]')];
+      return {
+        cards: view.querySelectorAll('.game-card-clickable').length,
+        manage: manage.length,
+        label: manage[0] ? manage[0].innerText.trim() : null,
+        expanded: manage[0] ? manage[0].getAttribute('aria-expanded') : null,
+        edit: view.querySelectorAll('[data-edit]').length,
+        del: view.querySelectorAll('[data-delete]').length,
+        bodies: view.querySelectorAll('.game-manage-body').length,
+        warnings: (view.innerText.match(/re-derives every rating that came after it/g) || []).length,
+      };
+    });
+    assert.ok(r.manage > 10, 'every card offers the affordance to an admin');
+    assert.strictEqual(r.manage, r.cards, 'one per card');
+    assert.match(r.label, /Manage/);
+    assert.strictEqual(r.expanded, 'false');
+    assert.strictEqual(r.edit, 0, 'the actions start collapsed');
+    assert.strictEqual(r.del, 0, 'the actions start collapsed');
+    assert.strictEqual(r.bodies, 0);
+    assert.strictEqual(r.warnings, 0, 'the warning copy must not be repeated under every result');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('opening one card reveals its actions and leaves the others collapsed', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; currentUserName = 'Board';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; renderGamesTab();
+      const view = () => document.getElementById('gamesView');
+
+      const first = view().querySelector('[data-manage]');
+      const firstId = first.dataset.manage;
+      first.click();
+
+      const openBodies = view().querySelectorAll('.game-manage-body');
+      const opened = {
+        bodies: openBodies.length,
+        edit: view().querySelectorAll('[data-edit]').length,
+        del: view().querySelectorAll('[data-delete]').length,
+        editId: view().querySelector('[data-edit]').dataset.edit,
+        warnings: (view().innerText.match(/re-derives every rating that came after it/g) || []).length,
+        label: view().querySelector(`[data-manage="${firstId}"]`).innerText.trim(),
+        expanded: view().querySelector(`[data-manage="${firstId}"]`).getAttribute('aria-expanded'),
+        others: [...view().querySelectorAll('[data-manage]')]
+          .filter((el) => el.dataset.manage !== firstId)
+          .every((el) => el.getAttribute('aria-expanded') === 'false'),
+      };
+
+      // A second card takes over; the first collapses.
+      const second = [...view().querySelectorAll('[data-manage]')].find((el) => el.dataset.manage !== firstId);
+      const secondId = second.dataset.manage;
+      second.click();
+      const moved = {
+        bodies: view().querySelectorAll('.game-manage-body').length,
+        editId: view().querySelector('[data-edit]').dataset.edit,
+        firstClosed: view().querySelector(`[data-manage="${firstId}"]`).getAttribute('aria-expanded') === 'false',
+      };
+
+      // Tapping the open one again closes it.
+      view().querySelector(`[data-manage="${secondId}"]`).click();
+      const closed = {
+        bodies: view().querySelectorAll('.game-manage-body').length,
+        edit: view().querySelectorAll('[data-edit]').length,
+      };
+
+      return { firstId, secondId, opened, moved, closed, writes: window.__writes.length };
+    });
+
+    assert.strictEqual(r.opened.bodies, 1, 'exactly one card opens');
+    assert.strictEqual(r.opened.edit, 1);
+    assert.strictEqual(r.opened.del, 1);
+    assert.strictEqual(r.opened.editId, r.firstId, 'the actions belong to the card that was opened');
+    assert.strictEqual(r.opened.warnings, 1, 'the warning appears once, in the open card');
+    assert.match(r.opened.label, /Close/);
+    assert.strictEqual(r.opened.expanded, 'true');
+    assert.strictEqual(r.opened.others, true, 'every other card stays collapsed');
+
+    assert.strictEqual(r.moved.bodies, 1, 'still only one open');
+    assert.strictEqual(r.moved.editId, r.secondId);
+    assert.strictEqual(r.moved.firstClosed, true);
+
+    assert.strictEqual(r.closed.bodies, 0, 'tapping Close collapses it again');
+    assert.strictEqual(r.closed.edit, 0);
+
+    assert.strictEqual(r.writes, 0, 'opening and closing a card writes nothing');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The one thing collapsing must not break: a staged correction has to stay
+// visible until it is confirmed or cancelled.
+test('a staged correction keeps its card open and survives the collapse', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      isUnlocked = true; currentUserName = 'Board';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; renderGamesTab();
+      const yn = document.getElementById('gamesYourName'); if (yn) yn.value = 'Board';
+      const view = () => document.getElementById('gamesView');
+
+      const first = view().querySelector('[data-manage]');
+      const id = first.dataset.manage;
+      first.click();
+      await deleteMatch(id);
+
+      const staged = {
+        bodies: view().querySelectorAll('.game-manage-body').length,
+        panel: !!document.getElementById('matchFixCommitBtn'),
+        commit: document.getElementById('matchFixCommitBtn').textContent.trim(),
+      };
+
+      // Closing the card cancels the staged plan rather than hiding it.
+      view().querySelector(`[data-manage="${id}"]`).click();
+      const afterClose = {
+        plan: !!matchFixPlan,
+        panel: !!document.getElementById('matchFixCommitBtn'),
+        bodies: view().querySelectorAll('.game-manage-body').length,
+      };
+      return { id, staged, afterClose, writes: window.__writes.length };
+    });
+
+    assert.strictEqual(r.staged.bodies, 1, 'the managed card stays open while a fix is staged');
+    assert.strictEqual(r.staged.panel, true, 'the blast-radius panel must be visible');
+    assert.strictEqual(r.staged.commit, 'Remove and replay');
+    assert.strictEqual(r.afterClose.plan, false, 'closing cancels rather than hides the plan');
+    assert.strictEqual(r.afterClose.panel, false);
+    assert.strictEqual(r.afterClose.bodies, 0);
+    assert.strictEqual(r.writes, 0, 'nothing is written by staging or cancelling');
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });

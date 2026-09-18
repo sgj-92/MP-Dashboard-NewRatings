@@ -5070,11 +5070,16 @@ const MATCH_CORRECTION_NOTE =
 // protects the record is that every correction is replayed, verified, and
 // leaves the history reconstructible.
 
+// Which card's admin actions are open. One at a time: the Play tab is a
+// results feed first, and the correction controls are maintenance that a
+// reader should have to ask for rather than scroll past under every game.
+let managingGameId = null;
+
 let matchFixPlan = null;     // a planned correction awaiting confirmation
 let matchFixMessage = '';
 let matchFixBusy = false;
 
-function matchFixReset(){ matchFixPlan = null; matchFixMessage = ''; }
+function matchFixReset(){ matchFixPlan = null; matchFixMessage = ''; managingGameId = null; }
 
 // The date is part of the match's identity: ids are `YYYY-MM-DD-N`, and letting
 // an edit change it would leave the identifier describing a day the match no
@@ -6241,18 +6246,31 @@ Player C &amp; Player D"></textarea>
     const scoreBinding = gamesViewerName
       ? ` <span style="font-size:10.5px; color:var(--text-dim);">(${gamesViewerName}'s games first)</span>`
       : (m.isDraw ? ` <span style="font-size:10.5px; color:var(--text-dim);">(${m.winners.join(' & ')} first)</span>` : '');
+    // A staged correction keeps its own card open, so the blast-radius panel
+    // can never be collapsed out of sight while it is waiting to be confirmed.
+    const hasStagedFix = !!(matchFixPlan && matchFixPlan.change
+      && (matchFixPlan.change.matchId === m.id
+        || (matchFixPlan.change.match && matchFixPlan.change.match.id === m.id)));
+    const isManaging = isUnlocked && (managingGameId === m.id || hasStagedFix);
+
     html += `<div class="callout-card" style="${cardStyle}">
-      <div class="game-card-clickable" data-gameid="${m.id}" style="cursor:pointer;">
-        <div class="cc-title">${titleText}</div>
-        <div class="cc-detail">${scoreText}${scoreBinding}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
-        ${detailContent}
+      <div class="game-card-head">
+        <div class="game-card-clickable" data-gameid="${m.id}" style="cursor:pointer; min-width:0; flex:1;">
+          <div class="cc-title">${titleText}</div>
+          <div class="cc-detail">${scoreText}${scoreBinding}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
+          ${detailContent}
+        </div>
+        ${isUnlocked ? `<button class="game-manage-btn${isManaging ? ' open' : ''}" data-manage="${m.id}"
+          aria-expanded="${isManaging}" title="${isManaging ? 'Hide admin actions' : 'Correct or remove this game'}">${isManaging ? 'Close' : '··· Manage'}</button>` : ''}
       </div>
-      ${isUnlocked ? `<div class="difficulty-row match-action-row" style="margin-top:8px;">
-        <button class="preset-btn match-action" data-edit="${m.id}" style="flex:1;">Correct match<span class="match-action-sub">Change the score or the players</span></button>
-        <button class="preset-btn match-action match-action-destructive" data-delete="${m.id}" style="flex:1;">Remove and replay<span class="match-action-sub">Delete this match from the record</span></button>
-      </div>
-      <div class="section-sub" style="margin-top:4px; font-size:10.5px;">${MATCH_CORRECTION_NOTE}</div>
-      ${matchFixPlan && matchFixPlan.change && (matchFixPlan.change.matchId === m.id || (matchFixPlan.change.match && matchFixPlan.change.match.id === m.id)) ? buildMatchFixConfirmHtml() : ''}` : ''}
+      ${isManaging ? `<div class="game-manage-body">
+        <div class="difficulty-row match-action-row">
+          <button class="preset-btn match-action" data-edit="${m.id}" style="flex:1;">Correct match<span class="match-action-sub">Change the score or the players</span></button>
+          <button class="preset-btn match-action match-action-destructive" data-delete="${m.id}" style="flex:1;">Remove and replay<span class="match-action-sub">Delete this match from the record</span></button>
+        </div>
+        <div class="section-sub" style="margin-top:4px; font-size:10.5px;">${MATCH_CORRECTION_NOTE}</div>
+        ${hasStagedFix ? buildMatchFixConfirmHtml() : ''}
+      </div>` : ''}
     </div>`;
   });
 
@@ -6406,6 +6424,18 @@ Player C &amp; Player D"></textarea>
   box.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.onclick = ()=>{ editingMatchId = btn.dataset.edit; armedDeleteId = null; renderGamesTab(); };
   });
+  // One card's actions open at a time. Tapping Manage again closes it, and a
+  // staged correction is cancelled rather than left hanging invisibly behind a
+  // collapsed card.
+  box.querySelectorAll('[data-manage]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const id = btn.dataset.manage;
+      if(managingGameId === id){ managingGameId = null; matchFixReset(); }
+      else { managingGameId = id; matchFixPlan = null; matchFixMessage = ''; }
+      renderGamesTab();
+    };
+  });
+
   // Only rated matches carry [data-delete]; a pending submission is rejected,
   // not removed. Removal no longer arms the button first: the blast-radius
   // panel IS the confirmation, and it now says "Remove and replay" in as many

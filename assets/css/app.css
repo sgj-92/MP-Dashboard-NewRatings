@@ -1162,6 +1162,23 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   color:var(--text-dim); margin-top:4px;
 }
 
+/* The Play history is a results feed, not an admin console. The correction
+   controls exist for exactly one person and are folded away behind a small
+   per-card affordance that only an unlocked admin ever sees. */
+.game-card-head{ display:flex; align-items:flex-start; gap:8px; }
+.game-manage-btn{
+  flex:none; align-self:flex-start;
+  font-family:'Helvetica Neue', Arial, sans-serif; font-size:10px;
+  letter-spacing:.03em; color:var(--text-dim);
+  background:transparent; border:1px solid var(--line); border-radius:8px;
+  padding:3px 8px; cursor:pointer; white-space:nowrap;
+}
+.game-manage-btn.open{ color:var(--gold-bright); border-color:var(--gold-dim); }
+.game-manage-body{
+  margin-top:8px; padding-top:8px;
+  border-top:1px solid var(--surface-border-soft);
+}
+
 /* Correct vs remove: two actions, each saying what it does. The destructive
    one is marked as destructive rather than relying on a hidden arming click. */
 .match-action{ text-align:left; line-height:1.3; padding:7px 10px; }
