@@ -229,39 +229,63 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
 | Accept session-cached cumulative reads for Ranking Movement while the journey is small | Shaun/CGPT, 17 Sep 2026: resolve Open Question 1a by accepting the current once-per-session cumulative `ratingJourney` read, cached for the session. Historical all-player ranks need prior state for inactive players. Keep Ranking Movement; no snapshot collection yet. Reopen when journey size, read cost or latency becomes material, including anticipated import/backfill growth; see Section 2. |
 | CGPT visual acceptance withheld pending presentation fixes | 18 Sep 2026 screenshot review: core architecture and premium visual direction accepted, but final beta sign-off waits on terminology, score-orientation, reliability visibility, Admin action-state, audit readability, correction/removal wording, monthly hierarchy and contrast fixes. No rating-model changes authorised. |
+| CGPT product/UX acceptance requirements satisfied | 18 Sep 2026 after `e0fdcbc`: all eight requested presentation fixes are implemented and regression-tested (242/242; 21 browser). The date-edit refusal and non-duplicative Key takeaways are approved departures from the mockup. Final pixel-level look check remains with Shaun/on-device because CGPT cannot render private-repo PNG pixels directly from the GitHub connector. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT — final visual acceptance.**
+**Owner / baton: Shaun — final visual look check only.**
 
-All eight acceptance fixes are implemented, covered by regression tests and
-captured from the live record. Details, and the measured contrast figures, are
-in the CCode handoff of 18 Sep in Section 6.
+CCode has completed all eight CGPT acceptance fixes in `e0fdcbc` with
+**242 / 242 tests passing**, including **21 real-browser tests**. CGPT has
+reviewed the implementation evidence, screenshot README/capture coverage and
+the regression scope and considers the **product/UX acceptance requirements
+satisfied**.
 
-What is wanted back:
+One limitation remains for CGPT's own pixel-level visual sign-off: the GitHub
+connector exposes the private screenshot files and their metadata/captions but
+does not render their pixels into CGPT's vision context. Therefore CGPT is not
+claiming a pixel-perfect visual inspection of the regenerated 11 PNGs from the
+repo alone.
 
-1. Confirm the eight fixes read correctly in `docs/screenshots/` (11 shots), or
-   name what is still wrong.
-2. Give or withhold beta sign-off.
+### Product acceptance — APPROVED
 
-Two deliberate departures from the mockups, both to avoid shipping copy the
-application would contradict:
+The following are accepted as implemented requirements:
 
-- **Correct match** says "change the score or the players", not "or date". A
-  match id is built from its date, so a date change is refused and is instead a
-  removal plus a re-entry. If the mockup's wording is preferred, the refusal
-  itself has to be revisited — that is a product decision, not an
-  implementation one.
-- **Key takeaways** summarises three *different* stories rather than restating
-  the Monthly Performance table, so it adds something the sections below do not
-  each already say.
+- no separate `Monthly Rating` concept in the UI; month-boundary language uses
+  the continuous Power Rating;
+- player-centric score orientation is explicit and browser-tested for wins and
+  losses;
+- profile hero shows Reliability % + agreed reliability band, separately from
+  rank/skill;
+- impossible Monthly Review branches are disabled/refused rather than offered
+  as live actions;
+- Historical Club Adjustment exposes Active/Superseded/correction audit state
+  without deleting history;
+- Historical Match Correction separates `Correct match` from `Remove and
+  replay`, while date changes remain remove + re-entry by design;
+- monthly story hierarchy keeps all four concepts, adds useful Key takeaways,
+  and keeps club-decision movement separate from on-court movement;
+- secondary-text contrast was raised while preserving the dark/champagne
+  prestige direction.
 
-CCode has no other queued work.
+The two CCode departures from the earlier visual mockup are **approved**:
+
+1. `Correct match` may change score/players, **not date**. A date change remains
+   removal + re-entry because the match id is date-derived.
+2. `Key takeaways` should summarise different useful monthly stories rather than
+   duplicate the Monthly Performance table.
+
+### Remaining acceptance action
+
+If Shaun is happy with the regenerated screens visually on-device, the beta can
+be treated as accepted. If he spots a visual issue, record only that concrete
+issue; do not reopen rating architecture or completed UX decisions.
+
+CCode has no queued implementation work.
 
 Do not change Sequential-v1 match mathematics.
-
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -425,6 +449,24 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 18 Sep 2026 (product acceptance approved)
+Reviewed CCode's completed acceptance pass at `e0fdcbc`: **242/242 tests**,
+including **21 browser tests**, with all eight requested UX/presentation fixes
+covered. The product requirements are accepted.
+
+Approved the two deliberate deviations from the mockup: date edits remain
+remove + re-entry because the date is part of match identity; and Key takeaways
+summarises distinct stories instead of duplicating Monthly Performance.
+
+CGPT is **not claiming pixel-level visual inspection of the regenerated private
+repo PNGs**, because the GitHub connector exposes their files/captions but not
+their pixels to vision. So the only remaining gate is Shaun's on-device visual
+look check. No implementation task is queued unless Shaun identifies a concrete
+visual problem.
+
+**Baton → Shaun.** If the regenerated screens look right on-device, beta
+acceptance is complete.
 
 ### CCode — 18 Sep 2026 (CGPT visual acceptance: all eight fixes done)
 
@@ -1368,18 +1410,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~CGPT visual acceptance fixes — Section 4 items 1–8~~ — **done**
-   (`e0fdcbc`). All eight implemented; no Sequential-v1 mathematics touched.
-2. ~~Regression coverage~~ — **done**. Eight browser tests added, covering
-   stale `Monthly Rating` wording, score orientation on both a win and a loss,
-   reliability and band on the profile hero, a disabled unavailable review
-   branch that also refuses to record, `Correct match` vs `Remove and replay`
-   wording and one-click staging, audit badges and English event labels,
-   club-decision movement kept separate, and all four monthly parts retained.
-   **242 / 242 passing, 21 of them in a real browser.**
-3. ~~Regenerate the live-record screenshots~~ — **done**, now **eleven**: a
-   profile-hero shot was added so reliability is reviewable, and the set was
-   renumbered. 0 page errors; the live record is unchanged.
-4. ~~Record commit and test counts~~ — **done**, above and in Section 1.
-5. **Baton back to CGPT for final product/visual acceptance** — the only open
-   item, and it is not CCode's to close.
+1. ~~CGPT acceptance fixes~~ — **done** (`e0fdcbc`), 242/242 tests, 21 browser.
+2. ~~CGPT product/UX acceptance~~ — **approved**. All eight requested
+   presentation requirements are satisfied; both documented departures from the
+   mockup are approved.
+3. **Shaun: final on-device visual look check.** If the regenerated 11 screens
+   look right, beta acceptance is complete.
+4. No CCode task is queued. Only reopen implementation for a concrete visual
+   issue Shaun identifies.
