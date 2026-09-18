@@ -317,6 +317,23 @@ concepts.
    representations of the same quantity — but it is engine code, so CCode has
    recorded it as a passing test (`KNOWN:` in `clubDecision.test.js`) rather
    than applying it. **Decide before replay-forward is built.**
+13. **BLOCKER, found 18 Sep 2026 — the beta cannot record a new game.**
+   `getAllApprovedMatches()` returns the v3 `matches` collection only.
+   `approveMatch()` still marks a submission approved in `extraMatchesState`,
+   which no longer reaches the rated record. Verified in the browser: a
+   submitted game shows as pending, and on approval **disappears from the list
+   entirely and is never rated**. The club cannot add a result to the beta at
+   all. This is not replay-forward's job — a new match at the end of the
+   sequence is forward-only, like a club decision — it needs a match write path.
+   CCode is treating this as the priority within NEXT #1.
+14. **The approved hiding of Edit/Delete never happened, and they are worse
+   than inert.** Open Question 2 records Shaun/CGPT approving the hiding of the
+   inert controls. The controls are still live. Verified: clicking Delete and
+   confirming **persists `deletedIdsState` to shared storage and changes
+   nothing** — the match remains, the rating is unchanged, because the legacy
+   overlay is no longer applied. Editing likewise persists `matchEditsState`
+   that does nothing. Both leave behind state that would desync matches from
+   their ratings if any code ever re-applied it.
 12. **A fourth false statement, now fixed, worth recording as a pattern.** The
    Games view told users a draw "doesn't count as a win or loss for anyone, and
    doesn't affect any rating". Draws are rated in v3 — one moved a player by
