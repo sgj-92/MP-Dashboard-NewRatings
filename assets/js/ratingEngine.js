@@ -286,10 +286,17 @@
 
     // Rating/evidence move only when the event explicitly carries them.
     if (ev.newPowerRating !== undefined) s.rating = ev.newPowerRating;
-    if (ev.newReliability !== undefined) {
-      s.effectiveEvidence = effectiveEvidenceForReliability(ev.newReliability);
-    } else if (ev.newEffectiveEvidence !== undefined) {
+    // Evidence is the exact quantity; reliability is derived from it. When an
+    // event carries both, the exact one wins. Preferring the derived value sent
+    // it back through reliability = e / (e + 10) inverted, losing a last bit --
+    // evidence of 21 replayed as 20.999999999999996 -- so a replayed record was
+    // never quite the record. No mathematics changes here: this picks the
+    // lossless of two representations of the same number.
+    // Approved by Shaun, 18 Sep 2026 (PROJECT_LEDGER.md Open Question 11).
+    if (ev.newEffectiveEvidence !== undefined) {
       s.effectiveEvidence = ev.newEffectiveEvidence;
+    } else if (ev.newReliability !== undefined) {
+      s.effectiveEvidence = effectiveEvidenceForReliability(ev.newReliability);
     }
     // lifetimeMatches is a factual record -- never altered by any event.
 

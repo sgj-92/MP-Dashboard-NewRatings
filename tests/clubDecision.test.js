@@ -180,26 +180,50 @@ test('a committed decision replays back to exactly the state that was written', 
 // Discovered while building the write path. Recorded as a test so that
 // replay-forward, which will replay these documents for real, meets it
 // deliberately instead of being surprised by it. See PROJECT_LEDGER.md.
-test('KNOWN: replaying a stored event round-trips evidence through reliability and loses a bit', () => {
+// Was a KNOWN limitation; fixed with Shaun's approval on 18 Sep 2026.
+// `applyStateEvent` preferred the derived reliability over the exact evidence
+// recorded beside it, so replaying a stored event sent the number back through
+// reliability = e / (e + 10) inverted and lost a bit. Evidence of 21 replayed
+// as 20.999999999999996, which meant a replayed record was never quite the
+// record. Replay-forward routed around it; the engine now simply prefers the
+// lossless representation.
+test('the exact evidence wins over the derived reliability, so a replay is exact', () => {
+  const state = () => ({ X: { rating: 1400, effectiveEvidence: 21, lifetimeMatches: 21, tier: 'B', classificationStatus: 'ESTABLISHED' } });
+  const event = {
+    playerId: 'X', eventType: Engine.EVENT.CLUB_RATING_REASSESSMENT, effectiveDate: '2026-09-18',
+    newReliability: Engine.reliability(21),
+  };
+
+  // Reliability alone still works, and is still lossy -- that is arithmetic,
+  // not a defect, and is why the exact value is preferred when present.
+  const derived = state();
+  Engine.applyStateEvent(derived, { ...event });
+  assert.notStrictEqual(derived.X.effectiveEvidence, 21);
+  assert.ok(Math.abs(derived.X.effectiveEvidence - 21) < 1e-9);
+
+  // With both, the exact one wins and the replay is exact.
+  const exact = state();
+  Engine.applyStateEvent(exact, { ...event, newEffectiveEvidence: 21 });
+  assert.strictEqual(exact.X.effectiveEvidence, 21);
+
+  // No mathematics changed: the two representations still describe the same
+  // number, and K is identical either way.
+  assert.strictEqual(Engine.kFactor(Engine.reliability(derived.X.effectiveEvidence)),
+    Engine.kFactor(Engine.reliability(exact.X.effectiveEvidence)));
+});
+
+// Replay-forward passes the exact evidence for any event that changed it, so a
+// record containing a reliability change still reproduces itself exactly.
+test('a reliability change survives a replay without drifting', () => {
+  const RF = require('../assets/js/replayForward.js');
   const ctx = fresh();
-  const p = prep(base({ newPowerRating: 1250 }), ctx);
-  const replayState = { Shaun: { ...cached.replay.state.Shaun } };
-  const evidenceBefore = replayState.Shaun.effectiveEvidence;
-  Engine.applyStateEvent(replayState, p.journeyDoc);
-
-  // The event carries newReliability, and applyStateEvent prefers it over the
-  // exact effectiveEvidenceAfter recorded alongside, so the value comes back
-  // through reliability = e/(e+10) inverted.
-  assert.notStrictEqual(replayState.Shaun.effectiveEvidence, evidenceBefore);
-  assert.ok(Math.abs(replayState.Shaun.effectiveEvidence - evidenceBefore) < 1e-9);
-
-  // It does not compound into anything that matters: K is unchanged, and fifty
-  // round trips stay within a billionth.
-  assert.strictEqual(Engine.kFactor(Engine.reliability(replayState.Shaun.effectiveEvidence)),
-    Engine.kFactor(Engine.reliability(evidenceBefore)));
-  let e = 5;
-  for (let i = 0; i < 50; i++) e = Engine.effectiveEvidenceForReliability(Engine.reliability(e));
-  assert.ok(Math.abs(e - 5) < 1e-9, `fifty round trips drifted to ${e}`);
+  const decision = base({ newPowerRating: null, newReliability: 0.10 });
+  const p = CD.prepare({ state: ctx.state, journey: ctx.journey, decision, today: TODAY, recordedAt: RECORDED });
+  const stored = { journey: ctx.journey.concat([{ ...p.event, id: p.journeyDoc.id }]) };
+  const input = RF.inputsFromRecord(stored).events.find((e) => e.effectiveDate === TODAY && e.playerId === 'Shaun');
+  assert.ok(input, 'the decision should be replayed');
+  assert.strictEqual(input.newEffectiveEvidence, p.event.effectiveEvidenceAfter);
+  assert.strictEqual(input.newReliability, 0.10);
 });
 
 test('a decision is undone by recording its reversal, never by deleting it', async () => {

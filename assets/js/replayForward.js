@@ -106,6 +106,13 @@
         }
         if (typeof e.newReliability === 'number' && e.newReliability !== e.previousReliability) {
           input.newReliability = e.newReliability;
+          // The exact evidence the event recorded, so the engine does not have
+          // to invert reliability to recover it. Both are passed: the engine
+          // prefers this one, and newReliability stays for any reader that
+          // only understands that.
+          if (typeof e.effectiveEvidenceAfter === 'number') {
+            input.newEffectiveEvidence = e.effectiveEvidenceAfter;
+          }
         }
         return input;
       });
