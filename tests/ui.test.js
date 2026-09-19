@@ -1392,36 +1392,30 @@ test('Ranked/Idle state and rank availability agree across every surface', { ski
   try {
     const r = await app.run(() => {
       activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
-      rankingFilter = 'all'; participationFilter = 'active';
+      includeIdle = true; includeInactive = true;   // widest pool, so every state is present
       render();
 
-      // What the RANKINGS list says: a numbered row, or a dash under the
-      // Idle divider.
-      const listState = {};
-      [...document.querySelectorAll('#list .row')].forEach((row) => {
-        const name = row.dataset.player || (row.querySelector('.nm') || {}).textContent;
-        if (!name) return;
-        const rank = (row.querySelector('.rank') || {}).textContent;
-        listState[name.trim()] = {
-          ranked: rank !== '–',
-          idleTag: !!row.querySelector('.idle-tag'),
-        };
-      });
-
       const disagreements = [];
-      Object.keys(listState).forEach((name) => {
+      let checked = 0;
+      [...document.querySelectorAll('#list .row')].forEach((row) => {
+        const nameEl = row.querySelector('.nm');
+        const name = row.dataset.player || (nameEl ? nameEl.textContent.trim() : null);
+        if (!name) return;
+        checked++;
         const st = playerStateOf(name);                 // the shared helper
         const snap = getViewerSnapshot(name);           // Home + Profile
-        const list = listState[name];
-        const expectedRanked = st.ranking === 'RANKED';
+        const hasIdle = !!row.querySelector('.idle-tag');
+        const hasInactive = !!row.querySelector('.inactive-tag');
 
-        if (list.ranked !== expectedRanked) disagreements.push(`${name}: list ranked=${list.ranked}, helper=${st.ranking}`);
-        if (snap.eligible !== expectedRanked) disagreements.push(`${name}: snapshot eligible=${snap.eligible}, helper=${st.ranking}`);
-        if ((snap.overallRank !== null) !== expectedRanked) disagreements.push(`${name}: snapshot rank=${snap.overallRank}, helper=${st.ranking}`);
-        if (list.idleTag !== (st.ranking === 'IDLE')) disagreements.push(`${name}: idle tag=${list.idleTag}, helper=${st.ranking}`);
+        const officiallyRanked = st.ranking === 'RANKED';
+        if (snap.eligible !== officiallyRanked) disagreements.push(`${name}: snapshot eligible=${snap.eligible}, helper=${st.ranking}`);
+        if ((snap.overallRank !== null) !== officiallyRanked) disagreements.push(`${name}: snapshot rank=${snap.overallRank}, helper=${st.ranking}`);
+        if (hasIdle !== (st.ranking === 'IDLE')) disagreements.push(`${name}: idle badge=${hasIdle}, helper=${st.ranking}`);
+        if (hasInactive !== (st.participation === 'INACTIVE')) disagreements.push(`${name}: inactive badge=${hasInactive}, helper=${st.participation}`);
       });
 
-      return { checked: Object.keys(listState).length, disagreements };
+      includeIdle = false; includeInactive = false;
+      return { checked, disagreements };
     });
 
     assert.ok(r.checked > 25, `not enough players checked (${r.checked})`);
@@ -1436,23 +1430,24 @@ test('an active player below the threshold reads Idle, not Inactive', { skip }, 
   try {
     const r = await app.run(() => {
       activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
-      rankingFilter = 'all'; participationFilter = 'active';
+      includeIdle = true; includeInactive = false;
       render();
-      const divider = document.getElementById('eligibilityDivider');
       const idleRows = [...document.querySelectorAll('#list .row')].filter((el) => el.querySelector('.idle-tag'));
       const names = idleRows.map((el) => (el.dataset.player || el.querySelector('.nm').textContent).trim());
-      return {
-        divider: divider ? divider.textContent : null,
+      const out = {
         idleCount: idleRows.length,
         inactiveTags: document.querySelectorAll('#list .inactive-tag').length,
         allActive: names.every((n) => playerStateOf(n).participation === 'ACTIVE'),
+        badgeText: idleRows[0] ? idleRows[0].querySelector('.idle-tag').textContent : null,
         listText: document.getElementById('list').innerText,
       };
+      includeIdle = false;
+      return out;
     });
 
     assert.ok(r.idleCount > 0, 'the fixture must contain idle players');
-    assert.match(r.divider, /^Idle players — fewer than 2 matches in the last 30 days$/);
-    assert.strictEqual(r.inactiveTags, 0, 'nobody below the divider may be tagged Inactive');
+    assert.strictEqual(r.badgeText, 'Idle');
+    assert.strictEqual(r.inactiveTags, 0, 'an idle player is never tagged Inactive');
     assert.strictEqual(r.allActive, true, 'every idle player is still an active member');
     assert.doesNotMatch(r.listText, /Not currently ranked/,
       'the old wording implied missing data rather than a state');
@@ -1460,82 +1455,477 @@ test('an active player below the threshold reads Idle, not Inactive', { skip }, 
   } finally { await app.close(); }
 });
 
-test('Idle and Inactive are filtered independently', { skip }, async () => {
+// Shaun's correction: the toggles widen the RANKING POOL. An idle player whose
+// rating belongs 5th appears 5th, not in a section underneath.
+test('including idle or inactive merges them into the ranked list and renumbers it', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => {
-      const snap = () => ({
-        rows: document.querySelectorAll('#list .row').length,
-        idle: document.querySelectorAll('#list .idle-tag').length,
-        inactive: document.querySelectorAll('#list .inactive-tag').length,
-        dividers: [...document.querySelectorAll('.eligibility-divider')].map((d) => d.textContent),
-      });
+      const snap = () => {
+        const rows = [...document.querySelectorAll('#list .row')];
+        return {
+          order: rows.map((el) => (el.dataset.player || el.querySelector('.nm').textContent).trim()),
+          ranks: rows.map((el) => el.querySelector('.rank').textContent.trim()),
+          idle: document.querySelectorAll('#list .idle-tag').length,
+          inactive: document.querySelectorAll('#list .inactive-tag').length,
+          note: (document.getElementById('eligibilityDivider') || {}).textContent || null,
+        };
+      };
       activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
+      activeSortP = 'rating';
       const out = {};
-      rankingFilter = 'all'; participationFilter = 'active'; render(); out.byDefault = snap();
-      rankingFilter = 'ranked'; participationFilter = 'active'; render(); out.rankedOnly = snap();
-      rankingFilter = 'all'; participationFilter = 'all'; render(); out.withInactive = snap();
-      rankingFilter = 'ranked'; participationFilter = 'all'; render(); out.rankedPlusInactive = snap();
-      rankingFilter = 'all'; participationFilter = 'active';
+      includeIdle = false; includeInactive = false; render(); out.official = snap();
+      includeIdle = true;  includeInactive = false; render(); out.withIdle = snap();
+      includeIdle = false; includeInactive = true;  render(); out.withInactive = snap();
+      includeIdle = true;  includeInactive = true;  render(); out.withBoth = snap();
+      includeIdle = false; includeInactive = false;
+      out.ratings = Object.fromEntries(PLAYERS.map((p) => [p.name, p.rating]));
       return out;
     });
 
-    // Default: ranked list, idle beneath it, nobody who has left the club.
-    assert.ok(r.byDefault.idle > 0);
-    assert.strictEqual(r.byDefault.inactive, 0, 'inactive players are hidden by default');
-    assert.deepStrictEqual(r.byDefault.dividers, ['Idle players — fewer than 2 matches in the last 30 days']);
+    // Default: the official pool only. Nobody carries a state badge.
+    assert.strictEqual(r.official.idle, 0);
+    assert.strictEqual(r.official.inactive, 0);
+    assert.strictEqual(r.official.note, null, 'no "including" note when nothing was included');
 
-    // Ranked only: no idle group at all.
-    assert.strictEqual(r.rankedOnly.idle, 0);
-    assert.ok(r.rankedOnly.rows < r.byDefault.rows, 'hiding idle must remove rows');
-    assert.deepStrictEqual(r.rankedOnly.dividers, []);
+    // Every view is numbered 1..n with no gaps and no dashes.
+    ['official', 'withIdle', 'withInactive', 'withBoth'].forEach((k) => {
+      const expected = r[k].order.map((_, i) => String(i + 1));
+      assert.deepStrictEqual(r[k].ranks, expected, `${k} must be numbered sequentially`);
+    });
 
-    // Include inactive: its own section, below idle.
-    assert.ok(r.withInactive.inactive > 0, 'the fixture must contain an inactive player');
-    assert.strictEqual(r.withInactive.rows, r.byDefault.rows + r.withInactive.inactive);
-    assert.deepStrictEqual(r.withInactive.dividers, [
-      'Idle players — fewer than 2 matches in the last 30 days',
-      'Inactive players — not currently participating',
-    ]);
+    // Including idle adds them INTO the list, in rating order.
+    assert.ok(r.withIdle.idle > 0, 'the fixture must contain idle players');
+    assert.strictEqual(r.withIdle.order.length, r.official.order.length + r.withIdle.idle);
+    const sorted = [...r.withIdle.order].sort((a, b) => r.ratings[b] - r.ratings[a]);
+    assert.deepStrictEqual(r.withIdle.order, sorted,
+      'the merged list must be ordered by rating, not appended in a block');
+    assert.match(r.withIdle.note, /Including idle players/);
+    assert.match(r.withIdle.note, /not official ranks/);
 
-    // The two dimensions are genuinely independent: ranked-only still shows
-    // inactive when asked, and they are not mixed into the idle group.
-    assert.strictEqual(r.rankedPlusInactive.idle, 0);
-    assert.ok(r.rankedPlusInactive.inactive > 0);
-    assert.deepStrictEqual(r.rankedPlusInactive.dividers, ['Inactive players — not currently participating']);
+    // And a real re-numbering happened: at least one ranked player moved down.
+    const movedDown = r.official.order.filter((name, i) => r.withIdle.order.indexOf(name) > i);
+    assert.ok(movedDown.length > 0,
+      'merging idle players must shift the positions beneath them');
+
+    // Inactive behaves the same way, independently.
+    assert.ok(r.withInactive.inactive > 0);
+    assert.strictEqual(r.withInactive.idle, 0, 'the two toggles are independent');
+    assert.strictEqual(r.withInactive.order.length, r.official.order.length + r.withInactive.inactive);
+    assert.match(r.withInactive.note, /Including inactive players/);
+
+    // Both: one ordered list containing all three states.
+    assert.strictEqual(r.withBoth.order.length,
+      r.official.order.length + r.withIdle.idle + r.withInactive.inactive);
+    assert.ok(r.withBoth.idle > 0 && r.withBoth.inactive > 0);
+    const sortedBoth = [...r.withBoth.order].sort((a, b) => r.ratings[b] - r.ratings[a]);
+    assert.deepStrictEqual(r.withBoth.order, sortedBoth);
+    assert.match(r.withBoth.note, /Including idle and inactive players/);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
 
-// The state filters share the .preset-btn class with the min-games row. An
-// unscoped selector would have fed parseInt(undefined) into minGames.
-test('the state filters and the min-games presets do not fight', { skip }, async () => {
+// Turning a toggle on must not change what anybody officially is.
+test('the toggles change the view, never eligibility or participation', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
+      const capture = () => Object.fromEntries(PLAYERS.map((p) => {
+        const st = playerStateOf(p.name);
+        const snap = getViewerSnapshot(p.name);
+        return [p.name, `${st.participation}/${st.ranking}/${snap.eligible}/${snap.overallRank}/${p.rating}`];
+      }));
+      includeIdle = false; includeInactive = false; render();
+      const before = capture();
+      includeIdle = true; includeInactive = true; render();
+      const after = capture();
+      includeIdle = false; includeInactive = false; render();
+      return { before, after };
+    });
+    assert.deepStrictEqual(r.after, r.before,
+      'official state, rank availability and ratings must be identical whatever the view shows');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the state toggles and the min-games presets do not fight', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => {
       activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; query = '';
+      includeIdle = false; includeInactive = false;
+      document.querySelectorAll('#stateFilterRow .state-toggle').forEach((b) => b.classList.remove('active'));
       document.querySelector('#minGamesRow .preset-btn[data-n="5"]').click();
       const afterMinGames = {
         minGames,
-        rankingActive: document.querySelector('#stateFilterRow [data-ranking].active').dataset.ranking,
-        participationActive: document.querySelector('#stateFilterRow [data-participation].active').dataset.participation,
+        idleOn: document.querySelector('#stateFilterRow [data-toggle="idle"]').classList.contains('active'),
       };
-      document.querySelector('#stateFilterRow [data-ranking="ranked"]').click();
-      const afterRanking = {
+      document.querySelector('#stateFilterRow [data-toggle="idle"]').click();
+      const afterToggle = {
         minGames,
         minGamesActive: document.querySelector('#minGamesRow .preset-btn.active').dataset.n,
-        rankingFilter,
+        includeIdle,
+        includeInactive,
+        idleOn: document.querySelector('#stateFilterRow [data-toggle="idle"]').classList.contains('active'),
       };
-      return { afterMinGames, afterRanking };
+      document.querySelector('#stateFilterRow [data-toggle="idle"]').click();
+      const afterSecondPress = { includeIdle };
+      includeIdle = false; includeInactive = false;
+      return { afterMinGames, afterToggle, afterSecondPress };
     });
 
     assert.strictEqual(r.afterMinGames.minGames, 5);
-    assert.strictEqual(r.afterMinGames.rankingActive, 'all', 'a min-games press must not clear the state filters');
-    assert.strictEqual(r.afterMinGames.participationActive, 'active');
+    assert.strictEqual(r.afterMinGames.idleOn, false, 'a min-games press must not activate a state toggle');
 
-    assert.strictEqual(r.afterRanking.rankingFilter, 'ranked');
-    assert.strictEqual(r.afterRanking.minGames, 5, 'a state-filter press must not corrupt minGames');
-    assert.strictEqual(r.afterRanking.minGamesActive, '5');
+    assert.strictEqual(r.afterToggle.includeIdle, true);
+    assert.strictEqual(r.afterToggle.includeInactive, false, 'the toggles are independent');
+    assert.strictEqual(r.afterToggle.idleOn, true);
+    assert.strictEqual(r.afterToggle.minGames, 5, 'a toggle press must not corrupt minGames');
+    assert.strictEqual(r.afterToggle.minGamesActive, '5');
+
+    assert.strictEqual(r.afterSecondPress.includeIdle, false, 'pressing again turns it off');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+// ===================== GAMES CARD: COMPACT + WORKING DISCLOSURE ==============
+// "See full calculation" was inert on the Games feed. The card wraps its body
+// in .game-card-clickable, whose handler toggles the card and re-renders, so a
+// click on the summary collapsed the card before the browser could open the
+// details. It worked on the profile card only because that card has no handler.
+test('See full calculation opens and closes on a Games card', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      renderGamesTab();
+      const card = document.querySelector('#gamesView .game-card-clickable');
+      const gameId = card.dataset.gameid;
+      card.click();                                   // expand the card
+
+      const details = document.querySelector('#gamesView .wm-calc');
+      if (!details) return { found: false };
+      const summary = details.querySelector('summary');
+
+      const before = { open: details.open, expanded: expandedGameId };
+      summary.click();                                // open the disclosure
+      const opened = {
+        open: document.querySelector('#gamesView .wm-calc').open,
+        expanded: expandedGameId,
+        text: document.querySelector('#gamesView .wm-calc').innerText.replace(/\n+/g, ' | '),
+      };
+      document.querySelector('#gamesView .wm-calc summary').click();   // and close it
+      const closed = {
+        open: document.querySelector('#gamesView .wm-calc').open,
+        expanded: expandedGameId,
+      };
+      return { found: true, gameId, before, opened, closed };
+    });
+
+    assert.strictEqual(r.found, true, 'the expanded card must carry a disclosure');
+    assert.strictEqual(r.before.open, false, 'it starts closed');
+    assert.strictEqual(r.before.expanded, r.gameId, 'the card is expanded');
+
+    assert.strictEqual(r.opened.open, true, 'clicking the summary must open it');
+    assert.strictEqual(r.opened.expanded, r.gameId,
+      'and must NOT collapse the card underneath it — that was the bug');
+
+    assert.strictEqual(r.closed.open, false, 'clicking again must close it');
+    assert.strictEqual(r.closed.expanded, r.gameId, 'still without collapsing the card');
+
+    // And it contains the technical facts, from the persisted record.
+    assert.match(r.opened.text, /Pre-match expected score/);
+    assert.match(r.opened.text, /Share of games won/);
+    assert.match(r.opened.text, /Match result contribution/);
+    assert.match(r.opened.text, /Blended performance score/);
+    assert.match(r.opened.text, /K \d/);
+    assert.match(r.opened.text, /reliability \d+% → \d+%/);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the expanded Games card stays compact', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      renderGamesTab();
+      const card = document.querySelector('#gamesView .game-card-clickable');
+      card.click();
+      const expanded = document.querySelector('#gamesView .callout-card');
+      const clone = expanded.cloneNode(true);
+      [...clone.querySelectorAll('.wm-calc')].forEach((d) => d.remove());
+      return {
+        visible: clone.innerText.replace(/\n+/g, '\n').trim(),
+        hasDisclosure: !!expanded.querySelector('.wm-calc'),
+      };
+    });
+
+    // The redundant explanation between the result line and the per-player
+    // movements is gone; that nuance lives in the disclosure now.
+    assert.doesNotMatch(r.visible, /matched the game-share expectation/i);
+    assert.doesNotMatch(r.visible, /also contributes to the rating calculation/i);
+    assert.doesNotMatch(r.visible, /won (more|fewer) games than expected/i);
+    assert.doesNotMatch(r.visible, /[Pp]erformance score/);
+
+    // One line carries the expectation, what was taken, and the result.
+    assert.match(r.visible, /Expected \d+% of games · won \d+\/\d+ \(\d+%\) · (won match|not finished)/);
+    assert.match(r.visible, /ratings going in/);
+    assert.match(r.visible, /RATING CHANGE, PER PLAYER/i);
+    assert.strictEqual(r.hasDisclosure, true);
+
+    const lines = r.visible.split('\n').filter(Boolean);
+    assert.ok(lines.length <= 12, `the expanded card should stay short, got ${lines.length} lines:\n${r.visible}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// ===================== RANKED / IDLE / INACTIVE (19 Sep 2026) ===============
+// The app used to call two different things "inactive": a player who has not
+// played much lately, and a player who has left the club. These cover the
+// separation, and the eligibility bug that separation exposed.
+
+// Shaun spotted Ant Slice showing "#–" on Home despite recent activity. He has
+// well over the threshold; getViewerSnapshot was additionally requiring
+// total >= 10, which is the rankings list's default min-games DISPLAY filter,
+// not an eligibility rule.
+test('a player with recent matches gets a rank, whatever their lifetime total', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const name = 'Ant Slice';
+      const st = playerStateOf(name);
+      const snap = getViewerSnapshot(name);
+      const p = PLAYERS.find((x) => x.name === name);
+      return {
+        recent: st.recentMatches,
+        lifetime: p.total,
+        participation: st.participation,
+        ranking: st.ranking,
+        rankable: st.rankable,
+        overallRank: snap.overallRank,
+        tierRank: snap.tierRank,
+        eligible: snap.eligible,
+      };
+    });
+
+    assert.ok(r.recent >= 2, `the case under test needs recent matches, got ${r.recent}`);
+    assert.ok(r.lifetime < 10, `and a lifetime total under the old hardcoded 10, got ${r.lifetime}`);
+    assert.strictEqual(r.participation, 'ACTIVE');
+    assert.strictEqual(r.ranking, 'RANKED');
+    assert.strictEqual(r.rankable, true);
+    assert.ok(r.overallRank > 0, 'must have an overall rank, not "#–"');
+    assert.ok(r.tierRank > 0, 'must have a tier rank, not "#–"');
+    assert.strictEqual(r.eligible, true);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+
+// ===================== GAMES: HISTORICAL TIER + GAME TYPE (19 Sep 2026) =====
+// The tier beside a name on a Games card is the tier that player held ON THE
+// DAY. A promotion recorded later must not rewrite what an old match was.
+
+test('Games cards label each player with their tier on the day', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all';
+      renderGamesTab();
+
+      // Someone whose tier actually changed during the season.
+      const changed = [];
+      PLAYERS.forEach((p) => {
+        const early = historicalTierOf(p.name, '2026-06-05');
+        const now = historicalTierOf(p.name, '2026-12-31');
+        if (early && now && early !== now) changed.push({ name: p.name, early, now });
+      });
+
+      const titles = [...document.querySelectorAll('#gamesView .cc-title')].map((e) => e.textContent.trim());
+      const first = document.querySelector('#gamesView .game-card-clickable');
+      first.click();
+      const expanded = document.querySelector('#gamesView .callout-card').innerText;
+      const expandedId = first.dataset.gameid;
+      const expandedMatch = getDisplayMatches().find((m) => m.id === expandedId);
+      return {
+        titles: titles.slice(0, 40),
+        changed,
+        expanded,
+        expandedNames: [].concat(expandedMatch.winners, expandedMatch.losers),
+        expandedDate: expandedMatch.date,
+        expandedTiers: [].concat(expandedMatch.winners, expandedMatch.losers)
+          .map((n) => historicalTierOf(n, expandedMatch.date)),
+      };
+    });
+
+    // Every collapsed title carries a tier beside every name.
+    const withTier = r.titles.filter((t) => /\([SABC]\)/.test(t));
+    assert.strictEqual(withTier.length, r.titles.length, 'every card must label tiers');
+
+    // The expanded detail uses the same labels, with the ratings going in.
+    r.expandedNames.forEach((n, i) => {
+      assert.ok(r.expanded.includes(`${n} (${r.expandedTiers[i]})`),
+        `expanded detail must show ${n} (${r.expandedTiers[i]}), got:\n${r.expanded}`);
+    });
+
+    // And a player whose tier changed shows the OLD tier on an old card.
+    assert.ok(r.changed.length > 0, 'the record must contain a tier change to test against');
+    const someone = r.changed[0];
+    assert.notStrictEqual(someone.early, someone.now,
+      `${someone.name} moved ${someone.early} -> ${someone.now}, which is the case under test`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a promotion does not rewrite the tier on an older card', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      // Find a player with a recorded tier change and a match on each side of it.
+      let found = null;
+      PLAYERS.forEach((p) => {
+        if (found) return;
+        const before = historicalTierOf(p.name, '2026-06-05');
+        const after = historicalTierOf(p.name, '2026-12-31');
+        if (!before || !after || before === after) return;
+        const theirs = getDisplayMatches()
+          .filter((m) => m.winners.includes(p.name) || m.losers.includes(p.name))
+          .sort((a, b) => (a.date < b.date ? -1 : 1));
+        const early = theirs.find((m) => historicalTierOf(p.name, m.date) === before);
+        const late = theirs.find((m) => historicalTierOf(p.name, m.date) === after);
+        if (early && late) found = { name: p.name, before, after, earlyDate: early.date, lateDate: late.date };
+      });
+      return found;
+    });
+
+    assert.ok(r, 'the record must contain a player with matches either side of a tier change');
+    assert.notStrictEqual(r.before, r.after);
+    assert.ok(r.earlyDate < r.lateDate,
+      `${r.name} shows ${r.before} on ${r.earlyDate} and ${r.after} on ${r.lateDate}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Month, Player and Game type filters compose', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      const count = () => document.querySelectorAll('#gamesView .game-card-clickable').length;
+      const ids = () => [...document.querySelectorAll('#gamesView .game-card-clickable')].map((e) => e.dataset.gameid);
+
+      const out = {};
+      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      out.everything = count();
+
+      // Player alone.
+      selectedGamesPlayer = 'Len'; renderGamesTab();
+      out.lenAll = count();
+
+      // Player + a specific, orientation-independent matchup.
+      gamesType = 'match:AB vs BB'; renderGamesTab();
+      out.lenAbBb = count();
+      out.lenAbBbIds = ids();
+      // Verify each survivor really is that composition, from the same source.
+      out.allCorrect = ids().every((id) => {
+        const m = getDisplayMatches().find((x) => x.id === id);
+        const t = gameTypeOf(m);
+        const hasLen = m.winners.includes('Len') || m.losers.includes('Len');
+        return t && t.matchup === 'AB vs BB' && hasLen;
+      });
+
+      // Same type without the player filter must be a superset.
+      selectedGamesPlayer = 'all'; renderGamesTab();
+      out.allAbBb = count();
+      out.supersetOk = out.lenAbBbIds.every((id) => ids().includes(id));
+
+      // Add a month on top of the type.
+      const month = getDisplayMatches().find((m) => gameTypeOf(m) && gameTypeOf(m).matchup === 'AB vs BB').date.slice(0, 7);
+      gamesMonth = month; renderGamesTab();
+      out.month = month;
+      out.monthAbBb = count();
+      out.monthCorrect = ids().every((id) => {
+        const m = getDisplayMatches().find((x) => x.id === id);
+        return m.date.slice(0, 7) === month && gameTypeOf(m).matchup === 'AB vs BB';
+      });
+
+      // A broad category filter.
+      gamesMonth = 'all'; gamesType = 'cat:ALL_B'; renderGamesTab();
+      out.allB = count();
+      out.allBCorrect = ids().every((id) => {
+        const m = getDisplayMatches().find((x) => x.id === id);
+        return gameTypeOf(m).category === 'ALL_B';
+      });
+
+      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      return out;
+    });
+
+    assert.ok(r.everything > 100, `the feed must be showing the record, got ${r.everything}`);
+    assert.ok(r.lenAll > 0 && r.lenAll < r.everything, 'the player filter must narrow it');
+    assert.ok(r.lenAbBb > 0, 'Len must have AB vs BB matches in this record');
+    assert.ok(r.lenAbBb < r.lenAll, 'the game-type filter must narrow it further');
+    assert.strictEqual(r.allCorrect, true, 'every survivor must be Len AND AB vs BB');
+
+    assert.ok(r.allAbBb >= r.lenAbBb, 'dropping the player filter must not lose matches');
+    assert.strictEqual(r.supersetOk, true, "Len's AB vs BB matches must all be in the unfiltered set");
+
+    assert.ok(r.monthAbBb > 0 && r.monthAbBb <= r.allAbBb, 'adding a month must narrow, not replace');
+    assert.strictEqual(r.monthCorrect, true, `every survivor must be in ${r.month} AND AB vs BB`);
+
+    assert.ok(r.allB > 0);
+    assert.strictEqual(r.allBCorrect, true, 'every all-B survivor must really be all-B');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the game-type control offers only types the current selection contains', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      const options = () => [...document.getElementById('gamesTypeSelect').querySelectorAll('option')]
+        .map((o) => ({ value: o.value, text: o.textContent }));
+
+      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      const all = options();
+
+      selectedGamesPlayer = 'Len'; renderGamesTab();
+      const len = options();
+
+      // Every option offered for Len must actually return matches for Len.
+      const empties = [];
+      len.filter((o) => o.value !== 'all').forEach((o) => {
+        gamesType = o.value; renderGamesTab();
+        if (document.querySelectorAll('#gamesView .game-card-clickable').length === 0) empties.push(o.value);
+      });
+
+      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      return { allCount: all.length, lenCount: len.length, empties, first: all[0], all };
+    });
+
+    assert.deepStrictEqual(r.first, { value: 'all', text: 'All game types' });
+    assert.ok(r.allCount > 5, 'the record should support several game types');
+    assert.ok(r.lenCount < r.allCount, "a player's own set of game types is narrower");
+    assert.deepStrictEqual(r.empties, [], 'no offered game type may return an empty list');
+
+    // The broad options the brief names are present.
+    const values = r.all.map((o) => o.value);
+    ['cat:ALL_A', 'cat:ALL_B', 'cat:ALL_C', 'cat:MIXED'].forEach((v) => {
+      assert.ok(values.includes(v), `${v} must be offered`);
+    });
+    assert.ok(values.includes('match:AA vs AA'));
+    assert.ok(values.includes('match:AB vs BB'));
+
+    // And no judgements in the labels.
+    const text = r.all.map((o) => o.text).join(' ').toLowerCase();
+    ['easy', 'soft', 'inflated'].forEach((w) => assert.ok(!text.includes(w)));
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });

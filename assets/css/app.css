@@ -234,6 +234,8 @@
     text-align:center;
   }
   .minGamesPresets{ display:flex; gap:5px; }
+  /* The tier a player held on the day of the match, not today's. */
+  .hist-tier{ color:var(--text-dim); font-weight:400; font-size:0.85em; }
   /* Ranking status and player status are separate questions, so they get
      separate controls rather than one three-way toggle that implies an order. */
   .stateFilterRow{ display:flex; flex-wrap:wrap; gap:10px 18px; margin-top:8px; }

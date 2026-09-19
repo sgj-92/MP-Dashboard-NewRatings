@@ -73,23 +73,11 @@
       <button class="preset-btn" data-n="20">20+</button>
     </div>
   </div>
-  <!-- Two independent dimensions, deliberately not one control: how recently a
-       player has played, and whether they are part of the club at all. -->
+  <!-- Two toggles, not two status selectors. Off, the list is the official
+       ranking pool; on, each group is merged into it and ranked alongside. -->
   <div class="stateFilterRow" id="stateFilterRow">
-    <div class="stateFilterGroup">
-      <span class="stateFilterLabel">Ranking status</span>
-      <div class="minGamesPresets">
-        <button class="preset-btn" data-ranking="ranked">Ranked</button>
-        <button class="preset-btn active" data-ranking="all">Include idle</button>
-      </div>
-    </div>
-    <div class="stateFilterGroup">
-      <span class="stateFilterLabel">Player status</span>
-      <div class="minGamesPresets">
-        <button class="preset-btn active" data-participation="active">Active</button>
-        <button class="preset-btn" data-participation="all">Include inactive</button>
-      </div>
-    </div>
+    <button class="preset-btn state-toggle" data-toggle="idle">Include idle players</button>
+    <button class="preset-btn state-toggle" data-toggle="inactive">Include inactive players</button>
   </div>
 </div>
 
@@ -163,6 +151,7 @@
 <script src="assets/js/journeyView.js"></script>
 <script src="assets/js/matchFacts.js"></script>
 <script src="assets/js/playerState.js"></script>
+<script src="assets/js/gameType.js"></script>
 <script src="assets/js/ratingExplainer.js"></script>
 <script src="assets/js/monthlyReview.js"></script>
 <script src="assets/js/clubDecision.js"></script>

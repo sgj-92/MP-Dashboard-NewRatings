@@ -530,6 +530,32 @@ function computeElo(matches, tierMap, startingTierMap){
 // the recorded MATCH_UPDATE events rather than from MATCHES, which deliberately
 // excludes draws -- counting only decided games made a player's eligibility
 // depend on whether their recent matches happened to finish.
+// The tier a player was in ON THE DATE of a match -- not their tier today. A
+// promotion recorded in August means an old June card shows the tier they were
+// actually in when they played it, which is the point.
+function historicalTierOf(name, date){
+  if(!V3_TIER_AS_OF) return null;
+  return V3_TIER_AS_OF(name, date) || null;
+}
+
+// What kind of match this was, in tier terms, from the same temporal source as
+// the labels. Returns null when any player's tier is unknown at that date.
+function gameTypeOf(m){
+  if(typeof GameType === 'undefined' || !V3_TIER_AS_OF) return null;
+  const tiersOf = (names) => names.map(n => historicalTierOf(n, m.date));
+  return GameType.classify(tiersOf(m.winners), tiersOf(m.losers));
+}
+
+// "Eli (A) & Len (A)" -- names with the tier they held that day.
+function namesWithHistoricalTier(names, date, ratings){
+  return names.map(n => {
+    const t = historicalTierOf(n, date);
+    const tier = t ? ` <span class="hist-tier">(${t})</span>` : '';
+    const r = ratings ? ratings(n) : null;
+    return `${n}${tier}${r === null || r === undefined ? '' : ` ${r}`}`;
+  }).join(' &amp; ');
+}
+
 function v3RatedMatchList(){
   return Object.values(V3_MATCH_FACTS || {}).map(f => ({
     date: f.date,
@@ -900,6 +926,11 @@ let V3_STATE = (typeof V3Bridge !== 'undefined') ? V3Bridge.createState() : { lo
 let V3_MATCHES = [];   // the v3 `matches` collection, in the shape the app reads
 let V3_JOURNEY = [];   // the Rating Journey -- monthly views only, never player state
 let V3_MATCH_FACTS = {}; // matchId -> what the engine did in that match, read back
+// The authoritative "what tier was this player in on this date" lookup, built
+// from the RECORD. Hoisted so the Games tab labels and the game-type filter use
+// the same source as the monthly views -- a label and a classification that
+// disagreed would be worse than either alone.
+let V3_TIER_AS_OF = null;
 let MONTHLY_VIEWS = null;
 let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
   ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
@@ -929,16 +960,15 @@ async function loadV3State(){
         // With the list, the first real promotion the club records makes the
         // current tier disagree with the history and the consistency guard
         // refuses to load the app at all.
-        MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, {
-          tierAsOf: TierHistory.create({
-            currentTiers: V3Bridge.tierMap(V3_STATE),
-            changes: TierHistory.changesFromJourney(V3_JOURNEY),
-          }).tierAsOf,
-        });
+        V3_TIER_AS_OF = TierHistory.create({
+          currentTiers: V3Bridge.tierMap(V3_STATE),
+          changes: TierHistory.changesFromJourney(V3_JOURNEY),
+        }).tierAsOf;
+        MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF });
       }
       catch(e){
         V3_MATCHES = []; V3_JOURNEY = []; MONTHLY_VIEWS = null;
-        V3_MATCH_FACTS = {};
+        V3_MATCH_FACTS = {}; V3_TIER_AS_OF = null;
         V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 history: ' + e.message};
       }
     }
@@ -1037,13 +1067,17 @@ let activeSort = "wins";
 let activeSortP = "rating";
 let query = "";
 let minGames = 10;
-// Two independent dimensions, never derived from one another.
-//   rankingFilter       'ranked' = ranked players only; 'all' = idle shown too
-//   participationFilter 'active' = active players only; 'all' = inactive too
-// The defaults preserve what a player sees today: ranked list, idle beneath it,
-// nobody who has left the club mixed in.
-let rankingFilter = 'all';
-let participationFilter = 'active';
+// Two independent toggles over the ranking pool. Off, the list is the official
+// current ranking pool -- Ranked and Active. On, that group is MERGED into the
+// same ordered list and given a filtered-view rank position, keeping its badge
+// so the real state stays visible. A separate section underneath answered a
+// different question ("who else exists") than the one being asked ("where would
+// they sit"), which is why this replaced it.
+//
+// Neither toggle changes official eligibility, participation, stored ratings or
+// history. They change which pool is being looked at, and nothing else.
+let includeIdle = false;
+let includeInactive = false;
 
 let selectedMonth = 'all';
 // The Play history keeps its OWN month, and it stays on All time. Rankings and
@@ -1053,6 +1087,10 @@ let selectedMonth = 'all';
 // rankings default silently became the Games default too, so Games opened on
 // August rather than All time.
 let gamesMonth = 'all';
+// Tier composition of the four players on the day: 'all', 'cat:ALL_A',
+// 'match:AB vs BB', and so on. Layers with Month and Player rather than
+// replacing either.
+let gamesType = 'all';
 let selectedGamesPlayer = 'all';
 
 // ---- Data Range: app-wide dataset setting, not a per-screen filter --------
@@ -1601,18 +1639,12 @@ document.querySelectorAll(MIN_GAMES_BTNS).forEach(b=>{
   };
 });
 
-// Ranking status and player status. Two groups, each independent of the other.
-document.querySelectorAll('#stateFilterRow [data-ranking]').forEach(b=>{
+// Two independent toggles, not a mutually exclusive pair.
+document.querySelectorAll('#stateFilterRow .state-toggle').forEach(b=>{
   b.onclick = ()=>{
-    rankingFilter = b.dataset.ranking;
-    document.querySelectorAll('#stateFilterRow [data-ranking]').forEach(x=>x.classList.toggle('active', x === b));
-    render();
-  };
-});
-document.querySelectorAll('#stateFilterRow [data-participation]').forEach(b=>{
-  b.onclick = ()=>{
-    participationFilter = b.dataset.participation;
-    document.querySelectorAll('#stateFilterRow [data-participation]').forEach(x=>x.classList.toggle('active', x === b));
+    if(b.dataset.toggle === 'idle') includeIdle = !includeIdle;
+    else includeInactive = !includeInactive;
+    b.classList.toggle('active', b.dataset.toggle === 'idle' ? includeIdle : includeInactive);
     render();
   };
 });
@@ -1711,12 +1743,14 @@ function render(){
     });
   }
   rows = rows.filter(p => p.total >= minGames);
-  // Participation first: somebody who is not in the club is not "idle", and
-  // must not be filed under a ranking state at all.
-  if(participationFilter === 'active') rows = rows.filter(p => p.active !== false);
-  // Ranking status. Idle players are still shown by default, beneath the ranked
-  // list, which is where applyRankingEligibility puts them.
-  if(rankingFilter === 'ranked') rows = rows.filter(p => p.active === false || isRankingEligible(p.name));
+  // The visible pool. Ranked and Active always; the other two only when asked
+  // for, and then as full members of the same ordered list.
+  rows = rows.filter(p => {
+    const st = playerStateOf(p.name);
+    if(!st) return true;
+    if(st.participation === 'INACTIVE') return includeInactive;
+    return st.ranking === 'RANKED' || includeIdle;
+  });
   if(query) rows = rows.filter(p => p.name.toLowerCase().includes(query));
   rows = sortRows(rows);
 
@@ -5375,10 +5409,11 @@ function buildMatchDetailBlock(m, contextHasMonthFigure){
     ? `evenly matched going in (${Math.round(gap)} pt gap)`
     : (winnerFavored ? `${sideLabel} favoured by ${Math.round(gap)} pts going in` : `${sideLabel} were underdogs by ${Math.round(gap)} pts going in`);
 
-  // Ratings as they were at the time, not as they are now. The pairing shown
-  // beside a June match is the pairing that played it.
-  const winnersWithRatings = m.winners.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
-  const losersWithRatings = m.losers.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
+  // Ratings AND tiers as they were at the time, not as they are now. The
+  // pairing shown beside a June match is the pairing that played it.
+  const atTheTimeRating = (n) => (m.deltas && m.deltas[n]) ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n);
+  const winnersWithRatings = namesWithHistoricalTier(m.winners, m.date, atTheTimeRating);
+  const losersWithRatings = namesWithHistoricalTier(m.losers, m.date, atTheTimeRating);
 
   // One line, not four. The expectation, what was actually taken, and how the
   // match ended -- everything else that used to sit here was explaining the
@@ -6212,6 +6247,18 @@ function renderGamesTab(){
   const pending = extraMatchesState.filter(m=>m.status==='pending' && !deletedIdsState.includes(m.id));
   let display = getDisplayMatches().filter(m=>m._status==='approved');
   if(gamesMonth !== 'all') display = display.filter(m=>m.date.slice(0,7)===gamesMonth);
+  // Every filter layers. The options offered are generated from the matches
+  // that survive the OTHER filters, so the control never offers a game type
+  // that would show nothing.
+  const typeScope = selectedGamesPlayer === 'all'
+    ? display
+    : display.filter(m => m.winners.includes(selectedGamesPlayer) || m.losers.includes(selectedGamesPlayer));
+  const gamesTypeOptions = (typeof GameType !== 'undefined')
+    ? GameType.optionsFrom(typeScope.map(gameTypeOf).filter(Boolean))
+    : { categories: [], matchups: [] };
+  if(gamesType !== 'all' && typeof GameType !== 'undefined'){
+    display = display.filter(m => GameType.matches(gamesType, gameTypeOf(m)));
+  }
   if(selectedGamesPlayer !== 'all') display = display.filter(m=> m.winners.includes(selectedGamesPlayer) || m.losers.includes(selectedGamesPlayer));
   display.sort((a,b)=> a.date < b.date ? 1 : -1);
 
@@ -6223,6 +6270,9 @@ function renderGamesTab(){
     </div>
     <div class="fg-row"><label class="fg-label">Player</label>
       <select id="gamesPlayerSelect" class="fg-select"></select>
+    </div>
+    <div class="fg-row"><label class="fg-label">Game type</label>
+      <select id="gamesTypeSelect" class="fg-select"></select>
     </div>
   </div>`;
 
@@ -6347,9 +6397,13 @@ Player C &amp; Player D"></textarea>
     // comes straight from the engine's recorded facts instead.
     const enriched = m.isDraw ? null : (MATCHES[idToIdx[m.id]] || null);
     const drawTag = m.isDraw ? `<span class="strength-pill" style="margin-left:6px;">DRAW · not finished</span>` : '';
+    // Tiers as they were ON THE DAY. A player promoted in August shows as B on
+    // a June card, because that is the match that was played.
+    const sideA = namesWithHistoricalTier(m.winners, m.date);
+    const sideB = namesWithHistoricalTier(m.losers, m.date);
     const titleText = m.isDraw
-      ? `${m.winners.join(' & ')} vs ${m.losers.join(' & ')}${drawTag}${unverifiedTag}`
-      : `<span style="color:var(--green);">${m.winners.join(' & ')}</span> <span style="color:var(--text-dim); font-weight:400;">def</span> <span style="color:var(--red);">${m.losers.join(' & ')}</span>${unverifiedTag}`;
+      ? `${sideA} vs ${sideB}${drawTag}${unverifiedTag}`
+      : `<span style="color:var(--green);">${sideA}</span> <span style="color:var(--text-dim); font-weight:400;">def</span> <span style="color:var(--red);">${sideB}</span>${unverifiedTag}`;
     // A draw is not a win or a loss for anyone, but it IS rated: the engine
     // scores the result at 0.5 and moves every player accordingly. Saying it
     // "doesn't affect any rating" was simply untrue.
@@ -6429,6 +6483,28 @@ Player C &amp; Player D"></textarea>
     if(anchor){
       try { anchor.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(e){ /* non-critical */ }
     }
+  }
+
+  const typeSelect = document.getElementById('gamesTypeSelect');
+  if(typeSelect){
+    const opt = (v, label, count) => `<option value="${v}" ${v===gamesType?'selected':''}>${label}${count===undefined?'':` (${count})`}</option>`;
+    let html = opt('all', 'All game types');
+    if(gamesTypeOptions.categories.length){
+      html += `<optgroup label="Tier make-up">` + gamesTypeOptions.categories.map(o=>opt(o.value, o.label, o.count)).join('') + `</optgroup>`;
+    }
+    if(gamesTypeOptions.matchups.length){
+      html += `<optgroup label="Matchup">` + gamesTypeOptions.matchups.map(o=>opt(o.value, o.label, o.count)).join('') + `</optgroup>`;
+    }
+    typeSelect.innerHTML = html;
+    // A type that no longer exists under the current month/player selection
+    // falls back rather than silently showing an empty list.
+    const available = ['all'].concat(gamesTypeOptions.categories.map(o=>o.value), gamesTypeOptions.matchups.map(o=>o.value));
+    if(!available.includes(gamesType)) gamesType = 'all';
+    typeSelect.value = gamesType;
+    typeSelect.addEventListener('change', e=>{
+      gamesType = e.target.value;
+      renderGamesTab();
+    });
   }
 
   populateMonthSelect(document.getElementById('gamesMonthSelect'), gamesMonth);

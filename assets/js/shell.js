@@ -903,13 +903,22 @@ function isRankingEligible(name){
   return st ? st.rankable : false;
 }
 
-// Splits the already-rendered, already-sorted list into an eligible (numbered)
-// group and an ineligible (unranked, shown below a divider) group. Order
-// within each group is left exactly as render() produced it -- only ranking
-// numbers and grouping change, never the underlying sort.
+// Badges the rendered rows with their real state, and numbers the list
+// sequentially over whatever pool is currently visible.
+//
+// This used to split the list into sections and dash out everyone below the
+// divider. That answered "who else exists" when the question being asked is
+// "where would they sit" -- so an Idle player whose rating belongs 5th now
+// appears 5th, with an IDLE badge, and the positions beneath shift accordingly.
+//
+// The number is a FILTERED-VIEW position, not an official rank. Turning a
+// toggle on changes nothing about eligibility, participation, stored ratings or
+// history; it changes which pool is being looked at.
 function applyRankingEligibility(){
   const oldDivider = document.getElementById('eligibilityDivider');
   if(oldDivider) oldDivider.remove();
+  const oldInactive = document.getElementById('inactiveDivider');
+  if(oldInactive) oldInactive.remove();
 
   if(activeTab !== 'power' || selectedMonth !== 'all') return; // month views have their own natural test
 
@@ -918,58 +927,45 @@ function applyRankingEligibility(){
   const rows = [...list.children].filter(el => el.classList.contains('row'));
   if(rows.length === 0) return;
 
-  const eligible = [], ineligible = [], inactive = [];
-  rows.forEach(row=>{
-    const name = row.querySelector('.nm')?.textContent;
+  rows.forEach((row, i)=>{
+    const nameEl = row.querySelector('.nm');
+    const name = row.dataset.player || (nameEl ? nameEl.textContent.trim() : null);
+    const rankEl = row.querySelector('.rank');
+    if(rankEl) rankEl.textContent = i + 1;
+
     const st = name ? playerStateOf(name) : null;
-    // Three groups, because there are three states. An inactive player is not
-    // a badly-performing idle one; they are not in the running at all.
-    if(st && st.participation === 'INACTIVE'){ inactive.push(row); }
-    else if(name && !isRankingEligible(name)){ ineligible.push(row); }
-    else { eligible.push(row); }
-  });
-  if(ineligible.length === 0 && inactive.length === 0) return; // leave the list exactly as rendered
+    if(!st || st.ranking === 'RANKED'){ row.classList.remove('ineligible-row'); return; }
 
-  rows.forEach(r=>r.remove());
-  eligible.forEach((row, i)=>{
-    const rankEl = row.querySelector('.rank');
-    if(rankEl) rankEl.textContent = i+1;
-    list.appendChild(row);
-  });
-
-  // Placed in .meta, not .nm -- .nm truncates long names with an ellipsis,
-  // which could hide an appended tag entirely for anyone with a longer name.
-  const unrank = (row, tagClass, tagText)=>{
-    const rankEl = row.querySelector('.rank');
-    if(rankEl) rankEl.textContent = '–';
+    // Still in the list and still numbered -- but the badge says what they
+    // actually are, so a filtered-view position is never mistaken for a rank
+    // they hold officially.
     row.classList.add('ineligible-row');
+    const tagClass = st.participation === 'INACTIVE' ? 'inactive-tag' : 'idle-tag';
+    // Placed in .meta, not .nm -- .nm truncates long names with an ellipsis,
+    // which could hide an appended tag entirely for anyone with a longer name.
     const metaEl = row.querySelector('.meta');
     if(metaEl && !metaEl.querySelector('.' + tagClass)){
-      metaEl.insertAdjacentHTML('afterbegin', `<span class="${tagClass}">${tagText}</span> · `);
+      metaEl.insertAdjacentHTML('afterbegin', `<span class="${tagClass}">${st.label}</span> · `);
     }
-    list.appendChild(row);
-  };
-  const addDivider = (id, text)=>{
-    const d = document.createElement('div');
-    d.id = id;
-    d.className = 'eligibility-divider';
-    d.textContent = text;
-    list.appendChild(d);
-  };
+  });
 
-  // Idle is not Inactive. These players are still part of Money Padel; they
-  // just have not played enough lately to hold a live rank. Calling that
-  // "Inactive" read as "this player has left".
-  if(ineligible.length){
-    addDivider('eligibilityDivider',
-      `Idle players — fewer than ${RANKING_ELIGIBILITY_MIN_MATCHES} matches in the last ${RANKING_ELIGIBILITY_DAYS} days`);
-    ineligible.forEach(row=> unrank(row, 'idle-tag', 'Idle'));
-  }
-
-  // Only present at all when the reader has asked to include them.
-  if(inactive.length){
-    addDivider('inactiveDivider', 'Inactive players — not currently participating');
-    inactive.forEach(row=> unrank(row, 'inactive-tag', 'Inactive'));
+  // One line saying what is being looked at, so a shifted position is never a
+  // surprise. Only when the pool has been widened.
+  const extra = rows.filter(row=>{
+    const nameEl = row.querySelector('.nm');
+    const name = row.dataset.player || (nameEl ? nameEl.textContent.trim() : null);
+    const st = name ? playerStateOf(name) : null;
+    return st && st.ranking !== 'RANKED';
+  }).length;
+  if(extra > 0){
+    const note = document.createElement('div');
+    note.id = 'eligibilityDivider';
+    note.className = 'eligibility-divider';
+    const parts = [];
+    if(includeIdle) parts.push('idle');
+    if(includeInactive) parts.push('inactive');
+    note.textContent = `Including ${parts.join(' and ')} players — positions here are for this view, not official ranks`;
+    list.insertBefore(note, list.firstChild);
   }
 }
 
