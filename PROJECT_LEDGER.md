@@ -233,32 +233,99 @@ Shaun's decisions, including where an agent recommended otherwise.
 | CGPT product/UX acceptance requirements satisfied | 18 Sep 2026 after `e0fdcbc`: all eight requested presentation fixes are implemented and regression-tested (242/242; 21 browser). The date-edit refusal and non-duplicative Key takeaways are approved departures from the mockup. Final pixel-level look check remains with Shaun/on-device because CGPT cannot render private-repo PNG pixels directly from the GitHub connector. |
 | Add player-facing Power Rating Guide in More | Players need both a short explanation and a detailed methodology view so small/unequal rating movements are understandable and defensible. The guide must explain expectation vs actual performance, reliability/K, why wins can move little, why losses can still gain rating, why partners move by different amounts, why reassessed/new players move faster, why club decisions are separate, and that ratings never reset monthly. Do **not** change Sequential-v1 merely because movements look small. |
 | Historical correction controls are admin-on-demand | The Play history must remain a player-facing results surface. `Correct match`, `Remove and replay`, and replay-warning copy must not render permanently on every game card. Hide them entirely for non-admin users; for admin, expose a compact per-card `…` / `Manage` control that reveals the maintenance actions only on demand. |
+| Player-facing rating explanations use match/game language first | Replace exposed `Performance score 0.xx against 0.xx expected` wording in normal player-facing UI with plain language: whether the team were favourites/underdogs/evenly matched, the approximate percentage of games they were expected to win, the percentage they actually won, the match result, whether they outperformed/met/underperformed expectation, and the resulting rating movement. Keep exact blended performance score, K and reliability only behind `See full calculation` / technical disclosure. Do not imply the model is games-share only: match result still contributes 20%. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun — visual/UX acceptance of the Play history.**
+**Owner / baton: Claude Code — simplify player-facing rating explanations.**
 
-The admin controls are collapsed behind a per-card `··· Manage` affordance and
-are absent entirely for a non-admin. Details in the CCode handoff of 18 Sep in
-Section 6; the two states are shots 10 and 10b in `docs/screenshots/README.md`.
+Shaun compared the old Play/result explanation with the new v3 wording and
+approved a simpler presentation. The current player-facing copy such as
+`Performance score 0.20 against 0.18 expected` is mathematically correct but
+too technical for normal players.
 
-What is wanted back:
+### Product decision
 
-1. Confirm the player-facing feed now reads as a results feed.
-2. Confirm `··· Manage` is the right affordance and the right label. It is a
-   one-line change if something else reads better.
+Normal player-facing explanations should use **padel language first**:
 
-Note: closing a card that has a correction staged **cancels** that correction
-rather than hiding it. A plan left alive behind a collapsed card is a write
-waiting to happen where nobody can see it. Say if the board would rather it
-stayed staged.
+1. Was the team **favoured, underdogs, or roughly even** before the match?
+2. About what percentage of games were they expected to win?
+3. What percentage of games did they actually win?
+4. Did they win, lose or draw the match?
+5. Did they outperform, perform roughly as expected, or underperform?
+6. What was the resulting rating movement?
 
-CCode has no other queued work.
+Preferred copy pattern:
 
-Do not change Sequential-v1 match mathematics.
+> **Your team were slight favourites.**
+> Based on the four players' ratings, you were expected to win about **53% of
+> the games**.
+> You actually won **60% of the games** and won the match.
+> **You performed above expectation → +5.7 rating points.**
 
+Loss example:
+
+> **Your team were underdogs.**
+> You were expected to win about **18% of the games**.
+> You won **20% of the games**, but lost the match.
+> **You still slightly exceeded expectations → +0.5 rating points.**
+
+Underperformance example:
+
+> **Your team were expected to be competitive.**
+> You were expected to win about **51% of the games**.
+> You won **32%** and lost the match.
+> **You performed below expectation → −5.4 rating points.**
+
+### Important truthfulness rule
+
+Do **not** imply that rating movement is calculated purely from game share.
+Sequential-v1 still uses:
+
+- 80% game share;
+- 20% match result;
+- then compares that blended actual score with persisted expectation.
+
+So wording such as:
+
+> `You were expected to win around 53% of the games. You won 60% and won the
+> match, so you performed better than expected.`
+
+is preferred because it is simple and still acknowledges the match result.
+
+### Technical detail moves one level down
+
+In the normal card/explanation, do not lead with raw decimals such as:
+
+- `Performance score 0.64 against 0.32 expected`;
+- `K 30`;
+- `Reliability 33% → 38%`.
+
+Keep those behind an expandable **`See full calculation`** / existing detailed
+calculation disclosure. The detailed view may continue to show exact persisted
+expected score, blended performance score, K and reliability.
+
+### Scope
+
+Apply this player-facing language consistently wherever the current
+`Why your rating moved` / match explanation appears, including profile match
+cards and monthly breakdown cards where relevant. Preserve the Power Rating
+Guide's detailed methodology; its summary may use the same plain-English
+framing.
+
+### Acceptance
+
+- normal player-facing cards contain no raw `Performance score 0.xx against
+  0.xx expected` sentence;
+- show expected game-share %, actual game-share %, result and qualitative
+  expectation outcome;
+- exact technical values remain available in the detailed calculation view;
+- test a win, a loss with positive movement, and an underperformance case;
+- explanations must be derived from persisted match facts/calculation data,
+  not a second rating calculation;
+- no changes to Sequential-v1 mathematics.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -422,6 +489,21 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (simpler rating explanation)
+Shaun approved replacing technical player-facing `Performance score 0.xx vs
+0.xx expected` copy with simpler match/game language.
+
+Normal explanation should tell the player: favourites/underdogs/even, expected
+game-share %, actual game-share %, match result, whether they
+outperformed/met/underperformed expectation, and the rating movement. Keep raw
+blended performance score, K and reliability behind `See full calculation`.
+
+Do not simplify so far that the UI implies ratings are game-share only: the
+match result still contributes 20% to Sequential-v1's actual score.
+
+**Baton → CCode.** Implement the copy/presentation change with targeted
+regression tests; no engine changes.
 
 ### CCode — 18 Sep 2026 (Play history: admin controls collapsed)
 
@@ -1625,11 +1707,13 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Collapse the historical match admin controls in Play history~~ — **done**
-   (`346ed66`). Non-admin sees none of it; admin gets a per-card
-   `··· Manage`, one open at a time, with the actions, the warning and the
-   blast-radius preview unchanged behind it.
-2. ~~Browser coverage for all four acceptance cases~~ — **done**. 265/265.
-3. ~~No change to match facts, replay-forward or Sequential-v1~~ — untouched.
-4. **Baton back to CGPT/Shaun for visual/UX acceptance** — the only open item,
-   and not CCode's to close.
+1. **Simplify player-facing rating movement explanations** per Section 4.
+2. Replace raw performance-score wording with favourite/underdog + expected
+   game-share + actual game-share + match result + qualitative outcome +
+   rating movement.
+3. Keep exact performance score, K and reliability only in the detailed
+   calculation disclosure.
+4. Add regression coverage for a win, a loss with positive movement, and an
+   underperformance case.
+5. Do not change Sequential-v1 mathematics or create a second calculation path.
+6. Update Ledger with commit/tests and baton back to CGPT/Shaun.
