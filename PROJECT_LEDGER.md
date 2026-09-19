@@ -238,33 +238,98 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
 | Ranking state terminology: Ranked / Idle / Inactive | Separate ranking eligibility from participation status. **Ranked** = active and currently meets the live-ranking rule. **Idle** = still part of Money Padel but currently below the recent-match threshold, so not shown in the live ranking. **Inactive** = explicitly not currently involved/participating. Idle is derived from recent activity; Inactive is an explicit club/player-status field. |
 | Ranking eligibility must be shared across Home/Rankings/Profile/Club Pulse | Shaun spotted Ant Slice showing `#–` on Home despite recent activity. All surfaces must derive Ranked vs Idle from one shared eligibility helper over the same v3 rated-match source/date window. A player must never be Ranked on one surface and Idle on another. Before changing data, verify Ant Slice's actual count of rated matches in the rolling 30-day window; if >=2, current `#–` is a bug. |
+| Games cards show historical tier beside each player | On collapsed and expanded Games cards, show each player's **tier at match date** beside their name (e.g. `Eli (A) & Len (A) def Osh (A) & Rishi (B)`). Use the same temporal-tier source for visible labels and game-type classification so the UI can never display one tier while filtering the match as another. |
+| Games tab supports historical tier-composition filtering | Add a Games filter based on the **tiers that applied when each match was played**, not current tiers. Support broad tier environments (all-A/all-B/all-C, mixed) and specific canonical matchup types such as `AA vs AA`, `AB vs BB`, `AA vs AB`, `AB vs AB`. The filter must combine with Month and Player; e.g. Player=Len + Game type=`AB vs BB` shows only Len's matches of that historical composition. Team orientation must not create separate categories. |
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun.**
+**Owner / baton: Claude Code — Games historical-tier context + tier-composition filters.**
 
-Ranked / Idle / Inactive are separated, and the eligibility bug Shaun spotted is
-confirmed and fixed — it affected five players, not one. Details and the
-verification table are in the CCode handoff of 19 Sep in Section 6.
+Shaun wants the Games tab to support analysis of match environments such as
+all-A games, all-B games, and cross-tier formats like `AB vs BB`, including
+when a specific player is selected.
 
-What is wanted back:
+### Historical tier labels on game cards
 
-1. Confirm the Idle wording and the two filters read correctly.
-2. Note that the fix changes who holds a rank: **Ant Slice, Dennis, Chloe, Jams
-   and Aubyn now have ranks** on Home, Profile and Club Pulse where they
-   previously showed `#–`. That is the correction, not a side effect, but it is
-   visible and worth expecting.
-3. Screenshots are still blocked on the Firestore daily read quota; three shots
-   show superseded wording and the README names them.
+On every Games card, use the player's **tier at the date the match was played**
+and show it beside the name.
 
-CCode has no other queued work. The rating-model questions in Section 5 remain
-parked and unauthorised.
+Examples:
 
-Do not change Sequential-v1 match mathematics.
+- collapsed: `Eli (A) & Len (A) def Osh (A) & Rishi (B)`
+- expanded: `Eli (A) 1640 & Len (A) 1675 vs Osh (A) 1715 & Rishi (B) 1464`
 
+Do **not** use current tier for historical match labels.
+
+Use the same existing temporal tier source (`tierHistory` / authoritative
+historical tier helper) for both visible labels and filtering/classification.
+
+### Tier-composition / game-type filter
+
+Add one Games filter that layers with the existing **Month** and **Player**
+filters.
+
+Minimum useful options:
+
+- `All game types`
+- `All A games` = all four players were Tier A
+- `All B games` = all four players were Tier B
+- `All C games` = all four players were Tier C
+- `Mixed-tier games`
+- specific canonical matchup types where present in the data, especially:
+  - `AA vs AA`
+  - `AB vs BB`
+  - `AA vs AB`
+  - `AB vs AB`
+  - and equivalent B/C or other combinations generated from the actual data.
+
+Classification must be **orientation-independent**. `AB vs BB` and `BB vs AB`
+are the same game type. Canonicalise each team's tier letters and then
+canonicalise the pair of team compositions.
+
+### Filter composition
+
+All filters must combine rather than replace one another.
+
+Example:
+
+- Month = `All time`
+- Player = `Len`
+- Game type = `AB vs BB`
+
+must show only Len's historical `AB vs BB` matches.
+
+The same should work with a specific month selected.
+
+### Product intent
+
+This is to make club patterns visible without creating a new analytics page
+yet. Examples Shaun wants to inspect:
+
+- outcomes in all-A games;
+- outcomes in all-B games;
+- who appears frequently in `AB vs BB` fixtures;
+- whether a player's record is concentrated in particular tier environments.
+
+Do not add evaluative labels such as `easy`, `soft`, or `inflated`; expose the
+facts and let users interpret them.
+
+### Acceptance
+
+- every Games card shows historical tier beside each player name;
+- expanded detail uses the same historical tier labels;
+- game classification uses the exact same temporal tier source as the labels;
+- broad tier-game filters work;
+- specific matchup filters work and are orientation-independent;
+- Month + Player + Game type filters compose correctly;
+- a historical promotion/reclassification can cause an old match to show a
+  different tier than the player's current tier, and this is expected;
+- no rating-engine or stored-rating changes;
+- add targeted browser/regression coverage for historical tier labels and
+  combined filters, including a player-selected `AB vs BB` case.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -457,6 +522,19 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (Games historical tiers + game-type filter)
+Shaun wants Games to expose the tier context that existed when each match was
+played, and to make that context filterable.
+
+Add historical tier beside every player name on collapsed/expanded Games cards,
+using the same temporal-tier helper already used elsewhere. Add a composable
+`Game type` filter for broad all-A/all-B/all-C/mixed environments and specific
+canonical matchup types such as `AB vs BB`. It must combine with Month and
+Player selection.
+
+**Baton → CCode.** Implement this as UI/data-presentation work only; no rating
+engine changes.
 
 ### CCode — 19 Sep 2026 (Ranked / Idle / Inactive; eligibility bug confirmed)
 
@@ -2025,18 +2103,15 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Verify Ant Slice's eligibility before implementing~~ — **done**. Eight
-   rated matches in the 30-day window; the `#–` was a bug, and four other
-   players had it too.
-2. ~~Separate Idle from Inactive~~ — **done** (`1a7a037`). One shared helper
-   (`assets/js/playerState.js`) over the v3 rated set, draws included, used by
-   Rankings, Home, Profile and Club Pulse.
-3. ~~Independent filters and a separate Inactive section~~ — **done**, with the
-   current player-facing defaults preserved.
-4. ~~Targeted browser tests for all three states and the filters~~ — **done**.
-   283/283.
-5. ~~No engine or historical rating changes~~ — untouched; the 2+/30 rule is
-   unchanged.
-6. **Regenerate the screenshots** once the beta's Firestore read quota resets:
-   `node scripts/screenshots.js`. Only the journey read is outstanding.
-7. **Baton to CGPT/Shaun.**
+1. **Show historical tier beside each player name** on collapsed and expanded
+   Games cards.
+2. **Add Games tier-composition filter** with all-A/all-B/all-C/mixed plus
+   specific canonical matchup types present in the data.
+3. Make matchup classification orientation-independent (`AB vs BB` =
+   `BB vs AB`).
+4. Ensure Month + Player + Game type filters compose correctly.
+5. Use one shared temporal-tier source for labels and classification.
+6. Add browser/regression coverage including a player-selected `AB vs BB`
+   example and a historical tier-change case.
+7. Do not change Sequential-v1 or stored ratings/history.
+8. Update Ledger with commit/tests and baton back to CGPT/Shaun.
