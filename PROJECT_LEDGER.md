@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `1a7a037` |
-| Tests | **283 / 283 passing** (41 of them drive a real browser) |
+| Last verified implementation commit | `5b637cd` |
+| Tests | **299 / 299 passing** (45 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -247,123 +247,27 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — Games historical-tier context + tier-composition filters.**
+**Owner / baton: CGPT and Shaun.**
 
-Shaun wants the Games tab to support analysis of match environments such as
-all-A games, all-B games, and cross-tier formats like `AB vs BB`, including
-when a specific player is selected.
+The ranking-pool toggles now merge idle and inactive players into the ordered
+list, and Games carries historical tier labels plus tier-composition filters.
+Details in the CCode handoff of 19 Sep in Section 6.
 
-### Historical tier labels on game cards
+What is wanted back:
 
-On every Games card, use the player's **tier at the date the match was played**
-and show it beside the name.
+1. Confirm the merged ranking view reads correctly, including the note that
+   positions there are for that view and not official ranks.
+2. Confirm the Games tier labels and the game-type options are what is wanted
+   for inspecting club patterns. The options are generated from the data, so
+   they will change as the record grows.
+3. Screenshots are still blocked on the Firestore daily read quota; three shots
+   show superseded wording and the README names them.
 
-Examples:
+CCode has no other queued work. The rating-model questions in Section 5 remain
+parked and unauthorised.
 
-- collapsed: `Eli (A) & Len (A) def Osh (A) & Rishi (B)`
-- expanded: `Eli (A) 1640 & Len (A) 1675 vs Osh (A) 1715 & Rishi (B) 1464`
+Do not change Sequential-v1 match mathematics.
 
-Do **not** use current tier for historical match labels.
-
-Use the same existing temporal tier source (`tierHistory` / authoritative
-historical tier helper) for both visible labels and filtering/classification.
-
-### Tier-composition / game-type filter
-
-Add one Games filter that layers with the existing **Month** and **Player**
-filters.
-
-Minimum useful options:
-
-- `All game types`
-- `All A games` = all four players were Tier A
-- `All B games` = all four players were Tier B
-- `All C games` = all four players were Tier C
-- `Mixed-tier games`
-- specific canonical matchup types where present in the data, especially:
-  - `AA vs AA`
-  - `AB vs BB`
-  - `AA vs AB`
-  - `AB vs AB`
-  - and equivalent B/C or other combinations generated from the actual data.
-
-Classification must be **orientation-independent**. `AB vs BB` and `BB vs AB`
-are the same game type. Canonicalise each team's tier letters and then
-canonicalise the pair of team compositions.
-
-### Filter composition
-
-All filters must combine rather than replace one another.
-
-Example:
-
-- Month = `All time`
-- Player = `Len`
-- Game type = `AB vs BB`
-
-must show only Len's historical `AB vs BB` matches.
-
-The same should work with a specific month selected.
-
-### Product intent
-
-This is to make club patterns visible without creating a new analytics page
-yet. Examples Shaun wants to inspect:
-
-- outcomes in all-A games;
-- outcomes in all-B games;
-- who appears frequently in `AB vs BB` fixtures;
-- whether a player's record is concentrated in particular tier environments.
-
-Do not add evaluative labels such as `easy`, `soft`, or `inflated`; expose the
-facts and let users interpret them.
-
-### Acceptance
-
-- every Games card shows historical tier beside each player name;
-- expanded detail uses the same historical tier labels;
-- game classification uses the exact same temporal tier source as the labels;
-- broad tier-game filters work;
-- specific matchup filters work and are orientation-independent;
-- Month + Player + Game type filters compose correctly;
-- a historical promotion/reclassification can cause an old match to show a
-  different tier than the player's current tier, and this is expected;
-- no rating-engine or stored-rating changes;
-- add targeted browser/regression coverage for historical tier labels and
-  combined filters, including a player-selected `AB vs BB` case.
-
-### Clarification: Include Idle / Include Inactive behavior
-
-The current selector behavior is not what Shaun wants. `Include idle` and
-`Include inactive` should expand the **main visible ranking pool**, not merely
-show extra players in separate lower sections.
-
-Required behavior:
-
-- Default: official current ranking pool only (Ranked + Active).
-- `Include idle` ON: Idle players are merged into the main list and sorted by
-  rating as though currently ranking-eligible. They receive a **filtered-view
-  rank position** and keep an `IDLE` badge so their real state remains clear.
-- `Include inactive` ON: true Inactive players are also merged into the same
-  main list and sorted by rating as though active. They receive a filtered-view
-  rank position and keep an `INACTIVE` badge.
-- Both ON: Ranked + Idle + Inactive all appear in one ordered ranking list.
-- Turning a toggle on must not change official eligibility, participation
-  status, stored ratings or historical records.
-
-Example: if Omar is Idle but his rating would place him 5th among the visible
-Tier B pool, `Include idle` should place him at **#5 in that filtered view** and
-shift the displayed positions beneath him accordingly.
-
-Prefer simplifying the controls to two toggles/buttons:
-
-- `Include idle players`
-- `Include inactive players`
-
-rather than presenting them as mutually exclusive status selectors.
-
-Add regression coverage for rank re-numbering when each toggle is enabled
-individually and together.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -556,6 +460,83 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 19 Sep 2026 (ranking-pool toggles corrected; Games tier context)
+
+**Both done. Baton to CGPT/Shaun.** No rating-engine changes, no stored-rating
+changes, and the 2+/30-day eligibility rule is untouched.
+
+#### 1. Include idle / Include inactive now widen the ranking pool
+
+The correction is right: a separate section underneath answered *"who else
+exists"* when the question being asked is *"where would they sit"*.
+
+Two toggles replace the two status selectors. Off, the list is the official
+current ranking pool — Ranked and Active. On, that group is **merged into the
+same ordered list**, sorted by rating, with a filtered-view rank position and
+its `IDLE` / `INACTIVE` badge kept. Both on, all three states appear in one
+ordered list.
+
+From the record, exactly the behaviour Shaun described:
+
+| | official pool | + idle and inactive |
+|---|---|---|
+| 1 | Kaz | **Manny** `IDLE` |
+| 2 | Erf | Kaz |
+| 3 | KC | Erf |
+| 4 | Osh | KC |
+| 5 | Len | **Del** `INACTIVE` |
+| 6 | Dennis | Osh |
+
+A line at the top of the widened view says the positions are for that view and
+not official ranks.
+
+**Nothing official moves.** There is a test that every player's participation,
+ranking state, rank availability and rating is byte-identical with the toggles
+on and off — the toggles change which pool is being looked at, and nothing else.
+
+#### 2. Games: historical tier labels and tier-composition filters
+
+```
+collapsed   Antz (B) & Len (A) def Max (B) & Stormzy (B)
+expanded    Antz (B) 1407 & Len (A) 1675 vs Max (B) 1401 & Stormzy (B) 1377
+```
+
+The tier is the one the player **held on the day**. The temporal lookup was
+previously built inline and handed only to `MONTHLY_VIEWS`; it is hoisted to
+`V3_TIER_AS_OF` so the labels and the classification read one source — a label
+and a classification that disagreed would be worse than either alone.
+
+`assets/js/gameType.js` canonicalises **twice**, and the second time is the one
+that matters: within a team (`A&B` and `B&A` are both `AB`), and then *between*
+the teams, so `AB vs BB` and `BB vs AB` are one game type. Without that second
+step a filter for `AB vs BB` would silently miss every match stored the other
+way round.
+
+The control offers only what the current Month + Player selection actually
+contains, with counts — `All A games (11)`, `All B games (32)`, `All C games
+(3)`, `Mixed-tier games (104)`, then `BB vs BB (32)`, `AB vs AB (30)`,
+`AB vs BB (27)`, `AA vs AA (10)` and so on, including singles (`A vs B`) and
+Tier S (`AA vs SA`). A type that stops existing under a narrower selection falls
+back to *All game types* rather than showing an empty list.
+
+**All three filters compose.** Month = All time, Player = Len, Game type =
+`AB vs BB` gives **10 matches**, every one of them genuinely both — asserted
+against the same classifier, not by eyeballing the list.
+
+Deliberately non-evaluative: no *easy*, *soft* or *inflated* anywhere, with a
+test that keeps it that way.
+
+| | |
+|---|---|
+| Tests | **299 / 299** (45 in a real browser) |
+| New | 8 `gameType` module tests (orientation independence, unknown tiers, singles, generated options, no judgements); browser tests for tier labels on collapsed and expanded cards, a promotion not rewriting an older card, Month+Player+Game-type composition, and options never offered empty; plus rank re-numbering with each toggle individually and together |
+
+**Screenshots remain outstanding.** The beta's Firestore daily read quota still
+has not reset — `players` and `matches` are cached, the 666-event
+`ratingJourney` still 429s. Three shots continue to show superseded wording and
+the README names them. I verified this work by rendering from the seeded fixture
+locally instead.
 
 ### CGPT — 19 Sep 2026 (include-state ranking behavior)
 Shaun clarified the intended filter semantics: Idle/Inactive inclusion should
@@ -2102,6 +2083,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `5b637cd` | Idle/inactive merged into the ranked list as a filtered view; Games gains historical tier labels and orientation-independent game-type filters |
 | `1a7a037` | Ranked / Idle / Inactive separated behind one shared eligibility helper; five active players were wrongly rankless |
 | `8600f1e` | Compact expanded Games card; `See full calculation` fixed (clicks were collapsing the card underneath) and unified across all three cards |
 | `a0e3ead` | Game-share wording correction: matching the expectation is no longer called performing above it; capture script caches the live record |
@@ -2147,20 +2129,16 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Show historical tier beside each player name** on collapsed and expanded
-   Games cards.
-2. **Add Games tier-composition filter** with all-A/all-B/all-C/mixed plus
-   specific canonical matchup types present in the data.
-3. Make matchup classification orientation-independent (`AB vs BB` =
-   `BB vs AB`).
-4. Ensure Month + Player + Game type filters compose correctly.
-5. Use one shared temporal-tier source for labels and classification.
-6. Add browser/regression coverage including a player-selected `AB vs BB`
-   example and a historical tier-change case.
-7. **Merge included Idle/Inactive players into the main visible ranking** and
-   re-number the filtered-view ranks; retain status badges.
-8. Simplify the status controls to inclusion toggles where practical.
-9. Add browser coverage for Idle only, Inactive only, and both included together,
-   including filtered-view rank re-numbering.
-10. Do not change Sequential-v1 or stored ratings/history.
-11. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+1. ~~Include idle / Include inactive widen the ranking pool~~ — **done**
+   (`5b637cd`). Two toggles; merged, rating-ordered, renumbered, badges kept,
+   official state provably unchanged.
+2. ~~Historical tier labels on every Games card~~ — **done**, collapsed and
+   expanded, from the same temporal source as the classification.
+3. ~~Tier-composition filters, orientation-independent, composing with Month and
+   Player~~ — **done**, with options generated from the data and counts shown.
+4. ~~Targeted coverage~~ — **done**. 299/299, including a player-selected
+   `AB vs BB` case and rank re-numbering per toggle.
+5. ~~No engine or stored-rating changes~~ — untouched.
+6. **Regenerate the screenshots** once the beta's Firestore read quota resets:
+   `node scripts/screenshots.js`. Only the journey read is outstanding.
+7. **Baton to CGPT/Shaun.**
