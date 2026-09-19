@@ -236,31 +236,64 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Player-facing rating explanations use match/game language first | Replace exposed `Performance score 0.xx against 0.xx expected` wording in normal player-facing UI with plain language: whether the team were favourites/underdogs/evenly matched, the approximate percentage of games they were expected to win, the percentage they actually won, the match result, whether they outperformed/met/underperformed expectation, and the resulting rating movement. Keep exact blended performance score, K and reliability only behind `See full calculation` / technical disclosure. Do not imply the model is games-share only: match result still contributes 20%. |
 | Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
+| Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun — copy acceptance.**
+**Owner / baton: Claude Code — compact Games breakdown + fix full-calculation disclosure.**
 
-The wording correction is in. A team that matches its expected game share is no
-longer told it performed above expectation; the game-share comparison and the
-match result are stated separately, and the movement is stated as a fact beside
-them. Details in the CCode handoff of 19 Sep in Section 6.
+Shaun has accepted the latest wording direction but the expanded Games card is
+still too verbose, and `See full calculation` currently does not open anything.
 
-What is wanted back:
+### Compact the player-facing card
 
-1. Read the corrected copy on a card and accept or amend it. Anything that reads
-   wrong is a one-line change; say which sentence.
-2. Note that three screenshots could not be regenerated (Firestore daily read
-   quota) and still show the superseded wording. The README names them. CCode
-   will regenerate on the next `Ledger CCode` unless someone does it first.
+Keep the expanded card focused on the answer. Preferred hierarchy:
 
-CCode has no other queued work. The rating-model questions in Section 5 remain
-parked and unauthorised.
+- matchup with ratings going in;
+- optional `favoured by X pts going in` line;
+- one concise expectation/result line, e.g.
+  `Expected 60% of games · won 18/30 (60%) · won match`;
+- **Rating change, per player**;
+- one short note that less-established ratings can move further, if still useful;
+- `See full calculation ›`.
 
-Do not change Sequential-v1 match mathematics.
+Remove the redundant explanatory sentence between the expectation/result line
+and `Rating change, per player`, including wording like:
 
+> `Winners matched the game-share expectation. The match result also
+> contributes to the rating calculation.`
+
+That nuance belongs in the technical disclosure, not the main card.
+
+### Fix `See full calculation`
+
+`See full calculation` is currently inert. Treat this as a bug.
+
+Make it an in-card disclosure / accordion. Opening it must show the exact
+technical facts already stored for the match/player calculation, including as
+applicable:
+
+- persisted expected score;
+- actual game share;
+- match result contribution;
+- blended performance score;
+- K / weighting;
+- reliability before → after;
+- exact player rating movement.
+
+Do **not** add a second calculation path. The disclosure must read the same
+persisted match/journey facts that drive the displayed movement.
+
+### Acceptance
+
+- main expanded Games card is materially shorter;
+- redundant explanation above `Rating change, per player` is removed;
+- `See full calculation` opens and closes correctly;
+- disclosure contains the expected technical facts;
+- browser test confirms the disclosure is interactive, not inert;
+- no changes to Sequential-v1 mathematics or stored history.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -453,6 +486,18 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (compact Games card + full calculation bug)
+Shaun reviewed the latest Games breakdown. The wording is now directionally
+correct, but the card still contains too much explanatory prose. Remove the
+redundant sentence between the expectation/result summary and per-player rating
+changes.
+
+Also, `See full calculation` currently does nothing. This is a functional bug,
+not a copy preference. Make it an in-card disclosure backed by the same
+persisted match/journey facts already used for the rating movement.
+
+**Baton → CCode.** Compact the card and fix the disclosure; no engine changes.
 
 ### CCode — 19 Sep 2026 (wording correction, and a read-quota finding)
 
@@ -1830,14 +1875,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Wording correction: never say "performed above expectation" for a matched
-   game share~~ — **done** (`a0e3ead`). Game-share comparison and match
-   result stated separately, on profile cards, monthly cards and the Games feed.
-2. ~~Test the 60%-expected / 60%-actual win case~~ — **done**. 268/268.
-3. ~~No engine changes~~ — Sequential-v1, expected-score, K, reliability and
-   stored history all untouched.
-4. **Regenerate three screenshots** once the beta's Firestore read quota resets:
-   `node scripts/screenshots.js --refresh`. They currently show the superseded
-   wording and the README says so. CCode will do this on the next
-   `Ledger CCode` if it is still outstanding.
-5. **Baton to CGPT/Shaun for copy acceptance.**
+1. **Compact the expanded Games card** by removing redundant explanatory prose
+   above `Rating change, per player`.
+2. **Fix `See full calculation`** so it opens/closes an in-card technical
+   disclosure.
+3. Populate that disclosure from persisted expected/performance/K/reliability
+   facts only; no second calculation path.
+4. Add browser coverage proving the disclosure is interactive and the compact
+   card copy remains concise.
+5. Do not change Sequential-v1 or stored history.
+6. Regenerate the affected screenshots when Firestore quota permits.
+7. Update Ledger with commit/tests and baton back to CGPT/Shaun.
