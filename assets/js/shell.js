@@ -1676,6 +1676,88 @@ function buildHomeDashboard(){
   return dash;
 }
 
+// Match ideas is collapsed by default and remembers its state for the session.
+let homeIdeasOpen = false;
+
+// A Club Pulse card is a way in to that player, not a poster of them.
+function pulseCardHtml(title, player, sub, subClass){
+  if(!player){
+    return `<div class="mp-card-standard home-pulse-card"><div class="home-pulse-title">${title}</div><div class="section-sub">Not enough data.</div></div>`;
+  }
+  return `<button class="mp-card-standard home-pulse-card home-pulse-clickable" data-pulse-player="${player.name}">
+    <div class="home-pulse-title">${title}</div>
+    <div class="home-pulse-name">${player.name}</div>
+    <div class="home-pulse-sub ${subClass || ''}">${sub}</div>
+    <span class="home-pulse-chev">›</span>
+  </button>`;
+}
+
+// The player's most recent RATED match, described from what was recorded.
+// Everything here -- the result, the scoreline, the expectation, the share of
+// games and the rating movement -- is read back; nothing is recomputed, and the
+// commentary is chosen deterministically from those same facts.
+function buildLastResultCardHtml(name){
+  const empty = (msg) => `<div class="mp-card-standard home-card"><div class="section-sub">${msg}</div></div>`;
+  if(typeof LastResult === 'undefined') return empty('No recent result to show.');
+
+  // The rated set, indexed by the engine's own record of each match.
+  const rated = Object.values(V3_MATCH_FACTS || {})
+    .filter(f => f.byPlayer && f.byPlayer[name])
+    .map(f => ({ id: f.matchId, date: f.date, players: Object.keys(f.byPlayer), facts: f }));
+  const recent = LastResult.mostRecent(rated, name);
+  if(!recent) return empty(`No rated matches recorded for ${name} yet.`);
+  const facts = recent.facts;
+
+  const m = getDisplayMatches().find(x => x.id === facts.matchId);
+  if(!m) return empty('That match could not be read.');
+
+  const view = MatchFacts.forPlayer(facts, name);
+  const mine = m.winners.includes(name) ? m.winners : m.losers;
+  const theirs = m.winners.includes(name) ? m.losers : m.winners;
+  const result = m.isDraw ? 'draw' : (m.winners.includes(name) ? 'win' : 'loss');
+  const onStoredWinningSide = m.winners.includes(name);
+  const myGames = onStoredWinningSide ? m.games_winner : m.games_loser;
+  const theirGames = onStoredWinningSide ? m.games_loser : m.games_winner;
+  const total = myGames + theirGames;
+
+  const commentary = LastResult.commentaryFor({
+    result,
+    gameShare: total ? myGames / total : null,
+    expected: view ? view.mine.expected : null,
+    ratingGap: view ? (view.mine.preRating - view.theirs.preRating) : null,
+  });
+
+  const delta = view ? view.me.ratingDelta : null;
+  const deltaClass = delta > 0 ? 'perf-pos' : (delta < 0 ? 'perf-neg' : '');
+  const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '·');
+  const partner = mine.filter(n => n !== name);
+  const headline = m.isDraw
+    ? `${mine.join(' & ')} <span class="lr-vs">vs</span> ${theirs.join(' & ')}`
+    : (onStoredWinningSide
+      ? `<b>${mine.join(' & ')}</b> <span class="lr-vs">def</span> ${theirs.join(' & ')}`
+      : `<b>${theirs.join(' & ')}</b> <span class="lr-vs">def</span> ${mine.join(' & ')}`);
+  const tier = historicalTierOf(name, m.date);
+
+  return `<div class="mp-card-standard home-card home-lastresult" data-match-id="${m.id}">
+    <div class="lr-stamp">
+      <div class="lr-date">${new Date(m.date + 'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }).toUpperCase()}</div>
+      ${tier ? `<div class="lr-tier">Tier ${tier}</div>` : ''}
+    </div>
+    <div class="lr-body">
+      <div class="lr-headline">${headline}</div>
+      <div class="lr-score">${scoreForViewer(m, onStoredWinningSide)}${m.isDraw ? ' · not finished' : ''}</div>
+      ${commentary ? `<div class="lr-note">${commentary}</div>` : ''}
+      <div class="lr-foot">
+        <div class="lr-delta">
+          <div class="${deltaClass}"><span class="lr-arrow">${arrow}</span> ${delta === null ? '—' : (delta > 0 ? '+' : '') + delta}</div>
+          <div class="section-sub">Rating change</div>
+        </div>
+        <button class="mp-btn-secondary lr-view" data-match-id="${m.id}" data-player="${name}">View match ›</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderHomeDashboard(){
   const dash = document.getElementById('homeDashboard');
   if(!dash) return;
@@ -1714,7 +1796,9 @@ function renderHomeDashboard(){
     insight = `${snap.total} games played this season. Keep building your record.`;
   }
 
-  const upcoming = snap.upcomingGames[0] || null;
+  // Upcoming is no longer read on Home -- it is maintained by hand, and Home
+  // should not depend on that being complete. The feature itself is untouched
+  // and still lives in Play.
 
   dash.innerHTML = `
     <div class="home-hero">
@@ -1753,20 +1837,21 @@ function renderHomeDashboard(){
 
     <div class="home-card-header home-section-header"><span>Club Pulse</span><button class="home-card-link" id="homeAllInsightsBtn">All Insights ›</button></div>
     <div class="home-pulse-row">
-      <div class="mp-card-standard home-pulse-card">
-        <div class="home-pulse-title">#1 Ranked</div>
-        ${pulse.topRanked ? `<div class="home-pulse-name">${pulse.topRanked.name}</div><div class="home-pulse-sub">${Math.round(pulse.topRanked.rating)}</div>` : `<div class="section-sub">Not enough data.</div>`}
-      </div>
-      <div class="mp-card-standard home-pulse-card">
-        <div class="home-pulse-title">In Form</div>
-        ${pulse.inForm ? `<div class="home-pulse-name">${pulse.inForm.name}</div><div class="home-pulse-sub perf-pos">+${pulse.inForm.recent_form}%</div>` : `<div class="section-sub">Not enough data.</div>`}
-      </div>
-      <div class="mp-card-standard home-pulse-card">
-        <div class="home-pulse-title">Promotion Watch</div>
-        ${pulse.promotionWatch ? `<div class="home-pulse-name">${pulse.promotionWatch.name}</div><div class="home-pulse-sub">Tier ${pulse.promotionWatch.tier} · ${pulse.promotionWatch.gap} pts</div>` : `<div class="section-sub">Not enough data.</div>`}
-      </div>
+      ${pulseCardHtml('#1 Ranked', pulse.topRanked, pulse.topRanked ? `${Math.round(pulse.topRanked.rating)}` : '', '')}
+      ${pulseCardHtml('In Form', pulse.inForm, pulse.inForm ? `+${pulse.inForm.recent_form}%` : '', 'perf-pos')}
+      ${pulseCardHtml('Promotion Watch', pulse.promotionWatch, pulse.promotionWatch ? `Tier ${pulse.promotionWatch.tier} · ${pulse.promotionWatch.gap} pts` : '', '')}
     </div>
 
+    <!-- Collapsed by default: occasionally useful, not worth permanent space. -->
+    <div class="mp-card-standard home-card home-ideas-head" id="homeIdeasToggle" role="button" tabindex="0" aria-expanded="${homeIdeasOpen}">
+      <div class="home-ideas-icon">💡</div>
+      <div class="home-ideas-text">
+        <div class="home-ideas-title">Match ideas</div>
+        <div class="section-sub">Balanced games suggested for you</div>
+      </div>
+      <div class="home-ideas-cta">${homeIdeasOpen ? 'Hide' : 'Show suggestions'} <span class="home-ideas-chev">${homeIdeasOpen ? '⌄' : '›'}</span></div>
+    </div>
+    <div id="homeIdeasBody" style="display:${homeIdeasOpen ? 'block' : 'none'};">
     <div class="home-card-header home-section-header"><span>Match to Make</span><button class="home-card-link" id="homeFindMoreBtn">Find More Matches ›</button></div>
     ${matchup ? `
       <div class="mp-card-standard home-card home-matchup-card">
@@ -1784,15 +1869,13 @@ function renderHomeDashboard(){
       </div>
     ` : `<div class="mp-card-standard home-card"><div class="section-sub">Not enough eligible players to suggest a matchup right now.</div></div>`}
 
-    <div class="home-card-header home-section-header"><span>Next on Court</span></div>
-    <div class="mp-card-standard home-card home-nextcourt">
-      ${upcoming ? `
-        <div class="home-nextcourt-info"><b>${upcoming.players.join(' & ')}</b><div class="section-sub">Confirmed game</div></div>
-      ` : `
-        <div class="home-nextcourt-info"><b>Nothing booked yet.</b><div class="section-sub">Find your next game and get on court.</div></div>
-        <button class="mp-btn-primary" id="homeFindGameBtn">Find a Game ›</button>
-      `}
     </div>
+
+    <!-- Built automatically from the player's own most recent RATED match.
+         Upcoming is maintained by hand, so Home no longer depends on it; the
+         Upcoming feature itself is untouched and still lives in Play. -->
+    <div class="home-card-header home-section-header"><span>Last Time Out</span><button class="home-card-link" id="homeAllResultsBtn">View all results ›</button></div>
+    ${buildLastResultCardHtml(viewer.name)}
 
     <div class="home-card-header home-section-header"><span>${currentMonth ? monthLabel(currentMonth).toUpperCase() : 'THIS MONTH'} AT MONEY PADEL</span><button class="home-card-link" id="homeFullReviewBtn">View Full Review ›</button></div>
     <div class="mp-card-standard home-card home-monthly-grid">
@@ -1804,13 +1887,90 @@ function renderHomeDashboard(){
   `;
 
   document.getElementById('homeViewProfileBtn').onclick = ()=> openSheet(viewer.name);
-  document.getElementById('homeAllInsightsBtn').onclick = ()=>{ legacyTabBtn('callouts').click(); };
-  document.getElementById('homeFindMoreBtn').onclick = ()=>{ goToSection('play'); };
+  // Insights is a long page. Arriving from Home used to inherit wherever the
+  // tab had been left, which dropped the reader into the middle of it.
+  document.getElementById('homeAllInsightsBtn').onclick = ()=>{ openInsightsFromTop(); };
   document.getElementById('homeFullReviewBtn').onclick = ()=> showFullMonthlyReview();
-  const findGameBtn = document.getElementById('homeFindGameBtn');
-  if(findGameBtn) findGameBtn.onclick = ()=> goToSection('play');
+
+  const findMoreBtn = document.getElementById('homeFindMoreBtn');
+  if(findMoreBtn) findMoreBtn.onclick = ()=>{ goToSection('play'); };
   const viewMatchupBtn = document.getElementById('homeViewMatchupBtn');
   if(viewMatchupBtn) viewMatchupBtn.onclick = ()=> goToSection('play');
+
+  const ideasToggle = document.getElementById('homeIdeasToggle');
+  if(ideasToggle){
+    const toggle = ()=>{ homeIdeasOpen = !homeIdeasOpen; renderHomeDashboard(); };
+    ideasToggle.onclick = toggle;
+    ideasToggle.onkeydown = (e)=>{ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); } };
+  }
+
+  document.querySelectorAll('#homeDashboard [data-pulse-player]').forEach(el=>{
+    el.onclick = ()=> openSheet(el.dataset.pulsePlayer);
+  });
+
+  const allResultsBtn = document.getElementById('homeAllResultsBtn');
+  if(allResultsBtn) allResultsBtn.onclick = ()=> openSheet(viewer.name);
+  document.querySelectorAll('#homeDashboard .lr-view').forEach(el=>{
+    el.onclick = ()=> openMatchFromHome(el.dataset.player, el.dataset.matchId);
+  });
+}
+
+// Insights, from the top. The tab keeps its own scroll position, which is right
+// when you return to it and wrong when you arrive at it from somewhere else.
+function openInsightsFromTop(){
+  const btn = legacyTabBtn('callouts');
+  if(btn) btn.click();
+  const view = document.getElementById('calloutsView');
+  if(view && view.scrollTop !== undefined) view.scrollTop = 0;
+  try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch(e){ window.scrollTo(0, 0); }
+}
+
+// "View match" opens the player's own profile at that match, so the card they
+// land on is written from their side.
+//
+// One exception, and it is a real one: a DRAW is rated but is deliberately
+// absent from MATCHES, which is what the profile's match log is built from. So
+// the profile cannot show a draw, and the most recent result genuinely can be
+// one. Rather than leave the button dead on those matches, it falls back to the
+// Games feed, which does show draws. The fallback is checked, not assumed.
+function openMatchFromHome(name, matchId){
+  // The profile's match log is scoped to `selectedMonth`, which Rankings sets
+  // to the last completed month at boot. A result from THIS month would then be
+  // filtered out of the very profile we are opening to show it. The sheet is
+  // built synchronously, so the scope is widened for that build and put back
+  // immediately -- Rankings never sees it change.
+  const savedMonth = selectedMonth;
+  selectedMonth = 'all';
+  openSheet(name);
+  selectedMonth = savedMonth;
+  setTimeout(()=>{
+    const host = document.getElementById('ppMatchesHost');
+    const detail = host
+      ? [...host.querySelectorAll('.pp-match-detail')].find(el => el.dataset.matchId === matchId)
+      : null;
+    if(detail){
+      const row = detail.previousElementSibling;
+      if(row && row.classList.contains('pp-match-row')) row.click();
+      detail.scrollIntoView({ block: 'start' });
+      return;
+    }
+    closeSheet();
+    openMatchInGames(matchId);
+  }, 0);
+}
+
+// The Games feed, with that one match expanded. Works for every rated match,
+// draws included.
+function openMatchInGames(matchId){
+  const btn = legacyTabBtn('games');
+  if(btn) btn.click();
+  if(typeof expandedGameId !== 'undefined') expandedGameId = matchId;
+  if(typeof gamesMonth !== 'undefined') gamesMonth = 'all';
+  if(typeof gamesType !== 'undefined') gamesType = 'all';
+  if(typeof selectedGamesPlayer !== 'undefined') selectedGamesPlayer = 'all';
+  if(typeof renderGamesTab === 'function') renderGamesTab();
+  const card = document.querySelector(`#gamesView [data-gameid="${matchId}"]`);
+  if(card) card.scrollIntoView({ block: 'center' });
 }
 
 // "View Full Review" -- shows the fully preserved legacy Summary view in

@@ -1929,3 +1929,282 @@ test('the game-type control offers only types the current selection contains', {
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== HOME LOWER SECTION (19 Sep 2026) =====================
+
+const withHome = async (app, fn) => app.run(new Function('return (' + fn.toString() + ')();'));
+
+test('Club Pulse cards open the player they name', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      render();
+      setCurrentViewer('Ant Slice');
+      goToSection('home');
+      renderHomeDashboard();
+      const cards = [...document.querySelectorAll('#homeDashboard [data-pulse-player]')];
+      const names = cards.map((c) => c.dataset.pulsePlayer);
+      // Each card names the player it links to.
+      const labelMismatch = cards.filter((c) => !c.innerText.includes(c.dataset.pulsePlayer));
+      // Clicking the second one must open that player, not the viewer.
+      const target = cards[1].dataset.pulsePlayer;
+      cards[1].click();
+      const opened = document.getElementById('sheetName').textContent.trim();
+      closeSheet();
+      return { count: cards.length, names, labelMismatch: labelMismatch.length, target, opened };
+    });
+
+    assert.strictEqual(r.count, 3, 'three pulse cards');
+    assert.strictEqual(r.labelMismatch, 0, 'a card must name the player it opens');
+    assert.strictEqual(r.opened, r.target, `clicking the In Form card must open ${r.target}`);
+    assert.ok(r.names.every(Boolean));
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('All Insights lands at the top of Insights, not part-way down', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      render();
+      setCurrentViewer('Ant Slice');
+      // Leave Insights scrolled well down, as a previous visit would.
+      legacyTabBtn('callouts').click();
+      const view = document.getElementById('calloutsView');
+      window.scrollTo(0, 4000);
+      const scrolledAway = window.scrollY;
+
+      goToSection('home');
+      renderHomeDashboard();
+      document.getElementById('homeAllInsightsBtn').click();
+      return {
+        scrolledAway,
+        tab: activeTab,
+        scrollY: window.scrollY,
+        viewScrollTop: view.scrollTop,
+        visible: document.getElementById('calloutsView').style.display !== 'none',
+      };
+    });
+
+    assert.ok(r.scrolledAway > 0, 'the page must actually have been scrolled first');
+    assert.strictEqual(r.tab, 'callouts', 'it must open Insights');
+    assert.strictEqual(r.visible, true);
+    assert.strictEqual(r.scrollY, 0, 'arriving from Home must land at the top');
+    assert.strictEqual(r.viewScrollTop, 0);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Match ideas is collapsed by default and expands on demand', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      render();
+      setCurrentViewer('Ant Slice');
+      goToSection('home');
+      homeIdeasOpen = false;
+      renderHomeDashboard();
+
+      const head = document.getElementById('homeIdeasToggle');
+      const closed = {
+        bodyDisplay: document.getElementById('homeIdeasBody').style.display,
+        expanded: head.getAttribute('aria-expanded'),
+        cta: head.innerText.replace(/\n+/g, ' '),
+        matchupVisible: !!document.querySelector('#homeIdeasBody .home-matchup-card') &&
+          document.getElementById('homeIdeasBody').style.display !== 'none',
+      };
+
+      document.getElementById('homeIdeasToggle').click();
+      const openState = {
+        bodyDisplay: document.getElementById('homeIdeasBody').style.display,
+        expanded: document.getElementById('homeIdeasToggle').getAttribute('aria-expanded'),
+        cta: document.getElementById('homeIdeasToggle').innerText.replace(/\n+/g, ' '),
+        hasMatchup: !!document.querySelector('#homeIdeasBody .home-matchup-card, #homeIdeasBody .home-card'),
+      };
+
+      document.getElementById('homeIdeasToggle').click();
+      const reclosed = document.getElementById('homeIdeasBody').style.display;
+      homeIdeasOpen = false;
+      return { closed, openState, reclosed };
+    });
+
+    assert.strictEqual(r.closed.bodyDisplay, 'none', 'collapsed by default');
+    assert.strictEqual(r.closed.expanded, 'false');
+    assert.match(r.closed.cta, /Match ideas/);
+    assert.match(r.closed.cta, /Balanced games suggested for you/);
+    assert.match(r.closed.cta, /Show suggestions/);
+    assert.strictEqual(r.closed.matchupVisible, false);
+
+    assert.strictEqual(r.openState.bodyDisplay, 'block', 'expands on tap');
+    assert.strictEqual(r.openState.expanded, 'true');
+    assert.strictEqual(r.openState.hasMatchup, true, 'the existing matchup card is what it reveals');
+
+    assert.strictEqual(r.reclosed, 'none', 'and collapses again');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Next on Court is gone, replaced by the latest rated result', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      render();
+      const name = 'Ant Slice';
+      setCurrentViewer(name);
+      goToSection('home');
+      renderHomeDashboard();
+
+      const dash = document.getElementById('homeDashboard');
+      const card = dash.querySelector('.home-lastresult');
+
+      // The match the record says is their latest rated one.
+      const rated = Object.values(V3_MATCH_FACTS).filter((f) => f.byPlayer && f.byPlayer[name]);
+      const latest = rated.slice().sort((a, b) => (a.date !== b.date
+        ? (a.date < b.date ? 1 : -1)
+        : String(b.matchId).localeCompare(String(a.matchId))))[0];
+      const me = latest.byPlayer[name];
+      const m = getDisplayMatches().find((x) => x.id === latest.matchId);
+
+      return {
+        text: dash.innerText,
+        hasCard: !!card,
+        cardText: card ? card.innerText.replace(/\n+/g, ' | ') : null,
+        cardMatchId: card ? card.dataset.matchId : null,
+        expectedMatchId: latest.matchId,
+        expectedDelta: me.ratingDelta,
+        expectedDate: latest.date,
+        opponents: m.winners.includes(name) ? m.losers : m.winners,
+        partner: (m.winners.includes(name) ? m.winners : m.losers).filter((n) => n !== name),
+        monthlyStillThere: /VIEW FULL REVIEW/i.test(dash.innerText),
+      };
+    });
+
+    assert.doesNotMatch(r.text, /Next on Court/i, 'Next on Court must be gone from Home');
+    assert.doesNotMatch(r.text, /Nothing booked yet/i);
+    assert.strictEqual(r.hasCard, true, 'a Last Time Out card must be there instead');
+    assert.match(r.text, /Last Time Out/i);
+
+    // Sourced from the persisted facts, and pointing at that match.
+    assert.strictEqual(r.cardMatchId, r.expectedMatchId);
+    const deltaText = (r.expectedDelta > 0 ? '+' : '') + r.expectedDelta;
+    assert.ok(r.cardText.includes(deltaText),
+      `the card must show the recorded movement ${deltaText}, got: ${r.cardText}`);
+    r.opponents.concat(r.partner).forEach((n) => {
+      assert.ok(r.cardText.includes(n), `the card must name ${n}`);
+    });
+    assert.match(r.cardText, /Rating change/);
+
+    // And the monthly snapshot is still there, as asked.
+    assert.strictEqual(r.monthlyStillThere, true);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the Last Time Out commentary is one of the fixed, factual lines', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      render();
+      const seen = [];
+      // Several players, so more than one branch of the commentary is exercised.
+      ['Ant Slice', 'Rishi', 'Eli', 'Osh', 'Len', 'Max', 'Jords'].forEach((name) => {
+        setCurrentViewer(name);
+        goToSection('home');
+        renderHomeDashboard();
+        const note = document.querySelector('#homeDashboard .lr-note');
+        if (note) seen.push({ name, line: note.textContent.trim() });
+      });
+      return { seen, known: Object.values(LastResult.LINES) };
+    });
+
+    assert.ok(r.seen.length >= 5, `not enough players produced a card (${r.seen.length})`);
+    r.seen.forEach((s) => {
+      assert.ok(r.known.includes(s.line),
+        `${s.name}'s line is not one of the fixed set: "${s.line}"`);
+    });
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// A draw is rated but is deliberately absent from MATCHES, which is what the
+// profile's match log is built from -- so the profile cannot show one, and the
+// most recent result genuinely can be a draw. Both paths are checked.
+test('View match opens the right match, whether or not it was a draw', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      render();
+      const check = async (name) => {
+        setCurrentViewer(name);
+        goToSection('home');
+        renderHomeDashboard();
+        const btn = document.querySelector('#homeDashboard .lr-view');
+        if (!btn) return null;
+        const wantedId = btn.dataset.matchId;
+        const m = getDisplayMatches().find((x) => x.id === wantedId);
+        btn.click();
+        await new Promise((res) => setTimeout(res, 30));
+
+        const detail = [...document.querySelectorAll('.pp-match-detail')].find((el) => el.dataset.matchId === wantedId);
+        const onProfile = !!detail && detail.style.display === 'block';
+        const gamesCard = document.querySelector(`#gamesView [data-gameid="${wantedId}"]`);
+        const inGames = activeTab === 'games' && !!gamesCard && expandedGameId === wantedId;
+        const who = document.getElementById('sheetName').textContent.trim();
+        const sheetOpen = document.getElementById('overlay').classList.contains('show');
+        closeSheet();
+        return { name, wantedId, isDraw: !!m.isDraw, onProfile, inGames, who, sheetOpen };
+      };
+
+      const out = [];
+      // Find one player whose latest is a draw and one whose latest is not.
+      for (const n of ['Ant Slice', 'Rishi', 'Eli', 'Osh', 'Len', 'Max', 'Jords', 'Kaz', 'Erf']) {
+        const res = await check(n);
+        if (res) out.push(res);
+      }
+      return out;
+    });
+
+    assert.ok(r.length >= 5, `not enough players produced a card (${r.length})`);
+    r.forEach((c) => {
+      assert.ok(c.onProfile || c.inGames,
+        `${c.name}: View match reached neither the profile nor the Games card for ${c.wantedId}`);
+      if (!c.isDraw) {
+        assert.strictEqual(c.onProfile, true,
+          `${c.name}: a decided match must open on their own profile`);
+        assert.strictEqual(c.who, c.name, 'their own profile, so the card is written from their side');
+      } else {
+        assert.strictEqual(c.inGames, true,
+          `${c.name}: a draw must fall back to the Games feed, expanded`);
+        assert.strictEqual(c.sheetOpen, false, 'and must not leave an empty profile sheet open');
+      }
+    });
+    assert.ok(r.some((c) => !c.isDraw), 'at least one decided match must be covered');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Removing Next on Court from Home must not have touched the feature itself.
+test('Upcoming is untouched in Play', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const btn = document.querySelector('#tabrow .tab-btn[data-tab="upcoming"]');
+      if (!btn) return { present: false };
+      btn.click();
+      const view = document.getElementById('upcomingView');
+      return {
+        present: true,
+        tab: activeTab,
+        visible: view.style.display !== 'none',
+        rendered: view.innerHTML.length > 0,
+        inPlaySubnav: SECTION_SUBNAV.play.some((i) => i.tab === 'upcoming'),
+      };
+    });
+    assert.strictEqual(r.present, true, 'the Upcoming tab must still exist');
+    assert.strictEqual(r.tab, 'upcoming');
+    assert.strictEqual(r.visible, true);
+    assert.strictEqual(r.rendered, true);
+    assert.strictEqual(r.inPlaySubnav, true, 'and still be reachable from Play');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

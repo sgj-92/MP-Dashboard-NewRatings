@@ -3697,7 +3697,7 @@ function openSheet(name, matchFilter){
       ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">To correct or remove this game, open it in the Games tab.</div>`
       : '';
 
-    return `<div class="match">
+    return `<div class="match" data-match-id="${m.id}">
       <div class="top"><span>${m.date}${m.type==='singles' ? ' · Singles' : ''}</span><span style="color:${won?'var(--green)':'var(--red)'}">${won?'WIN':'LOSS'}</span></div>
       ${upsetTag}
       <div class="teams"><b>${namesWithRatings}</b> vs ${oppWithRatings}</div>

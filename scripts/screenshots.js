@@ -44,6 +44,8 @@ function serve() {
 // Each shot says what a reviewer should be looking at, which is the point of a
 // review aid. The captions become docs/screenshots/README.md.
 const SHOTS = [
+  { file: '00-home.png', title: 'Home — the lower half',
+    note: 'Club Pulse cards open the player they name. Match ideas is collapsed until asked for. Last Time Out is built automatically from the player\'s own most recent rated match — result, scoreline, one deterministic line, and the rating movement the engine recorded. The monthly snapshot stays.' },
   { file: '01-rankings-all-time.png', title: 'Power Rankings — all time',
     note: 'Kings of Tiers, the podium and the ranking list. A tier is crowned only where someone qualifies at the chosen minimum games, so S and C are absent here rather than shown empty.' },
   { file: '02-rankings-month.png', title: 'Power Rankings — a single month',
@@ -174,6 +176,13 @@ async function render(players, matches, journey, readAt) {
   };
 
   console.log('Capturing ...');
+  await shot('00-home.png',
+    () => {
+      if (typeof setCurrentViewer === 'function') setCurrentViewer('Ant Slice');
+      goToSection('home');
+      if (typeof renderHomeDashboard === 'function') renderHomeDashboard();
+    },
+    () => { const el = document.querySelector('.home-pulse-row'); if (el) el.scrollIntoView({ block: 'start' }); });
   await shot('01-rankings-all-time.png',
     () => { selectedMonth = 'all'; activeTier = 'All'; minGames = 10; activeTab = 'power'; activeSortP = 'rating'; goToSection('rankings'); render(); },
     () => { const el = document.getElementById('kingsOfTiersPanel'); if (el) el.scrollIntoView({ block: 'start' }); });

@@ -1,34 +1,10 @@
 # Review screenshots
 
-Captured 2026-09-19 from the **live beta record** by `scripts/screenshots.js`.
+Captured from the **live beta record** as it stood on 2026-09-19, by `scripts/screenshots.js`.
 Review aids for CGPT and Shaun, not release documentation. Regenerate rather than edit.
 
 Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,
 so a capture of the seeded fixture would show ratings that no longer exist.
-
-> ### ⚠️ Three shots show superseded wording
->
-> **`05-match-card.png`, `06-monthly-breakdown.png` and
-> `15-why-your-rating-moved.png`** predate two copy changes made on 19 Sep:
-> matching the expected game share is no longer called "performing above
-> expectation" (`a0e3ead`), and the expanded card was compacted with the
-> technical facts moved into a working `See full calculation` disclosure.
->
-> They could not be regenerated: the beta project has exhausted its Firestore
-> **daily read quota** (429 `RESOURCE_EXHAUSTED`). `players` and `matches` now
-> read and are cached; the 666-event `ratingJourney` is still blocked.
->
-> The capture script now caches per collection, so the next attempt costs one
-> read rather than three. Re-run when the quota resets:
->
-> ```
-> node scripts/screenshots.js
-> ```
->
-> The current wording is covered by tests rather than by these images — see
-> "matching the expected game share is never called performing above it",
-> "See full calculation opens and closes on a Games card" and "the expanded
-> Games card stays compact" in `tests/ui.test.js`.
 
 ### Power Rankings — all time
 
