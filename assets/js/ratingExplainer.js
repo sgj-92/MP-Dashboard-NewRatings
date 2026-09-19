@@ -18,14 +18,24 @@
 //
 // -- and the decimals live behind "See full calculation", not in front of it.
 //
-// ONE HONESTY NOTE, which the copy is built around. The engine's expectation is
-// the target for a BLENDED score: 80% the share of games won, 20% the match
-// result. Quoting it as "expected to win about 53% of the games" is a
-// simplification the club has approved, so every sentence that quotes it also
-// states the result -- "and won the match", "but lost the match" -- and the
-// blend is named in a line of small print. The verdict itself is never derived
-// by comparing the two percentages: it comes from the residual the engine
-// recorded, so it cannot contradict the movement printed beside it.
+// ONE HONESTY RULE, and it is the whole reason this copy reads as it does.
+//
+// Sequential-v1 compares a BLENDED actual score -- 80% game share, 20% the
+// match result -- against a single expectation derived from the four ratings.
+// A team can therefore match its expected game share EXACTLY and still move up,
+// because the win contributes separately. Calling that "performed above
+// expectation" would be false: nothing about the games beat the expectation.
+//
+// So the plain layer states two observable things and never blends them:
+//
+//   1. the game-share expectation, and what share was actually won;
+//   2. the match result, said separately, as its own input.
+//
+// The qualitative verdict is a GAME-SHARE comparison only. The blended score,
+// K and reliability stay behind "See full calculation", where the exact
+// arithmetic can be checked. (Whether the expected side should itself model a
+// match result is a real question about the engine -- it is item 3 of the
+// parked rating-model backlog, and it is not this module's to answer.)
 
 (function (root, factory) {
   const api = factory();
@@ -34,16 +44,21 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // Matches NEUTRAL_PERFORMANCE_BAND in the application, so a card and its
-  // explanation can never disagree about whether a performance was ordinary.
+  // Matches NEUTRAL_PERFORMANCE_BAND in the application. Used for the blended
+  // residual in the disclosure only -- never for the plain verdict.
   const NEUTRAL_BAND = 0.05;
+
+  // How far the actual share of games can sit from the expected share and still
+  // read as "about the expected share". Three percentage points is roughly one
+  // game in thirty.
+  const GAME_SHARE_BAND = 3;
 
   // Below this the two pairings were level enough that neither was favoured.
   const CLOSE_GAP = 15;
   // Below this, favoured but only just.
   const SLIGHT_GAP = 60;
 
-  const BLEND_NOTE = 'Your score blends the games you won (80%) with the match result (20%).';
+  const BLEND_NOTE = 'The match result is a separate input: your score for the rating is 80% the share of games you won and 20% the result itself.';
 
   function establishment(reliability) {
     if (typeof reliability !== 'number') return null;
@@ -106,31 +121,32 @@
       : (result === 'win' ? 'and won the match' : 'but lost the match');
     const actualLine = actualShare === null
       ? `You ${result === 'win' ? 'won the match' : result === 'draw' ? 'did not finish the match' : 'lost the match'}.`
-      : `You won <b>${pct(actualShare)}%</b> of the games ${resultClause}.`;
+      : `You won <b>${games.mine} of ${totalGames} games (${pct(actualShare)}%)</b> ${resultClause}.`;
 
-    // 4: the verdict, from the residual the engine recorded -- NOT from
-    // comparing the two percentages above, which measure different things.
-    let verdict;
-    if (result === 'loss' && delta > 0) {
-      verdict = residual > NEUTRAL_BAND ? 'You still exceeded expectations' : 'You still edged past expectation';
-    } else if (result === 'win' && delta < 0) {
-      verdict = 'You fell below expectation even so';
-    } else if (residual > NEUTRAL_BAND) {
-      verdict = 'You performed above expectation';
-    } else if (residual < -NEUTRAL_BAND) {
-      verdict = 'You performed below expectation';
-    } else {
-      verdict = 'You performed about as expected';
+    // 4: the verdict. A comparison of GAME SHARE against the game-share
+    // expectation, and nothing else. It deliberately says nothing about the
+    // rating movement, because the movement also reflects the result.
+    let verdict = null, verdictKey = null;
+    if (actualShare !== null) {
+      const diff = pct(actualShare) - pct(expected);
+      if (diff === 0) { verdictKey = 'matched'; verdict = 'You matched the game-share expectation.'; }
+      else if (Math.abs(diff) <= GAME_SHARE_BAND) { verdictKey = 'about'; verdict = 'You won about the expected share of games.'; }
+      else if (diff > 0) { verdictKey = 'more'; verdict = 'You won more games than expected.'; }
+      else { verdictKey = 'fewer'; verdict = 'You won fewer games than expected.'; }
     }
-    const verdictLine = typeof delta === 'number'
-      ? `<b>${verdict} → ${signed(delta)} rating points.</b>`
-      : `<b>${verdict}.</b>`;
+
+    // 5: the movement, stated as a fact rather than as a consequence of the
+    // verdict above -- which is exactly what it is not.
+    const movementLine = typeof delta === 'number'
+      ? `<b>Your rating moved ${signed(delta)}.</b>`
+      : null;
 
     const lines = [];
     if (standing) lines.push(`<b>${standing.headline}</b>`);
     lines.push(expectedLine);
     lines.push(actualLine);
-    lines.push(verdictLine);
+    if (verdict) lines.push(`<b>${verdict}</b> The match result also contributes to the rating calculation.`);
+    if (movementLine) lines.push(movementLine);
 
     return {
       lines,
@@ -138,6 +154,7 @@
       blendNote: BLEND_NOTE,
       standing,
       verdict,
+      verdictKey,
       expected,
       actual,
       expectedPct: pct(expected),
@@ -163,5 +180,5 @@
     };
   }
 
-  return { explain, establishment, standingOf, kText, NEUTRAL_BAND, CLOSE_GAP, SLIGHT_GAP, BLEND_NOTE };
+  return { explain, establishment, standingOf, kText, NEUTRAL_BAND, GAME_SHARE_BAND, CLOSE_GAP, SLIGHT_GAP, BLEND_NOTE };
 });

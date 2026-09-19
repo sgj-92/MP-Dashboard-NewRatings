@@ -803,9 +803,14 @@ test('"Why your rating moved" is plain in front and exact behind', { skip }, asy
     assert.ok(r.plain.includes(`${share}%`),
       `must state the actual game share (${share}%), got: ${r.plain}`);
     assert.match(r.plain, r.won ? /and won the match/ : /but lost the match/);
-    assert.match(r.plain, /performed (above|below) expectation|as expected|exceeded expectation|edged past expectation|fell below expectation/);
+    // The verdict is a GAME-SHARE comparison. It must never claim a
+    // performance verdict the blended score alone could justify.
+    assert.match(r.plain, /You (matched the game-share expectation|won (more|fewer) games than expected|won about the expected share of games)\./);
+    assert.doesNotMatch(r.plain, /performed (above|below) expectation/,
+      'the plain layer must not give a blended performance verdict');
+    assert.match(r.plain, /The match result also contributes to the rating calculation\./);
     const deltaText = (rec.delta > 0 ? '+' : '') + rec.delta.toFixed(1);
-    assert.ok(r.plain.includes(`${deltaText} rating points`),
+    assert.ok(r.plain.includes(`Your rating moved ${deltaText}`),
       `must state the recorded movement ${deltaText}, got: ${r.plain}`);
 
     // --- and no raw performance-score sentence in front of the player ---
@@ -814,7 +819,8 @@ test('"Why your rating moved" is plain in front and exact behind', { skip }, asy
     assert.doesNotMatch(r.plain, /\bK \d/, 'the plain layer must not quote K');
     assert.doesNotMatch(r.plain, /Reliability/i, 'the plain layer must not quote reliability');
 
-    // --- the honesty note: movement is not game share alone ---
+    // --- the honesty note: the result is a SEPARATE input ---
+    assert.match(r.note, /separate input/i);
     assert.match(r.note, /80%/);
     assert.match(r.note, /20%/);
     assert.match(r.note, /match result/i);
@@ -835,8 +841,8 @@ test('"Why your rating moved" is plain in front and exact behind', { skip }, asy
   } finally { await app.close(); }
 });
 
-// The three shapes the brief names, each against a constructed case so the
-// wording itself is checked rather than the mere presence of a sentence.
+// The shapes the brief names, each against a constructed case so the wording
+// itself is checked rather than the mere presence of a sentence.
 test('the explanation reads as padel, in the order a player thinks in', { skip }, async () => {
   const app = await H.open();
   try {
@@ -847,42 +853,82 @@ test('the explanation reads as padel, in the order a player thinks in', { skip }
       });
       const plain = (e) => e.lines.join(' ').replace(/<\/?b>/g, '');
       return {
-        win: plain(RatingExplainer.explain(mk(19, 0.6, 5.7, 0.53, 0.68, 1420, 1400), 'win', { mine: 15, theirs: 10 })),
+        more: plain(RatingExplainer.explain(mk(19, 0.6, 5.7, 0.53, 0.68, 1420, 1400), 'win', { mine: 15, theirs: 10 })),
         lossUp: plain(RatingExplainer.explain(mk(12, 0.8, 0.5, 0.18, 0.16, 1200, 1600), 'loss', { mine: 5, theirs: 20 })),
-        under: plain(RatingExplainer.explain(mk(18, 0.65, -5.4, 0.51, 0.256, 1405, 1400), 'loss', { mine: 8, theirs: 17 })),
+        fewer: plain(RatingExplainer.explain(mk(18, 0.65, -5.4, 0.51, 0.256, 1405, 1400), 'loss', { mine: 8, theirs: 17 })),
         note: RatingExplainer.explain(mk(19, 0.6, 5.7, 0.53, 0.68, 1420, 1400), 'win', { mine: 15, theirs: 10 }).blendNote,
       };
     });
 
-    // A win, above expectation.
-    assert.match(r.win, /^Your team were slight favourites\./);
-    assert.match(r.win, /expected to win about 53% of the games/);
-    assert.match(r.win, /You won 60% of the games and won the match\./);
-    assert.match(r.win, /You performed above expectation → \+5\.7 rating points\./);
+    // Won more games than the expectation implied, and won the match.
+    assert.match(r.more, /^Your team were slight favourites\./);
+    assert.match(r.more, /expected to win about 53% of the games/);
+    assert.match(r.more, /You won 15 of 25 games \(60%\) and won the match\./);
+    assert.match(r.more, /You won more games than expected\./);
+    assert.match(r.more, /Your rating moved \+5\.7\./);
 
     // A loss that still earned points -- the case players write in about.
     assert.match(r.lossUp, /^Your team were underdogs\./);
-    assert.match(r.lossUp, /expected to win about 18% of the games/);
-    assert.match(r.lossUp, /You won 20% of the games but lost the match\./);
-    assert.match(r.lossUp, /You still (exceeded expectations|edged past expectation) → \+0\.5 rating points\./);
+    assert.match(r.lossUp, /You won 5 of 25 games \(20%\) but lost the match\./);
+    assert.match(r.lossUp, /You won about the expected share of games\./);
+    assert.match(r.lossUp, /Your rating moved \+0\.5\./);
 
-    // Underperformance.
-    assert.match(r.under, /^Your team were expected to be competitive\./);
-    assert.match(r.under, /expected to win about 51% of the games/);
-    assert.match(r.under, /You won 32% of the games but lost the match\./);
-    assert.match(r.under, /You performed below expectation → -5\.4 rating points\./);
+    // Fewer games than expected, and lost.
+    assert.match(r.fewer, /^Your team were expected to be competitive\./);
+    assert.match(r.fewer, /You won 8 of 25 games \(32%\) but lost the match\./);
+    assert.match(r.fewer, /You won fewer games than expected\./);
+    assert.match(r.fewer, /Your rating moved -5\.4\./);
 
-    // None of the three leads with a decimal, a K or a reliability.
-    [r.win, r.lossUp, r.under].forEach((line) => {
+    // None of them leads with a decimal, a K, a reliability -- or a blended
+    // performance verdict.
+    [r.more, r.lossUp, r.fewer].forEach((line) => {
       assert.doesNotMatch(line, /[Pp]erformance score/);
       assert.doesNotMatch(line, /0\.\d\d/);
       assert.doesNotMatch(line, /\bK \d/);
       assert.doesNotMatch(line, /Reliability/i);
+      assert.doesNotMatch(line, /performed (above|below) expectation/);
+      assert.match(line, /The match result also contributes to the rating calculation\./);
     });
 
-    // And the blend is stated, so nothing implies movement is game share alone.
-    assert.match(r.note, /80%.*20%|games.*80%/);
+    assert.match(r.note, /separate input/i);
     assert.match(r.note, /match result/i);
+  } finally { await app.close(); }
+});
+
+// Shaun's case, exactly as flagged: a team matches its expected game share and
+// still moves up, because the win contributes separately. Saying "performed
+// above expectation" there would be false about the games.
+test('matching the expected game share is never called performing above it', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      // 60% expected, 18/30 games won (60%), won the match. The blended actual
+      // is 0.8 x 0.60 + 0.2 x 1 = 0.68 against 0.60 expected, so the rating
+      // rises -- which is the trap.
+      const view = {
+        me: { playerId: 'X', kUsed: 16, previousReliability: 0.7, newReliability: 0.71, ratingDelta: 2.9 },
+        mine: { expected: 0.60, actual: 0.68, preRating: 1450 },
+        theirs: { preRating: 1380 },
+      };
+      const e = RatingExplainer.explain(view, 'win', { mine: 18, theirs: 12 });
+      return { plain: e.lines.join(' ').replace(/<\/?b>/g, ''), key: e.verdictKey, delta: e.delta, residual: e.residual };
+    });
+
+    assert.ok(r.residual > 0, 'the blended residual really is positive -- this is the case under test');
+    assert.ok(r.delta > 0, 'and the rating really did go up');
+
+    assert.strictEqual(r.key, 'matched');
+    assert.match(r.plain, /^Your team were favourites\./);
+    assert.match(r.plain, /expected to win about 60% of the games/);
+    assert.match(r.plain, /You won 18 of 30 games \(60%\) and won the match\./);
+    assert.match(r.plain, /You matched the game-share expectation\./);
+    assert.match(r.plain, /The match result also contributes to the rating calculation\./);
+    assert.match(r.plain, /Your rating moved \+2\.9\./);
+
+    // The forbidden readings.
+    assert.doesNotMatch(r.plain, /above expectation/i);
+    assert.doesNotMatch(r.plain, /exceeded expectation/i);
+    assert.doesNotMatch(r.plain, /pushed you above/i);
   } finally { await app.close(); }
 });
 

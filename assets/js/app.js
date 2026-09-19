@@ -3609,6 +3609,7 @@ function openSheet(name, matchFilter){
       <div class="teams"><b>${namesWithRatings}</b> vs ${oppWithRatings}</div>
       <div class="score">${scoreForViewer(m, won)}${m.note ? ' · '+m.note : ''}</div>
       ${whyYourRatingMovedHtml(m, name)}
+      ${matchDeltaLineHtml(m)}
       ${adminButtons}
     </div>`;
   }).join('');
@@ -5276,23 +5277,24 @@ function buildMatchDetailBlock(m, contextHasMonthFigure){
 
   const actualPct = Math.round(m.game_share_winner*100);
   const expectedPct = Math.round(m.expected_score*100);
-  // Qualitative in front, decimals behind. The verdict comes from the residual
-  // the engine recorded, NOT from comparing the two percentages: they measure
-  // different things, and a comparison would eventually disagree with the
-  // movement printed underneath it.
-  const perf = Math.round(m.performance_residual*1000)/10;
-  const neutralPts = NEUTRAL_PERFORMANCE_BAND * 100;
+  // A GAME-SHARE comparison, and nothing else. A side can match its expected
+  // share exactly and still move up, because the result contributes separately;
+  // calling that "performed above expectation" would be untrue of the games.
+  const shareDiff = actualPct - expectedPct;
+  const band = (typeof RatingExplainer !== 'undefined') ? RatingExplainer.GAME_SHARE_BAND : 3;
   // Starts its own line, so it starts with a capital.
   const Side = sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1);
-  const perfLabel = perf >= neutralPts ? `<span class="perf-pos">${Side} performed above expectation</span>`
-                   : (perf <= -neutralPts ? `<span class="perf-neg">${Side} performed below expectation</span>`
-                   : `<span style="color:var(--text-dim);">${Side} performed about as expected</span>`);
+  const perfLabel = shareDiff > band ? `<span class="perf-pos">${Side} won more games than expected</span>`
+                   : (shareDiff < -band ? `<span class="perf-neg">${Side} won fewer games than expected</span>`
+                   : (shareDiff === 0 ? `<span style="color:var(--text-dim);">${Side} matched the game-share expectation</span>`
+                   : `<span style="color:var(--text-dim);">${Side} won about the expected share of games</span>`));
+  const perf = Math.round(m.performance_residual*1000)/10;
 
   return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim); line-height:1.6;">
     <div><b style="color:var(--text);">${winnersWithRatings}</b> vs ${losersWithRatings} <span style="font-size:10.5px;">(ratings going in)</span></div>
     <div style="margin-top:4px;">${favLabel}</div>
-    <div>Expected to win about ${expectedPct}% of the games; took ${m.games_winner}/${m.games_winner+m.games_loser} (${actualPct}%)${m.isDraw ? ', unfinished' : ' and won the match'}.</div>
-    <div style="margin-top:4px;">${perfLabel}</div>
+    <div>Expected to win about ${expectedPct}% of the games; took ${m.games_winner} of ${m.games_winner+m.games_loser} (${actualPct}%)${m.isDraw ? ' — the match was not finished' : ' and won the match'}.</div>
+    <div style="margin-top:4px;">${perfLabel}. <span style="font-size:10.5px;">The match result also contributes to the rating calculation.</span></div>
     ${matchDeltaLineHtml(m)}
     <details class="wm-calc">
       <summary class="wm-calc-summary">See full calculation</summary>
