@@ -82,13 +82,47 @@ async function main() {
   const pw = playwright();
   if (!pw) { console.error('Playwright is not available.'); process.exitCode = 1; return; }
 
+  // Iterating on captures used to cost a full read of the record every run --
+  // 857 documents, a dozen times in a working session, which is how the beta's
+  // daily Firestore read quota got exhausted on 19 Sep. The live record is
+  // cached to disk and reused; --refresh forces a fresh read.
+  const cachePath = path.join(OUT, '.live-record.json');
+  const refresh = process.argv.includes('--refresh');
+  if (!refresh && fs.existsSync(cachePath)) {
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    console.log(`Using the cached live record from ${cached.readAt} (--refresh to re-read).`);
+    return render(cached.players, cached.matches, cached.journey, cached.readAt);
+  }
+
   console.log('Reading the live beta ...');
   const backend = Store.firestoreRestBackend({ projectId: PROJECT_ID });
-  const [players, matches, journey] = await Promise.all([
-    backend.getAll(Store.COLLECTIONS.players),
-    backend.getAll(Store.COLLECTIONS.matches),
-    backend.getAll(Store.COLLECTIONS.journey),
-  ]);
+  // Sequentially, with backoff. Three parallel reads of 857 documents is enough
+  // to earn a 429, and a rate limit is a wait rather than a failure -- giving
+  // up on it would leave the last capture on disk, silently stale, which is the
+  // one outcome worse than not regenerating at all.
+  const read = async (collection) => {
+    for (let attempt = 1; ; attempt++) {
+      try { return await backend.getAll(collection); } catch (e) {
+        const rateLimited = /\b429\b/.test(e.message);
+        if (!rateLimited || attempt >= 6) throw e;
+        const waitMs = 2000 * attempt;
+        console.log(`  ${collection}: rate limited, retrying in ${waitMs / 1000}s (attempt ${attempt})`);
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    }
+  };
+  const players = await read(Store.COLLECTIONS.players);
+  const matches = await read(Store.COLLECTIONS.matches);
+  const journey = await read(Store.COLLECTIONS.journey);
+  const readAt = new Date().toISOString().slice(0, 10);
+  fs.mkdirSync(OUT, { recursive: true });
+  fs.writeFileSync(cachePath, JSON.stringify({ readAt, players, matches, journey }));
+  return render(players, matches, journey, readAt);
+}
+
+async function render(players, matches, journey, readAt) {
+  const pw = playwright();
+  if (!pw) { console.error('Playwright is not available.'); process.exitCode = 1; return; }
   console.log(`  ${players.length} players, ${matches.length} matches, ${journey.length} journey events`);
 
   const server = await serve();
@@ -255,7 +289,7 @@ async function main() {
     () => { const el = document.getElementById('mrbFullCalcBody'); if (el) el.scrollIntoView({ block: 'start' }); });
 
   const readme = ['# Review screenshots', '',
-    `Captured ${new Date().toISOString().slice(0, 10)} from the **live beta record** by \`scripts/screenshots.js\`.`,
+    `Captured from the **live beta record** as it stood on ${readAt}, by \`scripts/screenshots.js\`.`,
     'Review aids for CGPT and Shaun, not release documentation. Regenerate rather than edit.', '',
     'Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,',
     'so a capture of the seeded fixture would show ratings that no longer exist.', ''];
