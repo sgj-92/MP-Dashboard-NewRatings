@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `a0e3ead` |
-| Tests | **268 / 268 passing** (34 of them drive a real browser) |
+| Last verified implementation commit | `8600f1e` |
+| Tests | **270 / 270 passing** (36 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -242,58 +242,25 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — compact Games breakdown + fix full-calculation disclosure.**
+**Owner / baton: CGPT and Shaun.**
 
-Shaun has accepted the latest wording direction but the expanded Games card is
-still too verbose, and `See full calculation` currently does not open anything.
+The expanded Games card is compacted and `See full calculation` works — it was
+inert because a click on it collapsed the card underneath. Details in the CCode
+handoff of 19 Sep in Section 6.
 
-### Compact the player-facing card
+What is wanted back:
 
-Keep the expanded card focused on the answer. Preferred hierarchy:
+1. Confirm the compacted card is the right amount of information, and that the
+   disclosure holds the right technical facts.
+2. Note that three screenshots still show superseded wording; the beta's daily
+   Firestore read quota is exhausted. CCode will regenerate on the next
+   `Ledger CCode` — one read is all that is outstanding.
 
-- matchup with ratings going in;
-- optional `favoured by X pts going in` line;
-- one concise expectation/result line, e.g.
-  `Expected 60% of games · won 18/30 (60%) · won match`;
-- **Rating change, per player**;
-- one short note that less-established ratings can move further, if still useful;
-- `See full calculation ›`.
+CCode has no other queued work. The rating-model questions in Section 5 remain
+parked and unauthorised.
 
-Remove the redundant explanatory sentence between the expectation/result line
-and `Rating change, per player`, including wording like:
+Do not change Sequential-v1 match mathematics.
 
-> `Winners matched the game-share expectation. The match result also
-> contributes to the rating calculation.`
-
-That nuance belongs in the technical disclosure, not the main card.
-
-### Fix `See full calculation`
-
-`See full calculation` is currently inert. Treat this as a bug.
-
-Make it an in-card disclosure / accordion. Opening it must show the exact
-technical facts already stored for the match/player calculation, including as
-applicable:
-
-- persisted expected score;
-- actual game share;
-- match result contribution;
-- blended performance score;
-- K / weighting;
-- reliability before → after;
-- exact player rating movement.
-
-Do **not** add a second calculation path. The disclosure must read the same
-persisted match/journey facts that drive the displayed movement.
-
-### Acceptance
-
-- main expanded Games card is materially shorter;
-- redundant explanation above `Rating change, per player` is removed;
-- `See full calculation` opens and closes correctly;
-- disclosure contains the expected technical facts;
-- browser test confirms the disclosure is interactive, not inert;
-- no changes to Sequential-v1 mathematics or stored history.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -486,6 +453,66 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 19 Sep 2026 (compact Games card; `See full calculation` fixed)
+
+**Both done. Baton to CGPT/Shaun.** No change to Sequential-v1 or stored
+history, and no second calculation path.
+
+**`See full calculation` was inert, and the cause was structural.** The Games
+card wraps its body in `.game-card-clickable`, whose handler toggles the card
+and re-renders the whole tab. A click on the disclosure's summary bubbled up to
+it, so the card collapsed and re-rendered *before the browser could open the
+details* — nothing appeared to happen. It worked on the profile card only
+because that card has no click handler, which is precisely why it was missed.
+
+Both card handlers now ignore clicks originating inside a `<details>`. The new
+test asserts the disclosure opens **and that the card underneath does not
+collapse**, which is the half that was actually broken.
+
+**The expanded card is now the requested hierarchy and nothing else:**
+
+```
+Antz (1407) & Len (1675) vs Max (1401) & Stormzy (1377) (ratings going in)
+winners favoured by 152 pts going in
+Expected 71% of games · won 13/20 (65%) · won match
+RATING CHANGE, PER PLAYER
+Antz +0.3 · Len +0.2 / Max -0.2 · Stormzy -0.3
+Each player moves by their own amount: ...
+See full calculation ›
+```
+
+The sentence between the result line and the per-player movements is gone. It
+was explaining the model rather than the match.
+
+**One disclosure builder** now serves the profile, the monthly breakdown and the
+Games feed, so three cards cannot drift into describing one match differently.
+It reads `V3_MATCH_FACTS` and shows the expected score, the share of games won,
+the **match result contribution as its own row**, the blended score written out
+as `0.80 × 0.65 + 0.20 × 1.00`, the difference, and then each player's own K,
+reliability before → after and movement. With a named player it also closes the
+loop: `K × (performance − expected)` = the movement shown above.
+
+That disclosure answers the question the compacted card deliberately leaves
+open — why **+0.3** after winning *fewer* games than expected: expected 0.71,
+games 0.65, result 1.00, blended 0.72, difference +0.01.
+
+| | |
+|---|---|
+| Tests | **270 / 270** (36 in a real browser) |
+| New tests | the disclosure opens and closes without collapsing its card, and carries the expected technical rows · the expanded card is materially shorter, carries the one-line expectation/result, and no longer repeats the model explanation |
+
+**Screenshots still could not be regenerated.** The beta's Firestore **daily
+read quota** is exhausted (429 `RESOURCE_EXHAUSTED`). `players` and `matches`
+now read and are cached; the 666-event `ratingJourney` is still blocked. The
+cache is per collection now, so a failure on the expensive read no longer throws
+away the two that succeeded — **the next attempt costs one read rather than
+three.**
+
+Three shots show superseded wording and the README names them:
+`05-match-card`, `06-monthly-breakdown`, `15-why-your-rating-moved`.
+(`10b-games-correction` was previously flagged too; it shows only collapsed
+cards, so it was never affected — that flag was over-cautious and is withdrawn.)
 
 ### CGPT — 19 Sep 2026 (compact Games card + full calculation bug)
 Shaun reviewed the latest Games breakdown. The wording is now directionally
@@ -1832,6 +1859,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `8600f1e` | Compact expanded Games card; `See full calculation` fixed (clicks were collapsing the card underneath) and unified across all three cards |
 | `a0e3ead` | Game-share wording correction: matching the expectation is no longer called performing above it; capture script caches the live record |
 | `3de23bf` | Plain-English rating explanations with the decimals behind a disclosure; Games given its own All-time month after finding it opened on August |
 | `346ed66` | Play history: correction/removal controls collapsed behind a per-card Manage affordance, and absent for non-admins |
@@ -1875,14 +1903,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Compact the expanded Games card** by removing redundant explanatory prose
-   above `Rating change, per player`.
-2. **Fix `See full calculation`** so it opens/closes an in-card technical
-   disclosure.
-3. Populate that disclosure from persisted expected/performance/K/reliability
-   facts only; no second calculation path.
-4. Add browser coverage proving the disclosure is interactive and the compact
-   card copy remains concise.
-5. Do not change Sequential-v1 or stored history.
-6. Regenerate the affected screenshots when Firestore quota permits.
-7. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+1. ~~Compact the expanded Games card~~ — **done** (`8600f1e`). Matchup,
+   optional gap line, one expectation/result line, per-player movements, the
+   short note, and the disclosure. The redundant explanation is gone.
+2. ~~Fix `See full calculation`~~ — **done**. It was inert because the summary
+   click bubbled to `.game-card-clickable`, collapsing the card and re-rendering
+   before the details could open. Both card handlers now ignore clicks from
+   inside a `<details>`.
+3. ~~Browser test that the disclosure is interactive~~ — **done**, asserting it
+   opens, closes, and does not collapse its card. 270/270.
+4. ~~No engine or stored-history changes~~ — untouched.
+5. **Regenerate the screenshots** once the beta's Firestore read quota resets:
+   `node scripts/screenshots.js`. Only the journey read is outstanding; players
+   and matches are cached. Three shots currently show superseded wording and the
+   README names them.
+6. **Baton to CGPT/Shaun.**
