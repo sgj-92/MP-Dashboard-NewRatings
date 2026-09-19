@@ -237,6 +237,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
 | Ranking state terminology: Ranked / Idle / Inactive | Separate ranking eligibility from participation status. **Ranked** = active and currently meets the live-ranking rule. **Idle** = still part of Money Padel but currently below the recent-match threshold, so not shown in the live ranking. **Inactive** = explicitly not currently involved/participating. Idle is derived from recent activity; Inactive is an explicit club/player-status field. |
+| Ranking eligibility must be shared across Home/Rankings/Profile/Club Pulse | Shaun spotted Ant Slice showing `#–` on Home despite recent activity. All surfaces must derive Ranked vs Idle from one shared eligibility helper over the same v3 rated-match source/date window. A player must never be Ranked on one surface and Idle on another. Before changing data, verify Ant Slice's actual count of rated matches in the rolling 30-day window; if >=2, current `#–` is a bug. |
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
 ---
@@ -312,6 +313,31 @@ participation status is presentation/eligibility metadata, not a rating event.
 - existing 2+ matches / 30 days ranking rule is unchanged;
 - no Sequential-v1 or historical rating changes;
 - targeted browser tests cover Ranked, Idle and Inactive states and filters.
+
+### Eligibility consistency bug to verify
+
+Shaun spotted Ant Slice showing `#– in Tier A · #– Overall` on Home despite
+recent activity. Do not assume the Home state is correct.
+
+Before implementation, calculate Ant Slice's count of **rated v3 matches in the
+rolling 30-day window ending on the current app date** using the same source that
+should feed Rankings eligibility.
+
+- If Ant Slice has **2+** qualifying matches, the current Home/Profile `#–` state
+  is a bug and must be fixed.
+- If he has **<2**, the UI may correctly show him as Idle, but it should use the
+  new explicit `IDLE` state rather than looking like missing ranking data.
+
+Architecturally, create/reuse one shared eligibility helper for:
+
+- Rankings list and rank numbers;
+- Home `Your Game` rank display;
+- Player Profile rank display;
+- Club Pulse / any promotion-watch or rank-derived widgets.
+
+That helper must use the same v3 rated-match dataset and rolling date rule on
+every surface. Add a regression test that the same player receives the same
+Ranked/Idle state and rank availability across those surfaces.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -504,6 +530,18 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (Ant Slice eligibility consistency)
+Shaun identified a likely ranking-eligibility inconsistency: Ant Slice shows
+`#–` on Home even though he has recent match activity.
+
+CCode should verify his actual rated-match count in the rolling 30-day window
+before changing data. If 2+, the Home state is wrong. Regardless, ranking
+eligibility must be centralized so Home, Rankings, Profile and Club Pulse cannot
+disagree about Ranked vs Idle.
+
+This is part of the active Ranked / Idle / Inactive cleanup, not a rating-model
+change.
 
 ### CGPT — 19 Sep 2026 (Ranked / Idle / Inactive states)
 Shaun approved a terminology/state split for Rankings.
@@ -1980,5 +2018,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 4. Add independent filter controls for including Idle and Inactive players.
 5. Keep the 2+ matches / 30 days ranking rule unchanged.
 6. Preserve all ratings/history; status changes are metadata only.
-7. Add browser/regression coverage for Ranked, Idle, Inactive and the filters.
-8. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+7. **Verify Ant Slice** against the rolling 30-day rated-match window. If he has
+   2+ qualifying matches, fix the erroneous `#–` rank state.
+8. Centralize eligibility/rank availability so Home, Rankings, Profile and Club
+   Pulse use one shared helper and cannot disagree.
+9. Add browser/regression coverage for Ranked, Idle, Inactive, filters and
+   cross-surface consistency.
+10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
