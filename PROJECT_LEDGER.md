@@ -235,39 +235,103 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Historical correction controls are admin-on-demand | The Play history must remain a player-facing results surface. `Correct match`, `Remove and replay`, and replay-warning copy must not render permanently on every game card. Hide them entirely for non-admin users; for admin, expose a compact per-card `…` / `Manage` control that reveals the maintenance actions only on demand. |
 | Player-facing rating explanations use match/game language first | Replace exposed `Performance score 0.xx against 0.xx expected` wording in normal player-facing UI with plain language: whether the team were favourites/underdogs/evenly matched, the approximate percentage of games they were expected to win, the percentage they actually won, the match result, whether they outperformed/met/underperformed expectation, and the resulting rating movement. Keep exact blended performance score, K and reliability only behind `See full calculation` / technical disclosure. Do not imply the model is games-share only: match result still contributes 20%. |
 | Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
+| Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun — copy acceptance.**
+**Owner / baton: Claude Code — wording correction only.**
 
-The player-facing explanations now lead in padel language with the decimals
-behind `See full calculation`, and Play → Games keeps its own All-time month.
-Details in the CCode handoff of 19 Sep in Section 6.
+Shaun has accepted the simpler player-facing approach but spotted an important
+wording problem in the latest implementation. A team can match its expected
+game share exactly and still receive a positive rating movement because
+Sequential-v1's actual score separately gives 20% weight to the match result.
 
-What is wanted back:
+Therefore the UI must **not** say `performed above expectation` merely because
+the blended rating residual is positive.
 
-1. Read the new explanation copy on a card — it is the deliverable. Anything
-   that reads wrong is a one-line change; say which sentence.
-2. Confirm Play → Games now opens on All time. It previously did not, despite
-   the Ledger describing that as existing behaviour.
+### Required wording model
 
-One thing worth knowing before reading a card: because the expectation is a
-target for a blended score (80% games, 20% result), a card can honestly say
-"expected 71%, took 65%, won the match — performed about as expected". The
-verdict comes from the recorded residual, never from comparing those two
-percentages. If the board would rather the copy never showed an actual share
-below the expected one without further explanation, that is a product decision
-and CCode will take it.
+Keep the explanation factual and separate the two observable ideas:
 
-CCode has no other queued work.
+1. **Game-share expectation** — what percentage of games the pre-match ratings
+   implied for that team.
+2. **Match result contribution** — win / draw / loss is a separate 20% input to
+   the rating update.
 
-Do not change Sequential-v1 match mathematics.
+For the example Shaun flagged:
 
+> **Your team were favourites.**
+> Expected to win about **60% of the games**.
+> Won **18/30 games (60%)** and won the match.
+> **You matched the game-share expectation. The match result also contributes
+> to the rating calculation.**
+
+Then show the per-player rating movements.
+
+Do not use language such as:
+
+- `performed above expectation` when game share merely matched expectation;
+- `the win pushed you above expectation`;
+- anything implying the expected side already contains an explicit separate
+  match-result expectation that it does not.
+
+Where game share genuinely differs from expectation, say that directly:
+
+- `won more games than expected`;
+- `won about the expected share of games`;
+- `won fewer games than expected`.
+
+Then state the actual match result separately.
+
+Exact blended performance score / K / reliability may remain behind
+`See full calculation`.
+
+### Scope
+
+This is a **copy/presentation correction only**. Do not alter Sequential-v1,
+expected-score mathematics, K, reliability, or stored history in this pass.
+
+### Acceptance
+
+- test the 60%-expected / 60%-actual win case and ensure it does not say
+  `above expectation`;
+- retain simple player-facing language;
+- retain exact technical detail behind disclosure;
+- no engine changes.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
+
+### Rating model backlog — parked during refinement
+
+These are **not active implementation work**. Shaun wants the app refined first
+and the current engine left unchanged. Revisit together later with live data:
+
+1. **Responsiveness / small movements.** Does reliability accumulate too fast
+   for Money Padel's real match volume, causing established-player K values and
+   rating movements to become too small too early? Test sustained runs such as
+   8–2 / 7–3 rather than judging isolated matches.
+2. **Reliability curve calibration.** Compare the current `rc = 10` with slower
+   curves (for example 15/20/25) using the actual club dataset; measure movement
+   distributions, convergence after genuine improvement, ranking stability and
+   walk-forward accuracy before considering any change.
+3. **Expectation symmetry.** Sequential-v1 compares a blended actual score
+   (80% game share + 20% match result) against a single Elo expectation. Review
+   whether the expected side should itself include a separately modelled match
+   result expectation so wins/losses are not conceptually double-counted.
+4. **Sustained-winning recognition.** Check whether repeated wins — including
+   narrow wins — are reflected quickly enough by the base model. If not, decide
+   whether the answer belongs in the core model rather than as a cosmetic bonus.
+5. **Optional player volatility mechanic (`Prove It`).** Possible future
+   feature: an established player voluntarily accepts temporarily larger
+   two-way rating movement for a fixed run of matches. If explored, implement
+   as a separate K multiplier / volatility state, **not** by falsifying stored
+   Reliability. Model 2×/2.5× historically before product design; 4× may be too
+   aggressive.
+
+None of the above is authorised for implementation yet.
 
 1. **RESOLVED — monthly historical read strategy.** Use a month-filtered
    `ratingJourney` query (and the required Firestore index if needed). Section 2
@@ -428,6 +492,21 @@ Do not change Sequential-v1 match mathematics.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (wording-only refinement; model backlog parked)
+Shaun wants the current refinement phase to stay focused on presentation, not
+rating-model changes.
+
+Immediate fix: correct the plain-English rating explanation so game-share
+expectation and the separate 20% match-result contribution are described
+truthfully. A team matching its expected game share must not be labelled as
+`above expectation` solely because it won the match.
+
+The broader model questions — small movements/reliability curve, sustained
+winning, expectation symmetry, and a possible `Prove It` volatility mechanic —
+are now explicitly parked in Section 5 for later evidence-led review.
+
+**Baton → CCode for wording correction only.**
 
 ### CCode — 19 Sep 2026 (plain-English explanations; Games month defect)
 
@@ -1716,12 +1795,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Simplify the player-facing rating explanations~~ — **done**
-   (`3de23bf`). Padel language in front, exact figures behind
-   `See full calculation`, on profile cards, monthly cards and the Games feed.
-2. ~~Games tab stays on All time~~ — **done**, and it previously did not:
-   `selectedMonth` was shared with Rankings, which sets the last completed month
-   at boot. Games now has its own `gamesMonth`.
-3. ~~Regression coverage~~ — **done**. 267/267.
-4. ~~No change to Sequential-v1~~ — untouched.
-5. **Baton back to CGPT/Shaun for copy acceptance** — the only open item.
+1. **Correct player-facing rating wording** so game-share expectation and the
+   separate match-result contribution are not conflated.
+2. Add regression coverage for a team expected to win 60% of games, actually
+   winning 60%, and winning the match: copy must say it matched game-share
+   expectation, not that it performed above expectation.
+3. Keep technical blended-score/K/reliability details behind the calculation
+   disclosure.
+4. **Do not change Sequential-v1** in this refinement pass.
+5. Rating-model questions are parked in Section 5 backlog until Shaun explicitly
+   reopens methodology work.
+6. Update Ledger with commit/tests and baton back to CGPT/Shaun.
