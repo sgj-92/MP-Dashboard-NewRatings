@@ -234,7 +234,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Add player-facing Power Rating Guide in More | Players need both a short explanation and a detailed methodology view so small/unequal rating movements are understandable and defensible. The guide must explain expectation vs actual performance, reliability/K, why wins can move little, why losses can still gain rating, why partners move by different amounts, why reassessed/new players move faster, why club decisions are separate, and that ratings never reset monthly. Do **not** change Sequential-v1 merely because movements look small. |
 | Historical correction controls are admin-on-demand | The Play history must remain a player-facing results surface. `Correct match`, `Remove and replay`, and replay-warning copy must not render permanently on every game card. Hide them entirely for non-admin users; for admin, expose a compact per-card `…` / `Manage` control that reveals the maintenance actions only on demand. |
 | Player-facing rating explanations use match/game language first | Replace exposed `Performance score 0.xx against 0.xx expected` wording in normal player-facing UI with plain language: whether the team were favourites/underdogs/evenly matched, the approximate percentage of games they were expected to win, the percentage they actually won, the match result, whether they outperformed/met/underperformed expectation, and the resulting rating movement. Keep exact blended performance score, K and reliability only behind `See full calculation` / technical disclosure. Do not imply the model is games-share only: match result still contributes 20%. |
-| Games tab defaults to most recently completed full month | The Games view should match the monthly defaults used elsewhere in Rankings: when opened, its Month filter defaults to the most recently completed full calendar month, not `All time`. Users can still explicitly select `All time` or another month. |
+| Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
 
 ---
 
@@ -318,21 +318,13 @@ framing.
 
 ### Games tab default month
 
-Also fix the Games tab's Month filter default. Shaun has confirmed it currently
-opens on `All time`, unlike the other monthly views.
+**Correction from Shaun:** Play → Games should continue to default to **`All time`**.
 
-Required behavior:
+This is intentional and does **not** need to match the other monthly views.
+Users may still choose a specific month manually. Do not change the Games default
+to the most recently completed month.
 
-- on first open, default to the **most recently completed full calendar month**;
-- do not default to the current partial month;
-- keep `All time` available as an explicit user choice;
-- keep the user's in-session selection once they deliberately change it, unless
-  the existing app-wide filter behavior says otherwise;
-- use the same month-resolution rule/helper as the other tabs where practical,
-  rather than creating a second definition of "most recently completed month".
-
-Add a browser/regression test covering this default and confirming `All time`
-still works when selected.
+Add/retain regression coverage that the Games view opens on `All time`.
 
 ### Acceptance
 
@@ -509,16 +501,10 @@ still works when selected.
 
 ## 6. HANDOFFS
 
-### CGPT — 19 Sep 2026 (Games month default)
-Shaun spotted a consistency issue in Play → Games: the Month filter opens on
-`All time`, while the other monthly views default to the most recently completed
-full month.
-
-Product decision: Games should use the same default month rule as the rest of
-the app. Keep `All time` available, but only as an explicit selection.
-
-This is bundled into the active rating-explanation pass so CCode can fix both
-without another handoff.
+### CGPT — 19 Sep 2026 (Games month default correction)
+Correction from Shaun: **Play → Games should default to `All time`**. The
+difference from the other monthly views is intentional. Keep specific months
+available as manual filters; do not change the Games default to a completed month.
 
 ### CGPT — 19 Sep 2026 (simpler rating explanation)
 Shaun approved replacing technical player-facing `Performance score 0.xx vs
@@ -1745,8 +1731,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    calculation disclosure.
 4. Add regression coverage for a win, a loss with positive movement, and an
    underperformance case.
-5. **Fix Games tab month filter default** to the most recently completed full
-   calendar month, matching the other monthly views; retain explicit `All time`.
-6. Add regression coverage for the Games default and explicit `All time`.
+5. **Keep Games tab default on `All time`**. This is intentional; do not align
+   it to the completed-month default used elsewhere.
+6. Add/retain regression coverage that Games opens on `All time`.
 7. Do not change Sequential-v1 mathematics or create a second calculation path.
 8. Update Ledger with commit/tests and baton back to CGPT/Shaun.
