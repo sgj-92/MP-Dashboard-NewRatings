@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `3de23bf` |
-| Tests | **267 / 267 passing** (33 of them drive a real browser) |
+| Last verified implementation commit | `a0e3ead` |
+| Tests | **268 / 268 passing** (34 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -241,65 +241,26 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — wording correction only.**
+**Owner / baton: CGPT and Shaun — copy acceptance.**
 
-Shaun has accepted the simpler player-facing approach but spotted an important
-wording problem in the latest implementation. A team can match its expected
-game share exactly and still receive a positive rating movement because
-Sequential-v1's actual score separately gives 20% weight to the match result.
+The wording correction is in. A team that matches its expected game share is no
+longer told it performed above expectation; the game-share comparison and the
+match result are stated separately, and the movement is stated as a fact beside
+them. Details in the CCode handoff of 19 Sep in Section 6.
 
-Therefore the UI must **not** say `performed above expectation` merely because
-the blended rating residual is positive.
+What is wanted back:
 
-### Required wording model
+1. Read the corrected copy on a card and accept or amend it. Anything that reads
+   wrong is a one-line change; say which sentence.
+2. Note that three screenshots could not be regenerated (Firestore daily read
+   quota) and still show the superseded wording. The README names them. CCode
+   will regenerate on the next `Ledger CCode` unless someone does it first.
 
-Keep the explanation factual and separate the two observable ideas:
+CCode has no other queued work. The rating-model questions in Section 5 remain
+parked and unauthorised.
 
-1. **Game-share expectation** — what percentage of games the pre-match ratings
-   implied for that team.
-2. **Match result contribution** — win / draw / loss is a separate 20% input to
-   the rating update.
+Do not change Sequential-v1 match mathematics.
 
-For the example Shaun flagged:
-
-> **Your team were favourites.**
-> Expected to win about **60% of the games**.
-> Won **18/30 games (60%)** and won the match.
-> **You matched the game-share expectation. The match result also contributes
-> to the rating calculation.**
-
-Then show the per-player rating movements.
-
-Do not use language such as:
-
-- `performed above expectation` when game share merely matched expectation;
-- `the win pushed you above expectation`;
-- anything implying the expected side already contains an explicit separate
-  match-result expectation that it does not.
-
-Where game share genuinely differs from expectation, say that directly:
-
-- `won more games than expected`;
-- `won about the expected share of games`;
-- `won fewer games than expected`.
-
-Then state the actual match result separately.
-
-Exact blended performance score / K / reliability may remain behind
-`See full calculation`.
-
-### Scope
-
-This is a **copy/presentation correction only**. Do not alter Sequential-v1,
-expected-score mathematics, K, reliability, or stored history in this pass.
-
-### Acceptance
-
-- test the 60%-expected / 60%-actual win case and ensure it does not say
-  `above expectation`;
-- retain simple player-facing language;
-- retain exact technical detail behind disclosure;
-- no engine changes.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -492,6 +453,79 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 19 Sep 2026 (wording correction, and a read-quota finding)
+
+**Done. Baton to CGPT/Shaun for copy acceptance.** Copy and presentation only:
+no change to Sequential-v1, expected-score mathematics, K, reliability or stored
+history.
+
+**Shaun is right, and it is the objection I raised yesterday resolved the other
+way round.** Sequential-v1 compares a *blended* actual score — 80% game share,
+20% the match result — against a single expectation from the four ratings. A
+team can match its expected game share **exactly** and still move up, because
+the win contributes separately. Calling that "performed above expectation" is
+false: nothing about the games beat the expectation.
+
+So the plain layer no longer gives a blended verdict at all. It states two
+observable things and never mixes them:
+
+> **Your team were favourites.**
+> Based on the four players' ratings, you were expected to win about **60%** of
+> the games. You won **18 of 30 games (60%)** and won the match.
+> **You matched the game-share expectation.** The match result also contributes
+> to the rating calculation.
+> **Your rating moved +2.9.**
+
+The four verdicts are game-share comparisons only — *matched the game-share
+expectation* / *won about the expected share of games* / *won more games than
+expected* / *won fewer games than expected*. The movement is stated as a fact
+beside them rather than as their consequence, which is exactly what it is not.
+Per-player movements follow, on profile cards as well as monthly ones.
+
+The same rule now applies on the neutral Games card, where the live record shows
+why it matters: expected 71%, took 13 of 20 (65%), won the match — now
+*"Winners won fewer games than expected. The match result also contributes to
+the rating calculation"*, with a small positive movement underneath. It
+previously read "performed about as expected", which was a blended claim
+dressed as a claim about games.
+
+The small print no longer implies the expected side contains its own match
+result expectation: *"The match result is a separate input: your score for the
+rating is 80% the share of games you won and 20% the result itself."*
+
+Whether the expectation should itself model a match result is **Open Question
+backlog item 3**, and this pass deliberately does not touch it.
+
+| | |
+|---|---|
+| Tests | **268 / 268** (34 in a real browser) |
+| New test | Shaun's case exactly — 60% expected, 18/30 won, match won, blended residual positive and the rating up — asserting the copy says "matched the game-share expectation" and never "above expectation", "exceeded expectation" or "pushed you above" |
+
+---
+
+**A finding that needs recording: the beta exhausted its Firestore daily read
+quota today** (429 `RESOURCE_EXHAUSTED`). The cause is mine —
+`scripts/screenshots.js` re-read all 857 documents on every run, and between the
+import verification and a dozen capture runs while iterating on copy, that is a
+great many reads in one session.
+
+Fixed at the source: the script now caches the live record to disk and reuses
+it, so iterating on captures costs nothing (`--refresh` forces a fresh read),
+and its reads are sequential with backoff rather than three at once — three
+parallel reads of the whole record is itself enough to earn a 429.
+
+**Consequence, stated rather than hidden:** the quota had gone before the cache
+existed, so three screenshots could not be regenerated and still show the
+superseded wording — `06-monthly-breakdown`, `10b-games-correction` and
+`15-why-your-rating-moved`. The README says so at the top and points at the test
+that covers the corrected copy. **Re-run `node scripts/screenshots.js --refresh`
+once the quota resets**; CCode will do it on the next `Ledger CCode` if nobody
+has.
+
+This does not affect Open Question 1a: that exception is about the app's
+once-per-session journey read, which is unchanged and still well inside its
+review threshold. The quota went on tooling, not on the product.
 
 ### CGPT — 19 Sep 2026 (wording-only refinement; model backlog parked)
 Shaun wants the current refinement phase to stay focused on presentation, not
@@ -1753,6 +1787,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `a0e3ead` | Game-share wording correction: matching the expectation is no longer called performing above it; capture script caches the live record |
 | `3de23bf` | Plain-English rating explanations with the decimals behind a disclosure; Games given its own All-time month after finding it opened on August |
 | `346ed66` | Play history: correction/removal controls collapsed behind a per-card Manage affordance, and absent for non-admins |
 | `9de1a88` | Power Rating Guide in More, and "Why your rating moved" on the match card, read from persisted facts |
@@ -1795,14 +1830,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Correct player-facing rating wording** so game-share expectation and the
-   separate match-result contribution are not conflated.
-2. Add regression coverage for a team expected to win 60% of games, actually
-   winning 60%, and winning the match: copy must say it matched game-share
-   expectation, not that it performed above expectation.
-3. Keep technical blended-score/K/reliability details behind the calculation
-   disclosure.
-4. **Do not change Sequential-v1** in this refinement pass.
-5. Rating-model questions are parked in Section 5 backlog until Shaun explicitly
-   reopens methodology work.
-6. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+1. ~~Wording correction: never say "performed above expectation" for a matched
+   game share~~ — **done** (`a0e3ead`). Game-share comparison and match
+   result stated separately, on profile cards, monthly cards and the Games feed.
+2. ~~Test the 60%-expected / 60%-actual win case~~ — **done**. 268/268.
+3. ~~No engine changes~~ — Sequential-v1, expected-score, K, reliability and
+   stored history all untouched.
+4. **Regenerate three screenshots** once the beta's Firestore read quota resets:
+   `node scripts/screenshots.js --refresh`. They currently show the superseded
+   wording and the README says so. CCode will do this on the next
+   `Ledger CCode` if it is still outstanding.
+5. **Baton to CGPT/Shaun for copy acceptance.**
