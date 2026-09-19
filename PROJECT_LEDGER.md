@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `346ed66` |
-| Tests | **265 / 265 passing** (31 of them drive a real browser) |
+| Last verified implementation commit | `3de23bf` |
+| Tests | **267 / 267 passing** (33 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -240,103 +240,31 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — simplify player-facing rating explanations.**
+**Owner / baton: CGPT and Shaun — copy acceptance.**
 
-Shaun compared the old Play/result explanation with the new v3 wording and
-approved a simpler presentation. The current player-facing copy such as
-`Performance score 0.20 against 0.18 expected` is mathematically correct but
-too technical for normal players.
+The player-facing explanations now lead in padel language with the decimals
+behind `See full calculation`, and Play → Games keeps its own All-time month.
+Details in the CCode handoff of 19 Sep in Section 6.
 
-### Product decision
+What is wanted back:
 
-Normal player-facing explanations should use **padel language first**:
+1. Read the new explanation copy on a card — it is the deliverable. Anything
+   that reads wrong is a one-line change; say which sentence.
+2. Confirm Play → Games now opens on All time. It previously did not, despite
+   the Ledger describing that as existing behaviour.
 
-1. Was the team **favoured, underdogs, or roughly even** before the match?
-2. About what percentage of games were they expected to win?
-3. What percentage of games did they actually win?
-4. Did they win, lose or draw the match?
-5. Did they outperform, perform roughly as expected, or underperform?
-6. What was the resulting rating movement?
+One thing worth knowing before reading a card: because the expectation is a
+target for a blended score (80% games, 20% result), a card can honestly say
+"expected 71%, took 65%, won the match — performed about as expected". The
+verdict comes from the recorded residual, never from comparing those two
+percentages. If the board would rather the copy never showed an actual share
+below the expected one without further explanation, that is a product decision
+and CCode will take it.
 
-Preferred copy pattern:
+CCode has no other queued work.
 
-> **Your team were slight favourites.**
-> Based on the four players' ratings, you were expected to win about **53% of
-> the games**.
-> You actually won **60% of the games** and won the match.
-> **You performed above expectation → +5.7 rating points.**
+Do not change Sequential-v1 match mathematics.
 
-Loss example:
-
-> **Your team were underdogs.**
-> You were expected to win about **18% of the games**.
-> You won **20% of the games**, but lost the match.
-> **You still slightly exceeded expectations → +0.5 rating points.**
-
-Underperformance example:
-
-> **Your team were expected to be competitive.**
-> You were expected to win about **51% of the games**.
-> You won **32%** and lost the match.
-> **You performed below expectation → −5.4 rating points.**
-
-### Important truthfulness rule
-
-Do **not** imply that rating movement is calculated purely from game share.
-Sequential-v1 still uses:
-
-- 80% game share;
-- 20% match result;
-- then compares that blended actual score with persisted expectation.
-
-So wording such as:
-
-> `You were expected to win around 53% of the games. You won 60% and won the
-> match, so you performed better than expected.`
-
-is preferred because it is simple and still acknowledges the match result.
-
-### Technical detail moves one level down
-
-In the normal card/explanation, do not lead with raw decimals such as:
-
-- `Performance score 0.64 against 0.32 expected`;
-- `K 30`;
-- `Reliability 33% → 38%`.
-
-Keep those behind an expandable **`See full calculation`** / existing detailed
-calculation disclosure. The detailed view may continue to show exact persisted
-expected score, blended performance score, K and reliability.
-
-### Scope
-
-Apply this player-facing language consistently wherever the current
-`Why your rating moved` / match explanation appears, including profile match
-cards and monthly breakdown cards where relevant. Preserve the Power Rating
-Guide's detailed methodology; its summary may use the same plain-English
-framing.
-
-### Games tab default month
-
-**Correction from Shaun:** Play → Games should continue to default to **`All time`**.
-
-This is intentional and does **not** need to match the other monthly views.
-Users may still choose a specific month manually. Do not change the Games default
-to the most recently completed month.
-
-Add/retain regression coverage that the Games view opens on `All time`.
-
-### Acceptance
-
-- normal player-facing cards contain no raw `Performance score 0.xx against
-  0.xx expected` sentence;
-- show expected game-share %, actual game-share %, result and qualitative
-  expectation outcome;
-- exact technical values remain available in the detailed calculation view;
-- test a win, a loss with positive movement, and an underperformance case;
-- explanations must be derived from persisted match facts/calculation data,
-  not a second rating calculation;
-- no changes to Sequential-v1 mathematics.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -500,6 +428,70 @@ Add/retain regression coverage that the Games view opens on `All time`.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 19 Sep 2026 (plain-English explanations; Games month defect)
+
+**Both items done. Baton to CGPT/Shaun for copy acceptance.** Sequential-v1 is
+untouched and every figure is read back from the facts recorded when the match
+was rated.
+
+**1. Player-facing explanations now lead in padel language.** The four lines run
+in the order a player thinks in, and the decimals moved one level down:
+
+> **Your team were slight favourites.** Based on the four players' ratings, you
+> were expected to win about **53%** of the games. You won **60%** of the games
+> and won the match. **You performed above expectation → +5.7 rating points.**
+
+From the live record, the case players actually write in about:
+
+> **Your team were underdogs.** Based on the four players' ratings, you were
+> expected to win about **32%** of the games. You won **52%** of the games but
+> lost the match. **You still exceeded expectations → +3.6 rating points.**
+
+**The honesty rule is built into the copy, not bolted on.** The engine's
+expectation is the target for a *blended* score — 80% games won, 20% the match
+result. Quoting it as "expected to win about 53% of the games" is the
+simplification the club approved, so **every sentence that quotes it also states
+the result** ("and won the match", "but lost the match"), and a line of small
+print names the blend. Crucially, **the verdict is never derived by comparing
+the two percentages** — they measure different things. It comes from the
+residual the engine recorded, so it cannot contradict the movement printed
+beside it.
+
+A real card shows exactly why that matters: expected **71%**, took **65%**, won
+the match → *"performed about as expected"*. Comparing the percentages would
+have called that an underperformance; the recorded residual is +0.01, because
+the win carries 20%. The disclosure shows the 0.72 against 0.71.
+
+**`See full calculation`** now holds games won, the exact delivered and expected
+performance scores, the difference, K, and reliability before → after, plus the
+arithmetic. No raw performance-score sentence is left in front of a player on a
+profile card, a monthly card or the Games feed — a test sweeps all three.
+
+**2. Games month — the correction found a real defect.** The Ledger asked to
+*retain* coverage that Play → Games opens on All time. **It did not.**
+`selectedMonth` was a single global shared with Rankings, and Rankings sets it
+to the last completed month at boot, so Games was opening on **August**. Games
+now keeps its own `gamesMonth`, defaulting to All time and never following the
+monthly views. Users can still pick a month there manually, and that choice no
+longer moves the Rankings month either.
+
+The test asserts **both** halves — Games is on All time *and* Rankings is not —
+so the two cannot be quietly re-coupled by a later change.
+
+**Also fixed:** the disclosure printed "Weighting K 21.5" directly above
+"21 × (0.29 − 0.46)". Two roundings of one number in one panel is the sort of
+detail that makes a reader doubt the rest of it; there is now one rendering of K
+everywhere it appears, and a test that it reads the same in both places.
+
+| | |
+|---|---|
+| Tests | **267 / 267** (33 in a real browser) |
+| New / rewritten | the explanation is plain in front and exact behind · the three brief cases read as written · the standing headline agrees with the recorded ratings across every card · no normal card leads with a raw performance score · Games opens on All time while Rankings does not |
+| Screenshots | 16 — shot 15 shows both layers with the disclosure open |
+
+The Power Rating Guide's detailed methodology is unchanged, as asked; its
+summary already used this framing.
 
 ### CGPT — 19 Sep 2026 (Games month default correction)
 Correction from Shaun: **Play → Games should default to `All time`**. The
@@ -1682,6 +1674,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `3de23bf` | Plain-English rating explanations with the decimals behind a disclosure; Games given its own All-time month after finding it opened on August |
 | `346ed66` | Play history: correction/removal controls collapsed behind a per-card Manage affordance, and absent for non-admins |
 | `9de1a88` | Power Rating Guide in More, and "Why your rating moved" on the match card, read from persisted facts |
 | `94c3983` | Production match-facts import applied: 7 new matches, 14 players moved, verified against a fresh re-read |
@@ -1723,16 +1716,12 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Simplify player-facing rating movement explanations** per Section 4.
-2. Replace raw performance-score wording with favourite/underdog + expected
-   game-share + actual game-share + match result + qualitative outcome +
-   rating movement.
-3. Keep exact performance score, K and reliability only in the detailed
-   calculation disclosure.
-4. Add regression coverage for a win, a loss with positive movement, and an
-   underperformance case.
-5. **Keep Games tab default on `All time`**. This is intentional; do not align
-   it to the completed-month default used elsewhere.
-6. Add/retain regression coverage that Games opens on `All time`.
-7. Do not change Sequential-v1 mathematics or create a second calculation path.
-8. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+1. ~~Simplify the player-facing rating explanations~~ — **done**
+   (`3de23bf`). Padel language in front, exact figures behind
+   `See full calculation`, on profile cards, monthly cards and the Games feed.
+2. ~~Games tab stays on All time~~ — **done**, and it previously did not:
+   `selectedMonth` was shared with Rankings, which sets the last completed month
+   at boot. Games now has its own `gamesMonth`.
+3. ~~Regression coverage~~ — **done**. 267/267.
+4. ~~No change to Sequential-v1~~ — untouched.
+5. **Baton back to CGPT/Shaun for copy acceptance** — the only open item.
