@@ -236,31 +236,82 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Player-facing rating explanations use match/game language first | Replace exposed `Performance score 0.xx against 0.xx expected` wording in normal player-facing UI with plain language: whether the team were favourites/underdogs/evenly matched, the approximate percentage of games they were expected to win, the percentage they actually won, the match result, whether they outperformed/met/underperformed expectation, and the resulting rating movement. Keep exact blended performance score, K and reliability only behind `See full calculation` / technical disclosure. Do not imply the model is games-share only: match result still contributes 20%. |
 | Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
+| Ranking state terminology: Ranked / Idle / Inactive | Separate ranking eligibility from participation status. **Ranked** = active and currently meets the live-ranking rule. **Idle** = still part of Money Padel but currently below the recent-match threshold, so not shown in the live ranking. **Inactive** = explicitly not currently involved/participating. Idle is derived from recent activity; Inactive is an explicit club/player-status field. |
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
 ---
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun.**
+**Owner / baton: Claude Code — separate Idle vs Inactive player states.**
 
-The expanded Games card is compacted and `See full calculation` works — it was
-inert because a click on it collapsed the card underneath. Details in the CCode
-handoff of 19 Sep in Section 6.
+Shaun has identified that the current UI uses `INACTIVE` for two different
+things: players who are still part of Money Padel but temporarily do not meet
+the live-ranking activity threshold, and players who are genuinely not
+participating at all. These must be separated.
 
-What is wanted back:
+### Terminology and state model
 
-1. Confirm the compacted card is the right amount of information, and that the
-   disclosure holds the right technical facts.
-2. Note that three screenshots still show superseded wording; the beta's daily
-   Firestore read quota is exhausted. CCode will regenerate on the next
-   `Ledger CCode` — one read is all that is outstanding.
+Use three user-facing states:
 
-CCode has no other queued work. The rating-model questions in Section 5 remain
-parked and unauthorised.
+- **Ranked** — active player who currently meets the live Power Rankings
+  eligibility rule (currently 2+ matches in the last 30 days).
+- **Idle** — still an active Money Padel player, but currently below the
+  live-ranking activity threshold.
+- **Inactive** — explicitly not currently involved / not participating at all.
 
-Do not change Sequential-v1 match mathematics.
+Internally keep the dimensions separate:
 
+- explicit player participation status: `ACTIVE | INACTIVE`;
+- derived ranking state for active players: `RANKED | IDLE`.
+
+Do not derive true Inactive status from the 30-day ranking rule.
+
+### Rankings UI
+
+- Players currently shown below the divider because they have fewer than 2
+  matches in the last 30 days should display **IDLE**, not `INACTIVE`.
+- Change the divider to something like:
+  `Idle players — fewer than 2 matches in the last 30 days`.
+- Ranked players remain the normal ordered ranking above that divider.
+- True Inactive players should not be mixed into the Idle group.
+
+### Filters
+
+Add clear options so the two states can be controlled independently.
+
+Preferred structure:
+
+- **Ranking status**: Ranked / Include idle
+- **Player status**: Active / Include inactive
+
+Default should preserve the current player-facing experience unless existing
+behavior already intentionally differs: Ranked players visible; Idle may remain
+shown beneath the ranked list; true Inactive players hidden unless explicitly
+included.
+
+If true Inactive players are included, show them in a separate section below
+Idle with copy such as `Inactive players — not currently participating`.
+
+### Data / admin implications
+
+If the app does not yet have an explicit active/inactive participation field,
+add the narrowest safe state needed so Inactive can be set independently of
+ranking eligibility. Do not overload lifetime matches, recent activity, tier,
+or reliability to infer it.
+
+Preserve historical ratings and results for Inactive players; changing
+participation status is presentation/eligibility metadata, not a rating event.
+
+### Acceptance
+
+- an active player below the recent-match threshold renders as `IDLE`, not
+  `INACTIVE`;
+- a true Inactive player can be represented separately and excluded by default;
+- filters can include Idle and Inactive independently;
+- existing 2+ matches / 30 days ranking rule is unchanged;
+- no Sequential-v1 or historical rating changes;
+- targeted browser tests cover Ranked, Idle and Inactive states and filters.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -453,6 +504,24 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (Ranked / Idle / Inactive states)
+Shaun approved a terminology/state split for Rankings.
+
+**Ranked** = active and currently eligible for live rankings. **Idle** = still
+part of Money Padel but below the recent-match threshold. **Inactive** =
+explicitly not currently involved at all.
+
+The key architecture point is that participation status and ranking eligibility
+must be independent. Recent inactivity may make an active player Idle; it must
+never automatically make them Inactive.
+
+Add independent filter controls for Idle and Inactive, keep true Inactive
+players hidden by default, and relabel the current lower ranking section from
+Inactive to Idle.
+
+**Baton → CCode.** Implement terminology/state/filter cleanup with tests; no
+rating-engine changes.
 
 ### CCode — 19 Sep 2026 (compact Games card; `See full calculation` fixed)
 
@@ -1903,18 +1972,13 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Compact the expanded Games card~~ — **done** (`8600f1e`). Matchup,
-   optional gap line, one expectation/result line, per-player movements, the
-   short note, and the disclosure. The redundant explanation is gone.
-2. ~~Fix `See full calculation`~~ — **done**. It was inert because the summary
-   click bubbled to `.game-card-clickable`, collapsing the card and re-rendering
-   before the details could open. Both card handlers now ignore clicks from
-   inside a `<details>`.
-3. ~~Browser test that the disclosure is interactive~~ — **done**, asserting it
-   opens, closes, and does not collapse its card. 270/270.
-4. ~~No engine or stored-history changes~~ — untouched.
-5. **Regenerate the screenshots** once the beta's Firestore read quota resets:
-   `node scripts/screenshots.js`. Only the journey read is outstanding; players
-   and matches are cached. Three shots currently show superseded wording and the
-   README names them.
-6. **Baton to CGPT/Shaun.**
+1. **Separate Ranked / Idle / Inactive states** per Section 4.
+2. Relabel current recent-activity non-qualifiers as **Idle** and update the
+   divider copy.
+3. Add an explicit participation-status path for true **Inactive** players if
+   one does not already exist.
+4. Add independent filter controls for including Idle and Inactive players.
+5. Keep the 2+ matches / 30 days ranking rule unchanged.
+6. Preserve all ratings/history; status changes are metadata only.
+7. Add browser/regression coverage for Ranked, Idle, Inactive and the filters.
+8. Update Ledger with commit/tests and baton back to CGPT/Shaun.
