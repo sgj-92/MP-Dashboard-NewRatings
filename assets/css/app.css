@@ -234,6 +234,14 @@
     text-align:center;
   }
   .minGamesPresets{ display:flex; gap:5px; }
+  /* Ranking status and player status are separate questions, so they get
+     separate controls rather than one three-way toggle that implies an order. */
+  .stateFilterRow{ display:flex; flex-wrap:wrap; gap:10px 18px; margin-top:8px; }
+  .stateFilterGroup{ display:flex; align-items:center; gap:7px; }
+  .stateFilterLabel{
+    font-family:'Helvetica Neue', Arial, sans-serif; font-size:10.5px;
+    color:var(--text-dim); white-space:nowrap;
+  }
   .preset-btn{
     font-family:'Helvetica Neue', Arial, sans-serif;
     padding:5px 10px;
@@ -823,11 +831,16 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   text-align: center; letter-spacing: 0.02em;
 }
 .row.ineligible-row{ opacity: 0.6; }
-.inactive-tag{
+/* Two different facts, two different tags. Idle is temporary and says nothing
+   about the player; Inactive is a club status. They deliberately do not look
+   the same. */
+.inactive-tag,
+.idle-tag{
   display: inline-block; font-family: var(--font-interface); font-size: 9px; font-weight: 700;
   letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim);
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle;
 }
+.idle-tag{ color: var(--gold-soft); border-color: var(--gold-dim); }
 
 /* ==========================================================================
    PRESTIGE VISUAL SYSTEM v1 — reusable primitives

@@ -1,0 +1,110 @@
+// ===================== PLAYER STATE =====================
+// One place that decides whether a player is Ranked, Idle or Inactive.
+//
+// The app used to call two different things "inactive":
+//
+//   * a player who simply has not played much lately, and
+//   * a player who is not part of Money Padel at the moment.
+//
+// The first is temporary and says nothing about the person; the second is a
+// club fact. Showing the first as "Inactive" reads as "this player has left",
+// which is both wrong and, for anyone sitting out a fortnight, insulting.
+//
+// So the two dimensions are kept apart and never derived from one another:
+//
+//   PARTICIPATION  ACTIVE | INACTIVE   -- explicit club status, set by an admin
+//   RANKING        RANKED | IDLE       -- derived, and only for ACTIVE players
+//
+// A player is RANKED when they have at least MIN_MATCHES rated matches in the
+// trailing WINDOW_DAYS. Everything else about them -- tier, rating, lifetime
+// matches, reliability -- is irrelevant to that question and must never be
+// substituted for it. In particular, a lifetime-match minimum is a DISPLAY
+// FILTER on the rankings list, not an eligibility rule; conflating the two is
+// what made five genuinely active players show "#–" on their own profile.
+//
+// The match list is the v3 RATED set, which includes draws. A draw is rated:
+// it moves every player in it. Counting only wins and losses made a player's
+// eligibility depend on whether their recent games happened to finish.
+
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.PlayerState = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const WINDOW_DAYS = 30;
+  const MIN_MATCHES = 2;
+
+  const PARTICIPATION = { ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' };
+  const RANKING = { RANKED: 'RANKED', IDLE: 'IDLE' };
+
+  // What each state is called on screen, in one place so three surfaces cannot
+  // word it differently.
+  const LABEL = { RANKED: 'Ranked', IDLE: 'Idle', INACTIVE: 'Inactive' };
+
+  const DAY_MS = 86400000;
+
+  function windowStart(asOf) {
+    const end = typeof asOf === 'number' ? asOf : Date.parse(asOf);
+    return end - WINDOW_DAYS * DAY_MS;
+  }
+
+  // `ratedMatches` is [{ date: 'YYYY-MM-DD', players: [...] }] -- the v3 rated
+  // set, draws included. Dates are compared at UTC midnight so the same match
+  // never falls in or out of the window because of the reader's timezone.
+  function ratedMatchesInWindow(ratedMatches, name, asOf) {
+    const cutoff = windowStart(asOf);
+    return (ratedMatches || []).filter((m) =>
+      m && m.players && m.players.indexOf(name) !== -1
+      && Date.parse(m.date + 'T00:00:00Z') >= cutoff);
+  }
+
+  function recentCount(ratedMatches, name, asOf) {
+    return ratedMatchesInWindow(ratedMatches, name, asOf).length;
+  }
+
+  // The whole state of one player, as every surface should see it.
+  //
+  // `active` is the explicit club status. It defaults to true: a player nobody
+  // has marked inactive is active, and an absent flag must never be read as
+  // "not participating".
+  function stateOf({ ratedMatches, name, asOf, active }) {
+    const participation = active === false ? PARTICIPATION.INACTIVE : PARTICIPATION.ACTIVE;
+    const recent = recentCount(ratedMatches, name, asOf);
+    const meetsThreshold = recent >= MIN_MATCHES;
+
+    // An inactive player has no ranking state at all -- they are not in the
+    // running. They are not "idle", which would imply they are coming back.
+    const ranking = participation === PARTICIPATION.INACTIVE
+      ? null
+      : (meetsThreshold ? RANKING.RANKED : RANKING.IDLE);
+
+    return {
+      name,
+      participation,
+      ranking,
+      recentMatches: recent,
+      // The one question every surface actually asks: does this player get a
+      // rank number right now?
+      rankable: ranking === RANKING.RANKED,
+      label: ranking ? LABEL[ranking] : LABEL.INACTIVE,
+    };
+  }
+
+  // Convenience for list rendering: the states of many players at once.
+  function statesOf({ ratedMatches, names, asOf, activeOf }) {
+    const out = {};
+    (names || []).forEach((n) => {
+      out[n] = stateOf({ ratedMatches, name: n, asOf, active: activeOf ? activeOf(n) : true });
+    });
+    return out;
+  }
+
+  const thresholdText = () => `${MIN_MATCHES}+ matches in the last ${WINDOW_DAYS} days`;
+
+  return {
+    WINDOW_DAYS, MIN_MATCHES, PARTICIPATION, RANKING, LABEL,
+    ratedMatchesInWindow, recentCount, stateOf, statesOf, thresholdText,
+  };
+});

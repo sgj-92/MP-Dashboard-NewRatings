@@ -1343,3 +1343,199 @@ test('the expanded Games card stays compact', { skip }, async () => {
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== RANKED / IDLE / INACTIVE (19 Sep 2026) ===============
+// The app used to call two different things "inactive": a player who has not
+// played much lately, and a player who has left the club. These cover the
+// separation, and the eligibility bug that separation exposed.
+
+// Shaun spotted Ant Slice showing "#–" on Home despite recent activity. He has
+// well over the threshold; getViewerSnapshot was additionally requiring
+// total >= 10, which is the rankings list's default min-games DISPLAY filter,
+// not an eligibility rule.
+test('a player with recent matches gets a rank, whatever their lifetime total', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const name = 'Ant Slice';
+      const st = playerStateOf(name);
+      const snap = getViewerSnapshot(name);
+      const p = PLAYERS.find((x) => x.name === name);
+      return {
+        recent: st.recentMatches,
+        lifetime: p.total,
+        participation: st.participation,
+        ranking: st.ranking,
+        rankable: st.rankable,
+        overallRank: snap.overallRank,
+        tierRank: snap.tierRank,
+        eligible: snap.eligible,
+      };
+    });
+
+    assert.ok(r.recent >= 2, `the case under test needs recent matches, got ${r.recent}`);
+    assert.ok(r.lifetime < 10, `and a lifetime total under the old hardcoded 10, got ${r.lifetime}`);
+    assert.strictEqual(r.participation, 'ACTIVE');
+    assert.strictEqual(r.ranking, 'RANKED');
+    assert.strictEqual(r.rankable, true);
+    assert.ok(r.overallRank > 0, 'must have an overall rank, not "#–"');
+    assert.ok(r.tierRank > 0, 'must have a tier rank, not "#–"');
+    assert.strictEqual(r.eligible, true);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// One helper, one dataset, every surface. A player must not be Ranked in the
+// list and "#–" on their own profile.
+test('Ranked/Idle state and rank availability agree across every surface', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
+      rankingFilter = 'all'; participationFilter = 'active';
+      render();
+
+      // What the RANKINGS list says: a numbered row, or a dash under the
+      // Idle divider.
+      const listState = {};
+      [...document.querySelectorAll('#list .row')].forEach((row) => {
+        const name = row.dataset.player || (row.querySelector('.nm') || {}).textContent;
+        if (!name) return;
+        const rank = (row.querySelector('.rank') || {}).textContent;
+        listState[name.trim()] = {
+          ranked: rank !== '–',
+          idleTag: !!row.querySelector('.idle-tag'),
+        };
+      });
+
+      const disagreements = [];
+      Object.keys(listState).forEach((name) => {
+        const st = playerStateOf(name);                 // the shared helper
+        const snap = getViewerSnapshot(name);           // Home + Profile
+        const list = listState[name];
+        const expectedRanked = st.ranking === 'RANKED';
+
+        if (list.ranked !== expectedRanked) disagreements.push(`${name}: list ranked=${list.ranked}, helper=${st.ranking}`);
+        if (snap.eligible !== expectedRanked) disagreements.push(`${name}: snapshot eligible=${snap.eligible}, helper=${st.ranking}`);
+        if ((snap.overallRank !== null) !== expectedRanked) disagreements.push(`${name}: snapshot rank=${snap.overallRank}, helper=${st.ranking}`);
+        if (list.idleTag !== (st.ranking === 'IDLE')) disagreements.push(`${name}: idle tag=${list.idleTag}, helper=${st.ranking}`);
+      });
+
+      return { checked: Object.keys(listState).length, disagreements };
+    });
+
+    assert.ok(r.checked > 25, `not enough players checked (${r.checked})`);
+    assert.deepStrictEqual(r.disagreements, [],
+      'Rankings, Home and Profile must agree on every player');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('an active player below the threshold reads Idle, not Inactive', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
+      rankingFilter = 'all'; participationFilter = 'active';
+      render();
+      const divider = document.getElementById('eligibilityDivider');
+      const idleRows = [...document.querySelectorAll('#list .row')].filter((el) => el.querySelector('.idle-tag'));
+      const names = idleRows.map((el) => (el.dataset.player || el.querySelector('.nm').textContent).trim());
+      return {
+        divider: divider ? divider.textContent : null,
+        idleCount: idleRows.length,
+        inactiveTags: document.querySelectorAll('#list .inactive-tag').length,
+        allActive: names.every((n) => playerStateOf(n).participation === 'ACTIVE'),
+        listText: document.getElementById('list').innerText,
+      };
+    });
+
+    assert.ok(r.idleCount > 0, 'the fixture must contain idle players');
+    assert.match(r.divider, /^Idle players — fewer than 2 matches in the last 30 days$/);
+    assert.strictEqual(r.inactiveTags, 0, 'nobody below the divider may be tagged Inactive');
+    assert.strictEqual(r.allActive, true, 'every idle player is still an active member');
+    assert.doesNotMatch(r.listText, /Not currently ranked/,
+      'the old wording implied missing data rather than a state');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Idle and Inactive are filtered independently', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const snap = () => ({
+        rows: document.querySelectorAll('#list .row').length,
+        idle: document.querySelectorAll('#list .idle-tag').length,
+        inactive: document.querySelectorAll('#list .inactive-tag').length,
+        dividers: [...document.querySelectorAll('.eligibility-divider')].map((d) => d.textContent),
+      });
+      activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; minGames = 0; query = '';
+      const out = {};
+      rankingFilter = 'all'; participationFilter = 'active'; render(); out.byDefault = snap();
+      rankingFilter = 'ranked'; participationFilter = 'active'; render(); out.rankedOnly = snap();
+      rankingFilter = 'all'; participationFilter = 'all'; render(); out.withInactive = snap();
+      rankingFilter = 'ranked'; participationFilter = 'all'; render(); out.rankedPlusInactive = snap();
+      rankingFilter = 'all'; participationFilter = 'active';
+      return out;
+    });
+
+    // Default: ranked list, idle beneath it, nobody who has left the club.
+    assert.ok(r.byDefault.idle > 0);
+    assert.strictEqual(r.byDefault.inactive, 0, 'inactive players are hidden by default');
+    assert.deepStrictEqual(r.byDefault.dividers, ['Idle players — fewer than 2 matches in the last 30 days']);
+
+    // Ranked only: no idle group at all.
+    assert.strictEqual(r.rankedOnly.idle, 0);
+    assert.ok(r.rankedOnly.rows < r.byDefault.rows, 'hiding idle must remove rows');
+    assert.deepStrictEqual(r.rankedOnly.dividers, []);
+
+    // Include inactive: its own section, below idle.
+    assert.ok(r.withInactive.inactive > 0, 'the fixture must contain an inactive player');
+    assert.strictEqual(r.withInactive.rows, r.byDefault.rows + r.withInactive.inactive);
+    assert.deepStrictEqual(r.withInactive.dividers, [
+      'Idle players — fewer than 2 matches in the last 30 days',
+      'Inactive players — not currently participating',
+    ]);
+
+    // The two dimensions are genuinely independent: ranked-only still shows
+    // inactive when asked, and they are not mixed into the idle group.
+    assert.strictEqual(r.rankedPlusInactive.idle, 0);
+    assert.ok(r.rankedPlusInactive.inactive > 0);
+    assert.deepStrictEqual(r.rankedPlusInactive.dividers, ['Inactive players — not currently participating']);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The state filters share the .preset-btn class with the min-games row. An
+// unscoped selector would have fed parseInt(undefined) into minGames.
+test('the state filters and the min-games presets do not fight', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      activeTab = 'power'; selectedMonth = 'all'; activeTier = 'All'; query = '';
+      document.querySelector('#minGamesRow .preset-btn[data-n="5"]').click();
+      const afterMinGames = {
+        minGames,
+        rankingActive: document.querySelector('#stateFilterRow [data-ranking].active').dataset.ranking,
+        participationActive: document.querySelector('#stateFilterRow [data-participation].active').dataset.participation,
+      };
+      document.querySelector('#stateFilterRow [data-ranking="ranked"]').click();
+      const afterRanking = {
+        minGames,
+        minGamesActive: document.querySelector('#minGamesRow .preset-btn.active').dataset.n,
+        rankingFilter,
+      };
+      return { afterMinGames, afterRanking };
+    });
+
+    assert.strictEqual(r.afterMinGames.minGames, 5);
+    assert.strictEqual(r.afterMinGames.rankingActive, 'all', 'a min-games press must not clear the state filters');
+    assert.strictEqual(r.afterMinGames.participationActive, 'active');
+
+    assert.strictEqual(r.afterRanking.rankingFilter, 'ranked');
+    assert.strictEqual(r.afterRanking.minGames, 5, 'a state-filter press must not corrupt minGames');
+    assert.strictEqual(r.afterRanking.minGamesActive, '5');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

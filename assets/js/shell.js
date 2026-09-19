@@ -890,14 +890,17 @@ function renderMonthlyRatingCompareModal(modal, nameA, nameB, month){
 // playing again. Applies only to the All-Time Power Rankings list -- a
 // monthly leaderboard already has its own natural eligibility test
 // (you have to have played in that month to appear in it at all).
-const RANKING_ELIGIBILITY_DAYS = 30;
-const RANKING_ELIGIBILITY_MIN_MATCHES = 2;
+// Kept as names because several call sites read better with them, but the rule
+// itself now lives in PlayerState -- one definition, one dataset, every surface.
+const RANKING_ELIGIBILITY_DAYS = (typeof PlayerState !== 'undefined') ? PlayerState.WINDOW_DAYS : 30;
+const RANKING_ELIGIBILITY_MIN_MATCHES = (typeof PlayerState !== 'undefined') ? PlayerState.MIN_MATCHES : 2;
+
+// "Does this player get a rank number right now?" An INACTIVE player does not,
+// and neither does an idle one -- but for different reasons, which is why the
+// callers that need to tell them apart ask playerStateOf() instead.
 function isRankingEligible(name){
-  const cutoff = Date.now() - RANKING_ELIGIBILITY_DAYS*86400000;
-  const count = MATCHES.filter(m =>
-    (m.winners.includes(name) || m.losers.includes(name)) && new Date(m.date).getTime() >= cutoff
-  ).length;
-  return count >= RANKING_ELIGIBILITY_MIN_MATCHES;
+  const st = playerStateOf(name);
+  return st ? st.rankable : false;
 }
 
 // Splits the already-rendered, already-sorted list into an eligible (numbered)
@@ -915,13 +918,17 @@ function applyRankingEligibility(){
   const rows = [...list.children].filter(el => el.classList.contains('row'));
   if(rows.length === 0) return;
 
-  const eligible = [], ineligible = [];
+  const eligible = [], ineligible = [], inactive = [];
   rows.forEach(row=>{
     const name = row.querySelector('.nm')?.textContent;
-    if(name && !isRankingEligible(name)){ ineligible.push(row); }
+    const st = name ? playerStateOf(name) : null;
+    // Three groups, because there are three states. An inactive player is not
+    // a badly-performing idle one; they are not in the running at all.
+    if(st && st.participation === 'INACTIVE'){ inactive.push(row); }
+    else if(name && !isRankingEligible(name)){ ineligible.push(row); }
     else { eligible.push(row); }
   });
-  if(ineligible.length === 0) return; // nobody to set aside -- leave the list exactly as rendered
+  if(ineligible.length === 0 && inactive.length === 0) return; // leave the list exactly as rendered
 
   rows.forEach(r=>r.remove());
   eligible.forEach((row, i)=>{
@@ -930,24 +937,40 @@ function applyRankingEligibility(){
     list.appendChild(row);
   });
 
-  const divider = document.createElement('div');
-  divider.id = 'eligibilityDivider';
-  divider.className = 'eligibility-divider';
-  divider.textContent = `Not currently ranked — no ${RANKING_ELIGIBILITY_MIN_MATCHES}+ matches in the last ${RANKING_ELIGIBILITY_DAYS} days`;
-  list.appendChild(divider);
-
-  ineligible.forEach(row=>{
+  // Placed in .meta, not .nm -- .nm truncates long names with an ellipsis,
+  // which could hide an appended tag entirely for anyone with a longer name.
+  const unrank = (row, tagClass, tagText)=>{
     const rankEl = row.querySelector('.rank');
     if(rankEl) rankEl.textContent = '–';
     row.classList.add('ineligible-row');
-    // Placed in .meta, not .nm -- .nm truncates long names with an ellipsis,
-    // which could hide an appended tag entirely for anyone with a longer name.
     const metaEl = row.querySelector('.meta');
-    if(metaEl && !metaEl.querySelector('.inactive-tag')){
-      metaEl.insertAdjacentHTML('afterbegin', '<span class="inactive-tag">Inactive</span> · ');
+    if(metaEl && !metaEl.querySelector('.' + tagClass)){
+      metaEl.insertAdjacentHTML('afterbegin', `<span class="${tagClass}">${tagText}</span> · `);
     }
     list.appendChild(row);
-  });
+  };
+  const addDivider = (id, text)=>{
+    const d = document.createElement('div');
+    d.id = id;
+    d.className = 'eligibility-divider';
+    d.textContent = text;
+    list.appendChild(d);
+  };
+
+  // Idle is not Inactive. These players are still part of Money Padel; they
+  // just have not played enough lately to hold a live rank. Calling that
+  // "Inactive" read as "this player has left".
+  if(ineligible.length){
+    addDivider('eligibilityDivider',
+      `Idle players — fewer than ${RANKING_ELIGIBILITY_MIN_MATCHES} matches in the last ${RANKING_ELIGIBILITY_DAYS} days`);
+    ineligible.forEach(row=> unrank(row, 'idle-tag', 'Idle'));
+  }
+
+  // Only present at all when the reader has asked to include them.
+  if(inactive.length){
+    addDivider('inactiveDivider', 'Inactive players — not currently participating');
+    inactive.forEach(row=> unrank(row, 'inactive-tag', 'Inactive'));
+  }
 }
 
 // ---- Rankings podium -----------------------------------------------------
@@ -1440,13 +1463,18 @@ function getViewerSnapshot(name){
   const p = PLAYERS.find(x=>x.name===name);
   if(!p) return null;
 
-  // Overall / tier rank -- respects the same eligibility rule as the live
-  // Rankings list, so a personalised "you're #4" always matches what the
-  // official list would show, computed fresh rather than duplicated.
-  const eligibleOverall = PLAYERS.filter(x=>x.total>=10 && isRankingEligible(x.name)).sort((a,b)=>b.rating-a.rating);
+  // Overall / tier rank -- the SAME rule as the live Rankings list, via the one
+  // helper. It used to add `x.total>=10` on top, which is the rankings list's
+  // default min-games *display filter*, not an eligibility rule. That extra
+  // condition is why five genuinely active players -- Ant Slice among them,
+  // with eight rated matches in the last thirty days -- saw "#– in Tier A ·
+  // #– Overall" on their own profile. A display filter must never decide
+  // whether somebody has a rank.
+  const eligibleOverall = PLAYERS.filter(x=>isRankingEligible(x.name)).sort((a,b)=>b.rating-a.rating);
   const overallRank = eligibleOverall.findIndex(x=>x.name===name) + 1;
   const eligibleInTier = eligibleOverall.filter(x=>x.tier===p.tier);
   const tierRank = eligibleInTier.findIndex(x=>x.name===name) + 1;
+  const state = playerStateOf(name);
 
   const form = computeRecentForm(name, 10);
   const bestPartner = BEST_PARTNER[name] || null;
@@ -1480,6 +1508,9 @@ function getViewerSnapshot(name){
     overallRank: overallRank > 0 ? overallRank : null,
     tierRank: tierRank > 0 ? tierRank : null,
     eligible: isRankingEligible(name),
+    // The full state, so a surface can say WHY there is no rank rather than
+    // printing a dash and leaving it looking like missing data.
+    state,
     total: p.total, wins: p.wins, losses: p.losses, winpct: p.winpct,
     recentForm: form,
     bestPartner,
@@ -1520,7 +1551,11 @@ function computePromotionGap(name){
 }
 
 function computeClubPulse(){
-  const eligible = PLAYERS.filter(p=>p.total>=10 && isRankingEligible(p.name));
+  // Same rule as the Rankings list and the profile, via the one helper. This
+  // carried the same stray `total>=10` that made five active players rankless
+  // on their own profile, so Club Pulse could name a "top ranked" player the
+  // rankings list did not have at the top.
+  const eligible = PLAYERS.filter(p=>isRankingEligible(p.name));
   const topRanked = eligible.slice().sort((a,b)=>b.rating-a.rating)[0] || null;
 
   let inForm = null;
@@ -1699,7 +1734,7 @@ function renderHomeDashboard(){
         <span class="tier-badge tier-${viewer.tier.toLowerCase()}" style="width:32px;height:32px;font-size:14px;">${viewer.tier}</span>
         <div class="home-tier-sub">${snap.eligible
           ? `#${snap.tierRank||'–'} in Tier ${viewer.tier} · #${snap.overallRank||'–'} Overall`
-          : `Tier ${viewer.tier} · <span class="inactive-tag">Inactive</span>`
+          : `Tier ${viewer.tier} · <span class="${viewer.state && viewer.state.participation === 'INACTIVE' ? 'inactive-tag' : 'idle-tag'}">${viewer.state ? viewer.state.label : 'Idle'}</span>`
         }</div>
       </div>
       <div class="home-yourgame-divider"></div>

@@ -525,6 +525,31 @@ function computeElo(matches, tierMap, startingTierMap){
 // `expected_score` and `actual_score` are the engine's performance scores
 // (0.80 x game share + 0.20 x the result). They are NOT a share of games, and
 // are named so they cannot be mistaken for `game_share_winner`, which is.
+// The v3 RATED match set, in the shape PlayerState reads: every match the
+// engine actually rated, draws included, with the players it moved. Built from
+// the recorded MATCH_UPDATE events rather than from MATCHES, which deliberately
+// excludes draws -- counting only decided games made a player's eligibility
+// depend on whether their recent matches happened to finish.
+function v3RatedMatchList(){
+  return Object.values(V3_MATCH_FACTS || {}).map(f => ({
+    date: f.date,
+    players: Object.keys(f.byPlayer || {}),
+  }));
+}
+
+// One player's Ranked / Idle / Inactive state, from the one helper. Every
+// surface that shows a rank, a rank dash or a status tag goes through here.
+function playerStateOf(name, asOf){
+  if(typeof PlayerState === 'undefined') return null;
+  const p = PLAYERS.find(x => x.name === name);
+  return PlayerState.stateOf({
+    ratedMatches: v3RatedMatchList(),
+    name,
+    asOf: asOf === undefined ? Date.now() : asOf,
+    active: p ? p.active !== false : true,
+  });
+}
+
 function enrichMatches(matches){
   return matches.map(m=>{
     const gw = m.sets.reduce((s,set)=>s+set[0],0);
@@ -1012,6 +1037,14 @@ let activeSort = "wins";
 let activeSortP = "rating";
 let query = "";
 let minGames = 10;
+// Two independent dimensions, never derived from one another.
+//   rankingFilter       'ranked' = ranked players only; 'all' = idle shown too
+//   participationFilter 'active' = active players only; 'all' = inactive too
+// The defaults preserve what a player sees today: ranked list, idle beneath it,
+// nobody who has left the club mixed in.
+let rankingFilter = 'all';
+let participationFilter = 'active';
+
 let selectedMonth = 'all';
 // The Play history keeps its OWN month, and it stays on All time. Rankings and
 // the monthly views deliberately open on the last completed month; the results
@@ -1543,22 +1576,43 @@ document.getElementById('search').addEventListener('input', e=>{
 });
 
 const minGamesInput = document.getElementById('minGamesInput');
+// Scoped to #minGamesRow. `.preset-btn` is a shared button style used by the
+// state filters and half the Admin screen too, so an unscoped selector here
+// would clear their selected state and, worse, feed parseInt(undefined) into
+// minGames the moment somebody pressed one.
+const MIN_GAMES_BTNS = '#minGamesRow .preset-btn';
 function setMinGames(n){
   minGames = n;
   minGamesInput.value = n;
-  document.querySelectorAll('.preset-btn').forEach(b=> b.classList.toggle('active', parseInt(b.dataset.n)===n));
+  document.querySelectorAll(MIN_GAMES_BTNS).forEach(b=> b.classList.toggle('active', parseInt(b.dataset.n)===n));
 }
 minGamesInput.addEventListener('input', e=>{
   minGames = Math.max(0, parseInt(e.target.value) || 0);
-  document.querySelectorAll('.preset-btn').forEach(b=> b.classList.toggle('active', parseInt(b.dataset.n)===minGames));
+  document.querySelectorAll(MIN_GAMES_BTNS).forEach(b=> b.classList.toggle('active', parseInt(b.dataset.n)===minGames));
   render();
 });
-document.querySelectorAll('.preset-btn').forEach(b=>{
+document.querySelectorAll(MIN_GAMES_BTNS).forEach(b=>{
   b.onclick = ()=>{
     minGames = parseInt(b.dataset.n);
     minGamesInput.value = minGames;
-    document.querySelectorAll('.preset-btn').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll(MIN_GAMES_BTNS).forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
+    render();
+  };
+});
+
+// Ranking status and player status. Two groups, each independent of the other.
+document.querySelectorAll('#stateFilterRow [data-ranking]').forEach(b=>{
+  b.onclick = ()=>{
+    rankingFilter = b.dataset.ranking;
+    document.querySelectorAll('#stateFilterRow [data-ranking]').forEach(x=>x.classList.toggle('active', x === b));
+    render();
+  };
+});
+document.querySelectorAll('#stateFilterRow [data-participation]').forEach(b=>{
+  b.onclick = ()=>{
+    participationFilter = b.dataset.participation;
+    document.querySelectorAll('#stateFilterRow [data-participation]').forEach(x=>x.classList.toggle('active', x === b));
     render();
   };
 });
@@ -1657,6 +1711,12 @@ function render(){
     });
   }
   rows = rows.filter(p => p.total >= minGames);
+  // Participation first: somebody who is not in the club is not "idle", and
+  // must not be filed under a ranking state at all.
+  if(participationFilter === 'active') rows = rows.filter(p => p.active !== false);
+  // Ranking status. Idle players are still shown by default, beneath the ranked
+  // list, which is where applyRankingEligibility puts them.
+  if(rankingFilter === 'ranked') rows = rows.filter(p => p.active === false || isRankingEligible(p.name));
   if(query) rows = rows.filter(p => p.name.toLowerCase().includes(query));
   rows = sortRows(rows);
 
