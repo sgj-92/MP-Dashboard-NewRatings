@@ -1,26 +1,31 @@
 // ===================== RATING EXPLAINER =====================
-// Plain English for a rating movement the engine already computed.
+// Padel language for a rating movement the engine already computed.
 //
-// This module CALCULATES NOTHING. Every number it speaks about was written at
-// the time the match was rated and is read back through MatchFacts: the
-// pre-match expected score, the performance score actually delivered, the K
-// that was applied, and the movement that resulted. A second calculation path
-// would be a second answer, and the one thing worse than an unexplained number
-// is two explanations that disagree.
+// This module CALCULATES NOTHING. The pre-match expectation, the performance
+// score actually delivered, the K applied and the movement that resulted were
+// all written at the time the match was rated and are read back through
+// MatchFacts. A second calculation path would be a second answer, and the one
+// thing worse than an unexplained number is two explanations that disagree.
 //
-// What it is FOR: the three complaints the guide exists to pre-empt.
+// What changed, and why: "Performance score 0.20 against 0.18 expected" is
+// exactly right and tells a normal player nothing. The order of the sentence is
+// now the order a player actually thinks in --
 //
-//   "I won -- why did I only get +1?"   because K falls as evidence builds,
-//                                        and because winning as a favourite is
-//                                        what was already expected.
-//   "I lost -- why did I go up?"        because the rating tracks performance
-//                                        against expectation, not the result.
-//   "Why did my partner move more?"     because K is per-player.
+//   1. were we favoured, even, or up against it?
+//   2. what were we expected to take?
+//   3. what did we take, and did we win?
+//   4. so: better or worse than expected, and what did that cost or earn?
 //
-// The sentences are deliberately built from the same three facts every time --
-// what was expected, what was delivered, and how established the rating was --
-// so a player who reads two of them can see the pattern rather than a series of
-// unrelated excuses.
+// -- and the decimals live behind "See full calculation", not in front of it.
+//
+// ONE HONESTY NOTE, which the copy is built around. The engine's expectation is
+// the target for a BLENDED score: 80% the share of games won, 20% the match
+// result. Quoting it as "expected to win about 53% of the games" is a
+// simplification the club has approved, so every sentence that quotes it also
+// states the result -- "and won the match", "but lost the match" -- and the
+// blend is named in a line of small print. The verdict itself is never derived
+// by comparing the two percentages: it comes from the residual the engine
+// recorded, so it cannot contradict the movement printed beside it.
 
 (function (root, factory) {
   const api = factory();
@@ -29,12 +34,17 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // Inside this band, a side performed to expectation rather than above or
-  // below it. It is the band the match cards already use, kept identical so
-  // the sentence and the label above it can never contradict each other.
-  const NEUTRAL_BAND = 0.03;
+  // Matches NEUTRAL_PERFORMANCE_BAND in the application, so a card and its
+  // explanation can never disagree about whether a performance was ordinary.
+  const NEUTRAL_BAND = 0.05;
 
-  // Reliability bands, as the profile and v3Bridge use them.
+  // Below this the two pairings were level enough that neither was favoured.
+  const CLOSE_GAP = 15;
+  // Below this, favoured but only just.
+  const SLIGHT_GAP = 60;
+
+  const BLEND_NOTE = 'Your score blends the games you won (80%) with the match result (20%).';
+
   function establishment(reliability) {
     if (typeof reliability !== 'number') return null;
     const pct = reliability * 100;
@@ -44,28 +54,37 @@
     return { key: 'high', phrase: 'very well established' };
   }
 
-  // The gap must be described exactly as the match card above it describes it,
-  // or the two disagree by a point and the explanation looks like a different
-  // calculation. The card rounds the MAGNITUDE (Math.round(Math.abs(gap))) and
-  // tests the unrounded value against the band, so this does the same:
-  // Math.round(-28.5) is -28 while Math.round(28.5) is 29, which is precisely
-  // how "underdogs by 28" ended up under "underdogs by 29 pts going in".
-  const CLOSE_GAP = 15;
-  function expectationPhrase(preRating, oppRating) {
+  // The headline. Qualitative on purpose: a player knows what "underdogs"
+  // means and does not know what "underdogs by 214 pts" means.
+  function standingOf(preRating, oppRating) {
     if (typeof preRating !== 'number' || typeof oppRating !== 'number') return null;
     const gap = preRating - oppRating;
     const magnitude = Math.round(Math.abs(gap));
-    if (Math.abs(gap) < CLOSE_GAP) return `evenly matched (${magnitude} pts between the pairings)`;
-    return gap > 0 ? `favourites by ${magnitude} pts` : `underdogs by ${magnitude} pts`;
+    if (Math.abs(gap) < CLOSE_GAP) {
+      return { key: 'even', headline: 'Your team were expected to be competitive.', gap: magnitude };
+    }
+    const slight = Math.abs(gap) < SLIGHT_GAP;
+    if (gap > 0) {
+      return { key: slight ? 'slight-favourites' : 'favourites',
+        headline: slight ? 'Your team were slight favourites.' : 'Your team were favourites.', gap: magnitude };
+    }
+    return { key: slight ? 'slight-underdogs' : 'underdogs',
+      headline: slight ? 'Your team were slight underdogs.' : 'Your team were underdogs.', gap: magnitude };
   }
 
+  const pct = (v) => Math.round(v * 100);
+  // One rendering of K, used everywhere it is shown. To a tenth, without a
+  // pointless trailing zero: 21.5 stays 21.5, 20.0 reads 20.
+  const kText = (v) => String(Math.round(v * 10) / 10);
   const fmt1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
   const signed = (v) => (v > 0 ? '+' : '') + fmt1(v);
 
-  // `view` is MatchFacts.forPlayer(...): { me, mine, theirs }.
-  // `result` is 'win' | 'loss' | 'draw', which comes from the match record and
-  // is never inferred from the score.
-  function explain(view, result) {
+  // `view`   is MatchFacts.forPlayer(...): { me, mine, theirs }
+  // `result` is 'win' | 'loss' | 'draw', taken from the match record -- never
+  //          inferred from the score, which production and v3 both allow to
+  //          run against the winner.
+  // `games`  is { mine, theirs }: the real game counts for this player's side.
+  function explain(view, result, games) {
     if (!view || !view.me || !view.mine || !view.theirs) return null;
     const me = view.me;
     const expected = view.mine.expected;
@@ -74,72 +93,75 @@
 
     const residual = actual - expected;
     const delta = me.ratingDelta;
+    const standing = standingOf(view.mine.preRating, view.theirs.preRating);
     const band = establishment(me.previousReliability);
-    const standing = expectationPhrase(view.mine.preRating, view.theirs.preRating);
 
-    const parts = [];
+    const totalGames = games && typeof games.mine === 'number' && typeof games.theirs === 'number'
+      ? games.mine + games.theirs : null;
+    const actualShare = totalGames ? games.mine / totalGames : null;
 
-    // 1. Where the pairing stood going in, and what that asked of them.
-    if (standing) parts.push(`You went in as ${standing}, so the engine expected ${fmt1(expected * 100)}%.`);
-    else parts.push(`The engine expected ${fmt1(expected * 100)}% of you going in.`);
+    // 2 + 3: what was asked, what was delivered, and how the match ended.
+    const expectedLine = `Based on the four players' ratings, you were expected to win about <b>${pct(expected)}%</b> of the games.`;
+    const resultClause = result === 'draw' ? 'and the match was not finished'
+      : (result === 'win' ? 'and won the match' : 'but lost the match');
+    const actualLine = actualShare === null
+      ? `You ${result === 'win' ? 'won the match' : result === 'draw' ? 'did not finish the match' : 'lost the match'}.`
+      : `You won <b>${pct(actualShare)}%</b> of the games ${resultClause}.`;
 
-    // 2. What was actually delivered, against that.
-    if (residual > NEUTRAL_BAND) {
-      parts.push(`You delivered ${fmt1(actual * 100)}% — better than expected.`);
+    // 4: the verdict, from the residual the engine recorded -- NOT from
+    // comparing the two percentages above, which measure different things.
+    let verdict;
+    if (result === 'loss' && delta > 0) {
+      verdict = residual > NEUTRAL_BAND ? 'You still exceeded expectations' : 'You still edged past expectation';
+    } else if (result === 'win' && delta < 0) {
+      verdict = 'You fell below expectation even so';
+    } else if (residual > NEUTRAL_BAND) {
+      verdict = 'You performed above expectation';
     } else if (residual < -NEUTRAL_BAND) {
-      parts.push(`You delivered ${fmt1(actual * 100)}% — short of that.`);
+      verdict = 'You performed below expectation';
     } else {
-      parts.push(`You delivered ${fmt1(actual * 100)}% — almost exactly as expected.`);
+      verdict = 'You performed about as expected';
     }
+    const verdictLine = typeof delta === 'number'
+      ? `<b>${verdict} → ${signed(delta)} rating points.</b>`
+      : `<b>${verdict}.</b>`;
 
-    // 3. How far one result can move this player at all. K is the answer to
-    //    "why so little", so it is named and its size is described in the same
-    //    breath as the evidence that set it. The pace language is decided from
-    //    K itself rather than from the movement, so it can never contradict
-    //    the sentence that follows.
-    if (typeof me.kUsed === 'number') {
-      const k = Math.round(me.kUsed);
-      const pace = k >= 25 ? 'a long way' : (k >= 15 ? 'at a moderate pace' : 'slowly');
-      parts.push(band
-        ? `Your rating is ${band.phrase}, so one result moves it ${pace} (K ${k}).`
-        : `One result moves your rating ${pace} (K ${k}).`);
-    }
-
-    // 4. The movement, explained by the two facts above rather than restated.
-    //    The first two branches are the ones players write in about.
-    if (typeof delta === 'number') {
-      const expectedOutcome = Math.abs(residual) <= NEUTRAL_BAND;
-      if (result === 'loss' && delta > 0) {
-        parts.push(`You lost the match and your rating still went up, by ${signed(delta)}: it follows how you played against expectation, not who won.`);
-      } else if (result === 'win' && delta < 0) {
-        parts.push(`You won and your rating still went down, by ${signed(delta)}: less was delivered than the pairing was expected to deliver.`);
-      } else if (result === 'win' && expectedOutcome) {
-        parts.push(`Winning roughly as expected tells the engine nothing it did not already believe, so the move is small: ${signed(delta)}.`);
-      } else if (delta === 0) {
-        parts.push('The result matched the expectation closely enough to move nothing at all.');
-      } else {
-        parts.push(`That comes to ${signed(delta)}.`);
-      }
-    }
+    const lines = [];
+    if (standing) lines.push(`<b>${standing.headline}</b>`);
+    lines.push(expectedLine);
+    lines.push(actualLine);
+    lines.push(verdictLine);
 
     return {
-      text: parts.join(' '),
-      parts,
+      lines,
+      text: lines.join(' ').replace(/<\/?b>/g, ''),
+      blendNote: BLEND_NOTE,
+      standing,
+      verdict,
       expected,
       actual,
+      expectedPct: pct(expected),
+      actualGameSharePct: actualShare === null ? null : pct(actualShare),
+      games: totalGames ? { mine: games.mine, theirs: games.theirs, total: totalGames } : null,
       residual,
       kUsed: me.kUsed,
       delta,
       reliability: me.previousReliability,
+      newReliability: me.newReliability,
       band: band ? band.key : null,
-      // The arithmetic, restated from the same persisted numbers so a reader can
-      // check the sentence rather than take it on trust. NOT a recalculation of
-      // the rating: the movement shown is the stored one.
+      bandPhrase: band ? band.phrase : null,
+      // For the disclosure only. The arithmetic is restated from the same
+      // persisted numbers so a reader can check the sentence rather than take
+      // it on trust -- it is not a recalculation of the rating.
+      // The same K the row above it prints, to one decimal place. Two
+      // different roundings of one number inside one panel is the sort of
+      // detail that makes a reader doubt the rest of it.
+      kText: typeof me.kUsed === 'number' ? kText(me.kUsed) : null,
       arithmetic: (typeof me.kUsed === 'number')
-        ? `${Math.round(me.kUsed)} × (${actual.toFixed(2)} − ${expected.toFixed(2)}) = ${signed(me.kUsed * residual)}`
+        ? `${kText(me.kUsed)} × (${actual.toFixed(2)} − ${expected.toFixed(2)}) = ${signed(me.kUsed * residual)}`
         : null,
     };
   }
 
-  return { explain, establishment, expectationPhrase, NEUTRAL_BAND, CLOSE_GAP };
+  return { explain, establishment, standingOf, kText, NEUTRAL_BAND, CLOSE_GAP, SLIGHT_GAP, BLEND_NOTE };
 });

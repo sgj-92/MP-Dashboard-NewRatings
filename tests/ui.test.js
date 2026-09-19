@@ -752,9 +752,10 @@ test('the guide never implies a monthly reset or a reward for winning', { skip }
 });
 
 // The explanation must describe the SAME persisted facts the card already
-// shows. If it ever disagreed with the movement printed above it, it would be a
-// second calculation path, which is the one thing it must not be.
-test('"Why your rating moved" describes the persisted facts, not a recalculation', { skip }, async () => {
+// shows, in two layers: padel language in front, decimals behind "See full
+// calculation". If the two layers ever disagreed it would be a second
+// calculation path, which is the one thing it must not be.
+test('"Why your rating moved" is plain in front and exact behind', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => {
@@ -766,21 +767,27 @@ test('"Why your rating moved" describes the persisted facts, not a recalculation
       const matchId = MATCHES
         .filter((m) => m.winners.includes('Shaun') || m.losers.includes('Shaun'))
         .sort((a, b) => (a.date < b.date ? 1 : -1))[0].id;
-      const facts = MatchFacts.forPlayer(V3_MATCH_FACTS[matchId], 'Shaun');
       const m = MATCHES.find((x) => x.id === matchId);
+      const facts = MatchFacts.forPlayer(V3_MATCH_FACTS[matchId], 'Shaun');
       const won = m.winners.includes('Shaun');
+
+      const why = card.querySelector('.why-moved');
+      const calc = why.querySelector('.wm-calc');
+      calc.open = true;
 
       return {
         found: true,
-        cardText: card.innerText.replace(/\n+/g, ' | '),
-        why: card.querySelector('.why-moved').innerText.replace(/\n+/g, ' '),
-        // Straight from the record, to compare the prose against.
+        plain: why.querySelector('.why-moved-body').innerText.replace(/\n+/g, ' '),
+        note: why.querySelector('.why-moved-note').innerText,
+        calc: calc.innerText.replace(/\n+/g, ' | '),
         recorded: {
           expected: facts.mine.expected,
           actual: facts.mine.actual,
           kUsed: facts.me.kUsed,
           delta: facts.me.ratingDelta,
           reliability: facts.me.previousReliability,
+          myGames: won ? m.games_winner : m.games_loser,
+          oppGames: won ? m.games_loser : m.games_winner,
         },
         won,
       };
@@ -789,65 +796,100 @@ test('"Why your rating moved" describes the persisted facts, not a recalculation
     assert.strictEqual(r.found, true, 'a profile match card must carry the explanation');
     const rec = r.recorded;
 
-    // Every number in the sentence is the recorded one.
-    assert.ok(r.why.includes(`K ${Math.round(rec.kUsed)}`),
-      `the explanation must quote the recorded K (${rec.kUsed}), got: ${r.why}`);
-    assert.ok(r.why.includes((rec.expected * 100).toFixed(1)),
-      `must quote the recorded expected score, got: ${r.why}`);
-    assert.ok(r.why.includes((rec.actual * 100).toFixed(1)),
-      `must quote the recorded performance score, got: ${r.why}`);
+    // --- the plain layer: percentages, result, verdict, movement ---
+    assert.ok(r.plain.includes(`${Math.round(rec.expected * 100)}%`),
+      `must state the expected share as a whole percent, got: ${r.plain}`);
+    const share = Math.round((rec.myGames / (rec.myGames + rec.oppGames)) * 100);
+    assert.ok(r.plain.includes(`${share}%`),
+      `must state the actual game share (${share}%), got: ${r.plain}`);
+    assert.match(r.plain, r.won ? /and won the match/ : /but lost the match/);
+    assert.match(r.plain, /performed (above|below) expectation|as expected|exceeded expectation|edged past expectation|fell below expectation/);
     const deltaText = (rec.delta > 0 ? '+' : '') + rec.delta.toFixed(1);
-    assert.ok(r.why.includes(deltaText),
-      `must quote the recorded movement ${deltaText}, got: ${r.why}`);
+    assert.ok(r.plain.includes(`${deltaText} rating points`),
+      `must state the recorded movement ${deltaText}, got: ${r.plain}`);
 
-    // And the card above it prints that same movement, so the two agree.
-    assert.ok(r.cardText.includes(`${deltaText} pts`),
-      'the card and its explanation must quote the same movement');
+    // --- and no raw performance-score sentence in front of the player ---
+    assert.doesNotMatch(r.plain, /[Pp]erformance score/,
+      'the plain layer must not quote the raw performance score');
+    assert.doesNotMatch(r.plain, /\bK \d/, 'the plain layer must not quote K');
+    assert.doesNotMatch(r.plain, /Reliability/i, 'the plain layer must not quote reliability');
 
-    // The restated arithmetic is the recorded numbers, not a fresh sum.
-    assert.match(r.why, new RegExp(`${Math.round(rec.kUsed)} × \\(${rec.actual.toFixed(2)} − ${rec.expected.toFixed(2)}\\)`));
+    // --- the honesty note: movement is not game share alone ---
+    assert.match(r.note, /80%/);
+    assert.match(r.note, /20%/);
+    assert.match(r.note, /match result/i);
+
+    // --- the exact layer, behind the disclosure ---
+    assert.match(r.calc, /See full calculation/);
+    assert.ok(r.calc.includes(rec.actual.toFixed(2)), 'the disclosure must carry the exact performance score');
+    assert.ok(r.calc.includes(rec.expected.toFixed(2)), 'the disclosure must carry the exact expected score');
+    const k1 = String(Math.round(rec.kUsed * 10) / 10);
+    assert.ok(r.calc.includes(k1), 'the disclosure must carry K');
+    assert.ok(r.calc.includes(`${Math.round(rec.reliability * 100)}%`), 'the disclosure must carry reliability');
+    assert.match(r.calc, new RegExp(`${k1.replace('.', '\\.')} × \\(${rec.actual.toFixed(2)} − ${rec.expected.toFixed(2)}\\)`));
+    // One rounding of K, not two, inside one panel.
+    assert.ok((r.calc.match(new RegExp(k1.replace('.', '\\.'), 'g')) || []).length >= 2,
+      `K must read the same in the row and the arithmetic, got: ${r.calc}`);
 
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
 
-// The three complaints, each against a case constructed from real recorded
-// shapes, so the wording is checked and not just the presence of a sentence.
-test('the explanation answers the three complaints it exists for', { skip }, async () => {
+// The three shapes the brief names, each against a constructed case so the
+// wording itself is checked rather than the mere presence of a sentence.
+test('the explanation reads as padel, in the order a player thinks in', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => {
       const mk = (k, rel, delta, expected, actual, mine, theirs) => ({
-        me: { playerId: 'X', kUsed: k, previousReliability: rel, ratingDelta: delta },
+        me: { playerId: 'X', kUsed: k, previousReliability: rel, newReliability: rel + 0.02, ratingDelta: delta },
         mine: { expected, actual, preRating: mine }, theirs: { preRating: theirs },
       });
+      const plain = (e) => e.lines.join(' ').replace(/<\/?b>/g, '');
       return {
-        smallWin: RatingExplainer.explain(mk(11, 0.88, 1.4, 0.62, 0.63, 1450, 1380), 'win').text,
-        riseOnLoss: RatingExplainer.explain(mk(13, 0.78, 3.1, 0.40, 0.55, 1300, 1500), 'loss').text,
-        fallOnWin: RatingExplainer.explain(mk(12, 0.85, -1.8, 0.75, 0.60, 1600, 1300), 'win').text,
-        newPlayer: RatingExplainer.explain(mk(37, 0.10, 7.4, 0.45, 0.65, 1400, 1420), 'win').text,
+        win: plain(RatingExplainer.explain(mk(19, 0.6, 5.7, 0.53, 0.68, 1420, 1400), 'win', { mine: 15, theirs: 10 })),
+        lossUp: plain(RatingExplainer.explain(mk(12, 0.8, 0.5, 0.18, 0.16, 1200, 1600), 'loss', { mine: 5, theirs: 20 })),
+        under: plain(RatingExplainer.explain(mk(18, 0.65, -5.4, 0.51, 0.256, 1405, 1400), 'loss', { mine: 8, theirs: 17 })),
+        note: RatingExplainer.explain(mk(19, 0.6, 5.7, 0.53, 0.68, 1420, 1400), 'win', { mine: 15, theirs: 10 }).blendNote,
       };
     });
 
-    assert.match(r.smallWin, /moves it slowly \(K 11\)/);
-    assert.match(r.smallWin, /tells the engine nothing it did not already believe/);
-    assert.match(r.riseOnLoss, /You lost the match and your rating still went up, by \+3\.1/);
-    assert.match(r.riseOnLoss, /not who won/);
-    assert.match(r.fallOnWin, /You won and your rating still went down, by -1\.8/);
-    assert.match(r.newPlayer, /barely established yet/);
-    assert.match(r.newPlayer, /moves it a long way \(K 37\)/);
+    // A win, above expectation.
+    assert.match(r.win, /^Your team were slight favourites\./);
+    assert.match(r.win, /expected to win about 53% of the games/);
+    assert.match(r.win, /You won 60% of the games and won the match\./);
+    assert.match(r.win, /You performed above expectation → \+5\.7 rating points\./);
 
-    // The pace language comes from K, so it can never contradict the movement.
-    assert.doesNotMatch(r.smallWin, /a long way/);
-    assert.doesNotMatch(r.newPlayer, /moves it slowly/);
+    // A loss that still earned points -- the case players write in about.
+    assert.match(r.lossUp, /^Your team were underdogs\./);
+    assert.match(r.lossUp, /expected to win about 18% of the games/);
+    assert.match(r.lossUp, /You won 20% of the games but lost the match\./);
+    assert.match(r.lossUp, /You still (exceeded expectations|edged past expectation) → \+0\.5 rating points\./);
+
+    // Underperformance.
+    assert.match(r.under, /^Your team were expected to be competitive\./);
+    assert.match(r.under, /expected to win about 51% of the games/);
+    assert.match(r.under, /You won 32% of the games but lost the match\./);
+    assert.match(r.under, /You performed below expectation → -5\.4 rating points\./);
+
+    // None of the three leads with a decimal, a K or a reliability.
+    [r.win, r.lossUp, r.under].forEach((line) => {
+      assert.doesNotMatch(line, /[Pp]erformance score/);
+      assert.doesNotMatch(line, /0\.\d\d/);
+      assert.doesNotMatch(line, /\bK \d/);
+      assert.doesNotMatch(line, /Reliability/i);
+    });
+
+    // And the blend is stated, so nothing implies movement is game share alone.
+    assert.match(r.note, /80%.*20%|games.*80%/);
+    assert.match(r.note, /match result/i);
   } finally { await app.close(); }
 });
 
-// The explanation sits directly under the card's own "underdogs by N pts going
-// in". If the two round differently they disagree by a point, and the
-// explanation reads like a second calculation. Math.round(-28.5) is -28 while
-// Math.round(28.5) is 29, which is exactly how that happened once.
-test('the explanation states the same pairing gap as the card above it', { skip }, async () => {
+// The headline must agree with which side was actually favoured, across every
+// card rather than one hand-picked example. The standing is qualitative now, so
+// the check is on direction, not on a number the card no longer prints.
+test('the standing headline agrees with the recorded pre-match ratings', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => {
@@ -858,23 +900,125 @@ test('the explanation states the same pairing gap as the card above it', { skip 
         [...document.querySelectorAll('.match')].forEach((card) => {
           const why = card.querySelector('.why-moved');
           if (!why) return;
-          const body = card.innerText;
-          const cardGap = body.match(/(favoured|underdogs) by (\d+) pts going in/);
-          const whyGap = why.innerText.match(/(favourites|underdogs) by (\d+) pts/);
-          const cardClose = body.match(/evenly matched going in \((\d+) pt gap\)/);
-          const whyClose = why.innerText.match(/evenly matched \((\d+) pts between/);
-          if (cardGap && whyGap) out.push({ name, card: cardGap[2], why: whyGap[2] });
-          else if (cardClose && whyClose) out.push({ name, card: cardClose[1], why: whyClose[1] });
-          else out.push({ name, card: cardGap || cardClose ? 'gap' : 'none', why: whyGap || whyClose ? 'gap' : 'none' });
+          const body = why.querySelector('.why-moved-body').innerText;
+          const headline = body.split('.')[0] + '.';
+          const id = [...card.querySelectorAll('*')].length ? null : null;
+          out.push({ name, headline });
         });
         closeSheet();
       });
-      return out;
+      // And the same thing computed straight from the record, per player.
+      const expectations = [];
+      ['Shaun', 'Rishi', 'Eli', 'Osh'].forEach((name) => {
+        MATCHES.filter((m) => m.winners.includes(name) || m.losers.includes(name))
+          .sort((a, b) => (a.date < b.date ? 1 : -1))
+          .forEach((m) => {
+            const v = MatchFacts.forPlayer(V3_MATCH_FACTS[m.id], name);
+            if (!v) return;
+            expectations.push({
+              name,
+              headline: RatingExplainer.standingOf(v.mine.preRating, v.theirs.preRating).headline,
+              gap: v.mine.preRating - v.theirs.preRating,
+            });
+          });
+      });
+      return { out, expectations };
     });
-    assert.ok(r.length > 10, `not enough cards checked (${r.length})`);
-    const wrong = r.filter((x) => x.card !== x.why);
-    assert.deepStrictEqual(wrong, [],
-      'the card and its explanation must state the same gap');
+
+    assert.ok(r.out.length > 20, `not enough cards checked (${r.out.length})`);
+    assert.strictEqual(r.out.length, r.expectations.length, 'one explanation per rated match');
+    const wrong = r.out.filter((x, i) => x.headline !== r.expectations[i].headline);
+    assert.deepStrictEqual(wrong, [], 'the headline must be the one the recorded ratings imply');
+
+    // The direction is right: nobody is called a favourite while behind.
+    const backwards = r.expectations.filter((e) =>
+      (/favourites/.test(e.headline) && e.gap <= 0) || (/underdogs/.test(e.headline) && e.gap >= 0));
+    assert.deepStrictEqual(backwards, [], 'a favourite must actually have been ahead');
+
+    // Every shape is exercised by the real record, not just one of them.
+    const kinds = new Set(r.expectations.map((e) => e.headline));
+    assert.ok(kinds.size >= 3, `the record should exercise several standings, saw ${[...kinds].join(' / ')}`);
+
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The rule, swept across every normal card rather than checked on one: no raw
+// performance-score sentence in front of a player, anywhere.
+test('no normal card leads with a raw performance score', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const found = [];
+      const scan = (where, text) => {
+        if (/[Pp]erformance score \d?\d?\.\d\d against/.test(text)) found.push(where);
+      };
+
+      // Profile cards.
+      selectedMonth = 'all'; minGames = 10; render();
+      openSheet('Shaun');
+      [...document.querySelectorAll('.match')].forEach((el, i) => {
+        // The disclosure is deliberately excluded: that is where it belongs.
+        const clone = el.cloneNode(true);
+        [...clone.querySelectorAll('.wm-calc')].forEach((d) => d.remove());
+        scan(`profile card ${i}`, clone.innerText);
+      });
+      closeSheet();
+
+      // Monthly breakdown.
+      selectedMonth = '2026-07'; minGames = 5; render();
+      openMonthlyRatingBreakdown('Shaun', '2026-07');
+      const modal = document.getElementById('monthlyRatingModal');
+      const mClone = modal.cloneNode(true);
+      [...mClone.querySelectorAll('.wm-calc, #mrbFullCalcBody, #mrbHowItWorksBody')].forEach((d) => d.remove());
+      scan('monthly breakdown', mClone.innerText);
+      modal.classList.remove('show');
+
+      // Games feed, with a card expanded.
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      selectedMonth = 'all'; renderGamesTab();
+      const first = document.querySelector('#gamesView .game-card-clickable');
+      if (first) first.click();
+      const gv = document.getElementById('gamesView').cloneNode(true);
+      [...gv.querySelectorAll('.wm-calc')].forEach((d) => d.remove());
+      scan('games feed', gv.innerText);
+
+      return { found };
+    });
+    assert.deepStrictEqual(r.found, [],
+      'a raw performance-score sentence is still in front of a player');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Shaun's correction: Play -> Games opens on All time and is not aligned with
+// the completed-month views.
+test('the Games view opens on All time', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      renderGamesTab();
+      const sel = document.getElementById('gamesMonthSelect');
+      const dates = [...document.querySelectorAll('#gamesView .section-heading')]
+        .map((e) => e.textContent.trim()).filter((t) => /\d{4}/.test(t));
+      return {
+        gamesMonth,
+        // The rankings month is deliberately NOT All time, which is the whole
+        // point: Games must not inherit it.
+        rankingsMonth: selectedMonth,
+        selectValue: sel ? sel.value : null,
+        months: new Set(dates.map((d) => d.slice(-4))).size,
+        cards: document.querySelectorAll('#gamesView .game-card-clickable').length,
+      };
+    });
+    assert.strictEqual(r.gamesMonth, 'all', 'Games must open on All time');
+    assert.notStrictEqual(r.rankingsMonth, 'all',
+      'this test is only meaningful while Rankings defaults to a month');
+    assert.strictEqual(r.selectValue, 'all', 'and the month control must say so');
+    assert.ok(r.cards > 100, `All time should show the whole record, saw ${r.cards} cards`);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });

@@ -1013,6 +1013,13 @@ let activeSortP = "rating";
 let query = "";
 let minGames = 10;
 let selectedMonth = 'all';
+// The Play history keeps its OWN month, and it stays on All time. Rankings and
+// the monthly views deliberately open on the last completed month; the results
+// feed is a history you scroll, not a month you inspect, and Shaun's decision
+// is that it does not follow them. Sharing `selectedMonth` meant the boot-time
+// rankings default silently became the Games default too, so Games opened on
+// August rather than All time.
+let gamesMonth = 'all';
 let selectedGamesPlayer = 'all';
 
 // ---- Data Range: app-wide dataset setting, not a per-screen filter --------
@@ -1379,11 +1386,12 @@ function topNTied(statsArr, key, n, descending){
 }
 const ZERO_MONTH_STATS = {wins:0,losses:0,total:0,winpct:0,avg_match_strength:0,avg_overperf_pct:0,game_diff:0,upset_wins:0,upset_losses:0,upset_total:0,upset_rate:0};
 
-function populateMonthSelect(selectEl){
+function populateMonthSelect(selectEl, value){
   if(!selectEl) return;
+  const current = value === undefined ? selectedMonth : value;
   const months = getAvailableMonths();
-  selectEl.innerHTML = `<option value="all">All time</option>` + months.map(m=>`<option value="${m}" ${m===selectedMonth?'selected':''}>${monthLabel(m)}</option>`).join('');
-  selectEl.value = selectedMonth;
+  selectEl.innerHTML = `<option value="all">All time</option>` + months.map(m=>`<option value="${m}" ${m===current?'selected':''}>${monthLabel(m)}</option>`).join('');
+  selectEl.value = current;
 }
 
 function applyTabVisibility(){
@@ -3376,6 +3384,17 @@ function playerIsOnStoredWinningSide(match, name){
   return (match.winners || []).includes(name);
 }
 
+// Who played, with the ratings they carried INTO the match, read from the
+// player's own side. Context the explanation above it assumes but does not
+// repeat.
+function matchLineupHtml(m, name){
+  const atTheTime = (n) => (m.deltas && m.deltas[n]) ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n);
+  const mine = m.winners.includes(name) ? m.winners : m.losers;
+  const theirs = m.winners.includes(name) ? m.losers : m.winners;
+  const side = (names) => names.map(n => `${n} (${atTheTime(n)})`).join(' &amp; ');
+  return `<b style="color:var(--text);">${side(mine)}</b> vs ${side(theirs)} <span style="font-size:10.5px;">(ratings going in)</span>`;
+}
+
 function buildMonthlyMatchCardsHtml(ctx){
   if(!ctx.journey) return `<div class="section-sub">No match data available.</div>`;
   const matchEntries = ctx.journey.entries.filter(e=>e.kind==='match');
@@ -3393,9 +3412,10 @@ function buildMonthlyMatchCardsHtml(ctx){
         <div style="font-size:11.5px;">${resultLabel}</div>
       </div>
       <div style="margin-top:2px; font-size:12.5px; font-weight:700;">${scoreForViewer(m, playerIsOnStoredWinningSide(m, ctx.name))}</div>
+      <div style="font-size:11.5px; color:var(--text-dim);">${matchLineupHtml(m, ctx.name)}</div>
       <div style="font-size:11.5px; color:var(--text-dim);"><span class="${deltaClass}" style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} pts</span> for ${ctx.name} → ${Math.round(e.rating)}</div>
-      ${buildMatchDetailBlock(m, true)}
-      ${whyYourRatingMovedHtml(m.id, ctx.name, m.isDraw ? 'draw' : (d && d.won ? 'win' : 'loss'))}
+      ${whyYourRatingMovedHtml(m, ctx.name)}
+      ${matchDeltaLineHtml(m)}
     </div>`;
   }).join('');
 }
@@ -3564,22 +3584,6 @@ function openSheet(name, matchFilter){
     const favored = myTeamRating > oppTeamRating;
     const gap = Math.round(Math.abs(myTeamRating - oppTeamRating));
 
-    // The engine's own pre-match expectation for this player's side, read back.
-    // These are performance scores (0.80 x games won + 0.20 x the result), so
-    // they are reported as scores and never as a percentage of games -- the
-    // game count on the line above is the game figure.
-    const myExpected = won ? m.expected_score : (1 - m.expected_score);
-    const myActual = won ? m.actual_score : (1 - m.actual_score);
-    const myGames = won ? m.games_winner : m.games_loser;
-    const oppGames = won ? m.games_loser : m.games_winner;
-
-    const perf = (myActual - myExpected) * 100;
-    const perfRounded = Math.round(perf * 10) / 10;
-    const neutralPts = NEUTRAL_PERFORMANCE_BAND * 100;
-    const perfLabel = perfRounded >= neutralPts ? `<span class="perf-pos">beat expectation by ${perfRounded} pts</span>`
-                     : (perfRounded <= -neutralPts ? `<span class="perf-neg">fell ${Math.abs(perfRounded)} pts short of expectation</span>`
-                     : `<span style="color:var(--text-dim)">played to expectation</span>`);
-
     const isCloseGoingIn = gap < 15;
     let upsetTag = '';
     if(!isCloseGoingIn){
@@ -3587,23 +3591,12 @@ function openSheet(name, matchFilter){
       else if(!favored && won) upsetTag = `<div class="upset-tag upset-good">🔥 UPSET WIN — won as the underdog</div>`;
     }
 
-    const favLabel = isCloseGoingIn
-      ? `evenly matched going in (${gap} pt gap)`
-      : (favored ? `favoured by ${gap} pts going in` : `underdogs by ${gap} pts going in`);
-
     // Ratings as they were going into this match, not as they are today.
     const atTheTime = (n) => (m.deltas && m.deltas[n]) ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n);
     const namesWithRatings = myTeam.map(n => `${n} (${atTheTime(n)})`).join(' &amp; ');
     const oppWithRatings = oppTeam.map(n => `${n} (${atTheTime(n)})`).join(' &amp; ');
 
     const delta = deltaByMatchId[m.id];
-    let deltaLabel = '';
-    if(delta !== undefined){
-      const deltaClass = delta > 0 ? 'perf-pos' : (delta < 0 ? 'perf-neg' : '');
-      const deltaText = delta > 0 ? `+${delta}` : `${delta}`;
-      deltaLabel = `<div style="margin-top:4px; font-weight:700;"><span class="${deltaClass}">${deltaText} pts</span> <span style="color:var(--text-dim); font-weight:400; font-size:11px;">rating change from this game</span></div>`;
-    }
-
     // One place owns correction, so a blast radius is never shown twice or
     // acted on from two screens at once.
     const adminButtons = isUnlocked
@@ -3615,13 +3608,7 @@ function openSheet(name, matchFilter){
       ${upsetTag}
       <div class="teams"><b>${namesWithRatings}</b> vs ${oppWithRatings}</div>
       <div class="score">${scoreForViewer(m, won)}${m.note ? ' · '+m.note : ''}</div>
-      <div style="margin-top:5px; font-size:11.5px; color:var(--text-dim); line-height:1.5;">
-        ${favLabel}<br/>
-        took ${myGames}/${myGames+oppGames} games (${Math.round(100*myGames/((myGames+oppGames)||1))}%) &middot; performance score ${myActual.toFixed(2)} against ${myExpected.toFixed(2)} expected
-      </div>
-      <div style="margin-top:4px;">${perfLabel}</div>
-      ${deltaLabel}
-      ${whyYourRatingMovedHtml(m.id, name, m.isDraw ? 'draw' : (won ? 'win' : 'loss'))}
+      ${whyYourRatingMovedHtml(m, name)}
       ${adminButtons}
     </div>`;
   }).join('');
@@ -5173,24 +5160,64 @@ let addGameExpanded = false;
 // variant: K is per-player, so the four players move by four different amounts,
 // and the rating is continuous, so a match moved it by exactly one amount
 // whichever month filter happens to be on screen.
-// "Why your rating moved", in plain English, for ONE named player. Everything
-// in it is read back from the facts the engine recorded at the time -- there is
-// no second calculation path, and the movement quoted is the stored movement,
-// not a re-derivation of it. Only shown where the app knows whose card this is;
-// a neutral match card has no "you" to address.
-function whyYourRatingMovedHtml(matchId, name, result){
+// "Why your rating moved", in the order a player actually thinks in: were we
+// favoured, what were we expected to take, what did we take and did we win, and
+// so what did that earn or cost. Everything in it is read back from the facts
+// the engine recorded at the time -- there is no second calculation path, and
+// the movement quoted is the stored movement.
+//
+// The decimals live behind "See full calculation". "Performance score 0.20
+// against 0.18 expected" is exactly right and tells a normal player nothing.
+//
+// Only rendered where the app knows whose card this is; a neutral match card
+// has no "you" to address.
+function whyYourRatingMovedHtml(m, name){
   if(typeof RatingExplainer === 'undefined') return '';
-  const facts = V3_MATCH_FACTS[matchId];
+  const facts = V3_MATCH_FACTS[m.id];
   if(!facts) return '';
   const view = MatchFacts.forPlayer(facts, name);
   if(!view) return '';
-  const e = RatingExplainer.explain(view, result);
+
+  // The real game counts for this player's side, from the match record.
+  const onStoredWinningSide = playerIsOnStoredWinningSide(m, name);
+  const games = (typeof m.games_winner === 'number' && typeof m.games_loser === 'number')
+    ? { mine: onStoredWinningSide ? m.games_winner : m.games_loser,
+        theirs: onStoredWinningSide ? m.games_loser : m.games_winner }
+    : null;
+  const result = m.isDraw ? 'draw' : (m.winners.includes(name) ? 'win' : 'loss');
+
+  const e = RatingExplainer.explain(view, result, games);
   if(!e) return '';
   return `<div class="why-moved">
     <div class="why-moved-head">Why ${name}'s rating moved</div>
-    <div class="why-moved-body">${e.text}</div>
-    ${e.arithmetic ? `<div class="why-moved-sum">K × (performance − expected) = ${e.arithmetic}</div>` : ''}
+    <div class="why-moved-body">${e.lines.join(' ')}</div>
+    <div class="why-moved-note">${e.blendNote}</div>
+    ${buildFullCalculationHtml(e)}
   </div>`;
+}
+
+// The exact persisted figures, one level down. This is where the raw decimals
+// belong: available to anyone who wants to check the sentence above, in front
+// of nobody who does not.
+function buildFullCalculationHtml(e){
+  const rows = [];
+  if(e.games) rows.push(['Games won', `${e.games.mine} of ${e.games.total} (${e.actualGameSharePct}%)`]);
+  rows.push(['Performance score delivered', e.actual.toFixed(2)]);
+  rows.push(['Pre-match expected score', e.expected.toFixed(2)]);
+  rows.push(['Difference', (e.residual > 0 ? '+' : '') + (Math.round(e.residual * 100) / 100).toFixed(2)]);
+  if(e.kText) rows.push(['Weighting K', e.kText]);
+  if(typeof e.reliability === 'number'){
+    rows.push(['Reliability', `${Math.round(e.reliability * 100)}%`
+      + (typeof e.newReliability === 'number' ? ` → ${Math.round(e.newReliability * 100)}%` : '')]);
+  }
+  return `<details class="wm-calc">
+    <summary class="wm-calc-summary">See full calculation</summary>
+    <div class="wm-calc-body">
+      ${rows.map(([k, v])=>`<div class="wm-calc-row"><span>${k}</span><b>${v}</b></div>`).join('')}
+      ${e.arithmetic ? `<div class="wm-calc-sum">K × (performance − expected) = ${e.arithmetic}</div>` : ''}
+      <div class="wm-calc-note">The performance score is 0.80 × the share of games won + 0.20 × the match result. Every figure here was recorded when the match was rated and is read back, never recomputed.</div>
+    </div>
+  </details>`;
 }
 
 function matchDeltaLineHtml(m){
@@ -5248,22 +5275,34 @@ function buildMatchDetailBlock(m, contextHasMonthFigure){
   const losersWithRatings = m.losers.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
 
   const actualPct = Math.round(m.game_share_winner*100);
-  // The performance score is 80% games won + 20% the result. It is NOT the
-  // share of games, which is on the line above, so it never borrows that
-  // wording -- two near-identical labels read as a contradiction even when
-  // both numbers are right.
+  const expectedPct = Math.round(m.expected_score*100);
+  // Qualitative in front, decimals behind. The verdict comes from the residual
+  // the engine recorded, NOT from comparing the two percentages: they measure
+  // different things, and a comparison would eventually disagree with the
+  // movement printed underneath it.
   const perf = Math.round(m.performance_residual*1000)/10;
   const neutralPts = NEUTRAL_PERFORMANCE_BAND * 100;
-  const perfLabel = perf >= neutralPts ? `<span class="perf-pos">${sideLabel} beat expectation by ${perf} pts</span>`
-                   : (perf <= -neutralPts ? `<span class="perf-neg">${sideLabel} fell ${Math.abs(perf)} pts short of expectation</span>`
-                   : `<span style="color:var(--text-dim);">played to expectation</span>`);
+  // Starts its own line, so it starts with a capital.
+  const Side = sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1);
+  const perfLabel = perf >= neutralPts ? `<span class="perf-pos">${Side} performed above expectation</span>`
+                   : (perf <= -neutralPts ? `<span class="perf-neg">${Side} performed below expectation</span>`
+                   : `<span style="color:var(--text-dim);">${Side} performed about as expected</span>`);
 
   return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim); line-height:1.6;">
     <div><b style="color:var(--text);">${winnersWithRatings}</b> vs ${losersWithRatings} <span style="font-size:10.5px;">(ratings going in)</span></div>
     <div style="margin-top:4px;">${favLabel}</div>
-    <div>took ${m.games_winner}/${m.games_winner+m.games_loser} games (${actualPct}%) · performance score ${m.actual_score.toFixed(2)} against ${m.expected_score.toFixed(2)} expected</div>
+    <div>Expected to win about ${expectedPct}% of the games; took ${m.games_winner}/${m.games_winner+m.games_loser} (${actualPct}%)${m.isDraw ? ', unfinished' : ' and won the match'}.</div>
     <div style="margin-top:4px;">${perfLabel}</div>
     ${matchDeltaLineHtml(m)}
+    <details class="wm-calc">
+      <summary class="wm-calc-summary">See full calculation</summary>
+      <div class="wm-calc-body">
+        <div class="wm-calc-row"><span>Performance score delivered</span><b>${m.actual_score.toFixed(2)}</b></div>
+        <div class="wm-calc-row"><span>Pre-match expected score</span><b>${m.expected_score.toFixed(2)}</b></div>
+        <div class="wm-calc-row"><span>Difference</span><b>${perf > 0 ? '+' : ''}${(perf/100).toFixed(2)}</b></div>
+        <div class="wm-calc-note">Figures are for the ${sideLabel}. The performance score is 0.80 × the share of games won + 0.20 × the match result. K is per player, so each player's own weighting is on their profile card.</div>
+      </div>
+    </details>
   </div>`;
 }
 
@@ -6080,7 +6119,7 @@ function renderGamesTab(){
   const box = document.getElementById('gamesView');
   const pending = extraMatchesState.filter(m=>m.status==='pending' && !deletedIdsState.includes(m.id));
   let display = getDisplayMatches().filter(m=>m._status==='approved');
-  if(selectedMonth !== 'all') display = display.filter(m=>m.date.slice(0,7)===selectedMonth);
+  if(gamesMonth !== 'all') display = display.filter(m=>m.date.slice(0,7)===gamesMonth);
   if(selectedGamesPlayer !== 'all') display = display.filter(m=> m.winners.includes(selectedGamesPlayer) || m.losers.includes(selectedGamesPlayer));
   display.sort((a,b)=> a.date < b.date ? 1 : -1);
 
@@ -6295,9 +6334,9 @@ Player C &amp; Player D"></textarea>
     }
   }
 
-  populateMonthSelect(document.getElementById('gamesMonthSelect'));
+  populateMonthSelect(document.getElementById('gamesMonthSelect'), gamesMonth);
   document.getElementById('gamesMonthSelect').addEventListener('change', e=>{
-    selectedMonth = e.target.value;
+    gamesMonth = e.target.value;
     renderGamesTab();
   });
 

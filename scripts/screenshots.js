@@ -75,7 +75,7 @@ const SHOTS = [
   { file: '14-rating-guide-faq.png', title: 'Power Rating Guide — questions people actually ask',
     note: 'The complaints the guide exists to pre-empt, answered directly: a small move after a win, a rating rising after a loss, a partner moving further, and whether anything resets monthly.' },
   { file: '15-why-your-rating-moved.png', title: 'Why your rating moved',
-    note: 'On the match card itself, built from the same persisted expectation, performance and K the movement above it came from — a reading of those facts, never a second calculation.' },
+    note: 'Padel language first, in the order a player thinks in: were we favoured, what were we expected to take, what did we take and did we win, so what did that earn. The decimals sit behind "See full calculation" — read from the same persisted facts, never a second calculation.' },
 ];
 
 async function main() {
@@ -236,7 +236,10 @@ async function main() {
       const row = host && host.querySelector('.pp-match-row');
       if (row) row.click();
     },
-    () => { const el = document.querySelector('.why-moved'); if (el) el.scrollIntoView({ block: 'center' }); });
+    () => {
+      const d = document.querySelector('.why-moved .wm-calc'); if (d) d.open = true;
+      const el = document.querySelector('.why-moved'); if (el) el.scrollIntoView({ block: 'start' });
+    });
 
   // Back to the monthly breakdown for the calculation disclosure, which is
   // the one place the engine describes its own arithmetic.

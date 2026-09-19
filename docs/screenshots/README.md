@@ -1,6 +1,6 @@
 # Review screenshots
 
-Captured 2026-09-18 from the **live beta record** by `scripts/screenshots.js`.
+Captured 2026-09-19 from the **live beta record** by `scripts/screenshots.js`.
 Review aids for CGPT and Shaun, not release documentation. Regenerate rather than edit.
 
 Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,
@@ -100,4 +100,4 @@ The complaints the guide exists to pre-empt, answered directly: a small move aft
 
 ![Why your rating moved](15-why-your-rating-moved.png)
 
-On the match card itself, built from the same persisted expectation, performance and K the movement above it came from — a reading of those facts, never a second calculation.
+Padel language first, in the order a player thinks in: were we favoured, what were we expected to take, what did we take and did we win, so what did that earn. The decimals sit behind "See full calculation" — read from the same persisted facts, never a second calculation.
