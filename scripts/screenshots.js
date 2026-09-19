@@ -88,10 +88,13 @@ async function main() {
   // cached to disk and reused; --refresh forces a fresh read.
   const cachePath = path.join(OUT, '.live-record.json');
   const refresh = process.argv.includes('--refresh');
-  if (!refresh && fs.existsSync(cachePath)) {
-    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    console.log(`Using the cached live record from ${cached.readAt} (--refresh to re-read).`);
-    return render(cached.players, cached.matches, cached.journey, cached.readAt);
+  let cache = {};
+  if (fs.existsSync(cachePath)) {
+    try { cache = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch (e) { cache = {}; }
+  }
+  if (!refresh && cache.players && cache.matches && cache.journey) {
+    console.log(`Using the cached live record from ${cache.readAt} (--refresh to re-read).`);
+    return render(cache.players, cache.matches, cache.journey, cache.readAt);
   }
 
   console.log('Reading the live beta ...');
@@ -111,13 +114,23 @@ async function main() {
       }
     }
   };
-  const players = await read(Store.COLLECTIONS.players);
-  const matches = await read(Store.COLLECTIONS.matches);
-  const journey = await read(Store.COLLECTIONS.journey);
-  const readAt = new Date().toISOString().slice(0, 10);
-  fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(cachePath, JSON.stringify({ readAt, players, matches, journey }));
-  return render(players, matches, journey, readAt);
+  // Cached per collection, and written as each one lands. The 666-event journey
+  // is far the most expensive read and the one that gets rate-limited, so a
+  // failure on it must not throw away the two that already succeeded -- the
+  // next attempt then costs one read instead of three.
+  const fetchInto = async (key, collection) => {
+    if (cache[key] && !refresh) { console.log(`  ${collection}: reusing cache`); return cache[key]; }
+    const got = await read(collection);
+    cache[key] = got;
+    cache.readAt = new Date().toISOString().slice(0, 10);
+    fs.mkdirSync(OUT, { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify(cache));
+    return got;
+  };
+  const players = await fetchInto('players', Store.COLLECTIONS.players);
+  const matches = await fetchInto('matches', Store.COLLECTIONS.matches);
+  const journey = await fetchInto('journey', Store.COLLECTIONS.journey);
+  return render(players, matches, journey, cache.readAt);
 }
 
 async function render(players, matches, journey, readAt) {

@@ -1175,6 +1175,12 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .wm-calc-summary::after{ content:' \203A'; }
 .wm-calc[open] > .wm-calc-summary::after{ content:' \2304'; }
 .wm-calc-body{ margin-top:5px; }
+.wm-calc-label{
+  font-family:'Helvetica Neue', Arial, sans-serif; font-size:9.5px;
+  letter-spacing:.05em; text-transform:uppercase; color:var(--text-dim);
+  margin:7px 0 2px;
+}
+.wm-calc-label:first-child{ margin-top:0; }
 .wm-calc-row{
   display:flex; justify-content:space-between; gap:10px; padding:3px 0;
   border-bottom:1px solid var(--surface-border-soft);

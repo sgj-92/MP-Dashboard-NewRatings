@@ -829,6 +829,8 @@ test('"Why your rating moved" is plain in front and exact behind', { skip }, asy
     assert.match(r.calc, /See full calculation/);
     assert.ok(r.calc.includes(rec.actual.toFixed(2)), 'the disclosure must carry the exact performance score');
     assert.ok(r.calc.includes(rec.expected.toFixed(2)), 'the disclosure must carry the exact expected score');
+    assert.match(r.calc, /Match result contribution/, 'the 20% component must be shown as its own row');
+    assert.match(r.calc, /0\.80 × .* \+ 0\.20 × /, 'the blend must be shown, not asserted');
     const k1 = String(Math.round(rec.kUsed * 10) / 10);
     assert.ok(r.calc.includes(k1), 'the disclosure must carry K');
     assert.ok(r.calc.includes(`${Math.round(rec.reliability * 100)}%`), 'the disclosure must carry reliability');
@@ -1244,6 +1246,100 @@ test('a staged correction keeps its card open and survives the collapse', { skip
     assert.strictEqual(r.afterClose.panel, false);
     assert.strictEqual(r.afterClose.bodies, 0);
     assert.strictEqual(r.writes, 0, 'nothing is written by staging or cancelling');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// ===================== GAMES CARD: COMPACT + WORKING DISCLOSURE ==============
+// "See full calculation" was inert on the Games feed. The card wraps its body
+// in .game-card-clickable, whose handler toggles the card and re-renders, so a
+// click on the summary collapsed the card before the browser could open the
+// details. It worked on the profile card only because that card has no handler.
+test('See full calculation opens and closes on a Games card', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      renderGamesTab();
+      const card = document.querySelector('#gamesView .game-card-clickable');
+      const gameId = card.dataset.gameid;
+      card.click();                                   // expand the card
+
+      const details = document.querySelector('#gamesView .wm-calc');
+      if (!details) return { found: false };
+      const summary = details.querySelector('summary');
+
+      const before = { open: details.open, expanded: expandedGameId };
+      summary.click();                                // open the disclosure
+      const opened = {
+        open: document.querySelector('#gamesView .wm-calc').open,
+        expanded: expandedGameId,
+        text: document.querySelector('#gamesView .wm-calc').innerText.replace(/\n+/g, ' | '),
+      };
+      document.querySelector('#gamesView .wm-calc summary').click();   // and close it
+      const closed = {
+        open: document.querySelector('#gamesView .wm-calc').open,
+        expanded: expandedGameId,
+      };
+      return { found: true, gameId, before, opened, closed };
+    });
+
+    assert.strictEqual(r.found, true, 'the expanded card must carry a disclosure');
+    assert.strictEqual(r.before.open, false, 'it starts closed');
+    assert.strictEqual(r.before.expanded, r.gameId, 'the card is expanded');
+
+    assert.strictEqual(r.opened.open, true, 'clicking the summary must open it');
+    assert.strictEqual(r.opened.expanded, r.gameId,
+      'and must NOT collapse the card underneath it — that was the bug');
+
+    assert.strictEqual(r.closed.open, false, 'clicking again must close it');
+    assert.strictEqual(r.closed.expanded, r.gameId, 'still without collapsing the card');
+
+    // And it contains the technical facts, from the persisted record.
+    assert.match(r.opened.text, /Pre-match expected score/);
+    assert.match(r.opened.text, /Share of games won/);
+    assert.match(r.opened.text, /Match result contribution/);
+    assert.match(r.opened.text, /Blended performance score/);
+    assert.match(r.opened.text, /K \d/);
+    assert.match(r.opened.text, /reliability \d+% → \d+%/);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the expanded Games card stays compact', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
+      if (b) b.click();
+      renderGamesTab();
+      const card = document.querySelector('#gamesView .game-card-clickable');
+      card.click();
+      const expanded = document.querySelector('#gamesView .callout-card');
+      const clone = expanded.cloneNode(true);
+      [...clone.querySelectorAll('.wm-calc')].forEach((d) => d.remove());
+      return {
+        visible: clone.innerText.replace(/\n+/g, '\n').trim(),
+        hasDisclosure: !!expanded.querySelector('.wm-calc'),
+      };
+    });
+
+    // The redundant explanation between the result line and the per-player
+    // movements is gone; that nuance lives in the disclosure now.
+    assert.doesNotMatch(r.visible, /matched the game-share expectation/i);
+    assert.doesNotMatch(r.visible, /also contributes to the rating calculation/i);
+    assert.doesNotMatch(r.visible, /won (more|fewer) games than expected/i);
+    assert.doesNotMatch(r.visible, /[Pp]erformance score/);
+
+    // One line carries the expectation, what was taken, and the result.
+    assert.match(r.visible, /Expected \d+% of games · won \d+\/\d+ \(\d+%\) · (won match|not finished)/);
+    assert.match(r.visible, /ratings going in/);
+    assert.match(r.visible, /RATING CHANGE, PER PLAYER/i);
+    assert.strictEqual(r.hasDisclosure, true);
+
+    const lines = r.visible.split('\n').filter(Boolean);
+    assert.ok(lines.length <= 12, `the expanded card should stay short, got ${lines.length} lines:\n${r.visible}`);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });

@@ -6,26 +6,29 @@ Review aids for CGPT and Shaun, not release documentation. Regenerate rather tha
 Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,
 so a capture of the seeded fixture would show ratings that no longer exist.
 
-> ### ⚠️ Three shots are out of date
+> ### ⚠️ Three shots show superseded wording
 >
-> **`06-monthly-breakdown.png`, `10b-games-correction.png` and
-> `15-why-your-rating-moved.png` show the previous explanation wording.** The
-> copy was corrected on 19 Sep (`a0e3ead`) so that matching the expected game
-> share is no longer called "performing above expectation", and the images could
-> not be regenerated: the beta project had exhausted its Firestore daily read
-> quota (429 `RESOURCE_EXHAUSTED`) after today's import verification and repeated
-> captures.
+> **`05-match-card.png`, `06-monthly-breakdown.png` and
+> `15-why-your-rating-moved.png`** predate two copy changes made on 19 Sep:
+> matching the expected game share is no longer called "performing above
+> expectation" (`a0e3ead`), and the expanded card was compacted with the
+> technical facts moved into a working `See full calculation` disclosure.
 >
-> `scripts/screenshots.js` now caches the live record to disk, so regenerating
-> costs no further reads once one succeeds. Re-run it when the quota resets:
+> They could not be regenerated: the beta project has exhausted its Firestore
+> **daily read quota** (429 `RESOURCE_EXHAUSTED`). `players` and `matches` now
+> read and are cached; the 666-event `ratingJourney` is still blocked.
+>
+> The capture script now caches per collection, so the next attempt costs one
+> read rather than three. Re-run when the quota resets:
 >
 > ```
-> node scripts/screenshots.js --refresh
+> node scripts/screenshots.js
 > ```
 >
-> The corrected wording is covered by tests, not only by these images — see
-> "matching the expected game share is never called performing above it" in
-> `tests/ui.test.js`.
+> The current wording is covered by tests rather than by these images — see
+> "matching the expected game share is never called performing above it",
+> "See full calculation opens and closes on a Games card" and "the expanded
+> Games card stays compact" in `tests/ui.test.js`.
 
 ### Power Rankings — all time
 

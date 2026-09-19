@@ -5193,30 +5193,75 @@ function whyYourRatingMovedHtml(m, name){
     <div class="why-moved-head">Why ${name}'s rating moved</div>
     <div class="why-moved-body">${e.lines.join(' ')}</div>
     <div class="why-moved-note">${e.blendNote}</div>
-    ${buildFullCalculationHtml(e)}
+    ${buildMatchCalcDisclosureHtml(m, name)}
   </div>`;
 }
 
 // The exact persisted figures, one level down. This is where the raw decimals
-// belong: available to anyone who wants to check the sentence above, in front
-// of nobody who does not.
-function buildFullCalculationHtml(e){
-  const rows = [];
-  if(e.games) rows.push(['Games won', `${e.games.mine} of ${e.games.total} (${e.actualGameSharePct}%)`]);
-  rows.push(['Performance score delivered', e.actual.toFixed(2)]);
-  rows.push(['Pre-match expected score', e.expected.toFixed(2)]);
-  rows.push(['Difference', (e.residual > 0 ? '+' : '') + (Math.round(e.residual * 100) / 100).toFixed(2)]);
-  if(e.kText) rows.push(['Weighting K', e.kText]);
-  if(typeof e.reliability === 'number'){
-    rows.push(['Reliability', `${Math.round(e.reliability * 100)}%`
-      + (typeof e.newReliability === 'number' ? ` → ${Math.round(e.newReliability * 100)}%` : '')]);
-  }
+// belong: in front of anyone who asks, in front of nobody who does not.
+//
+// One builder for every card, so the profile, the monthly breakdown and the
+// Games feed can never drift into saying different things about one match.
+// `focusPlayer` narrows the per-player rows to that player; without it every
+// player's own K, reliability and movement is listed, because K is per player
+// and a neutral card has no single "you".
+//
+// It reads V3_MATCH_FACTS -- what the engine recorded when the match was rated.
+// There is no second calculation here; the rows are the same numbers that
+// produced the movement shown on the card.
+function buildMatchCalcDisclosureHtml(m, focusPlayer){
+  const facts = V3_MATCH_FACTS[m.id];
+  if(!facts) return '';
+  const side = focusPlayer ? MatchFacts.forPlayer(facts, focusPlayer) : null;
+  if(focusPlayer && !side) return '';
+
+  // Neutral cards describe the stored first-named side, which for a decided
+  // match is the winners.
+  const view = side || { mine: facts.sides.A, theirs: facts.sides.B };
+  const label = focusPlayer ? `${focusPlayer}'s side` : (m.isDraw ? 'the first-named pair' : 'the winners');
+
+  const onStoredWinningSide = focusPlayer ? playerIsOnStoredWinningSide(m, focusPlayer) : true;
+  const gamesMine = onStoredWinningSide ? m.games_winner : m.games_loser;
+  const gamesTheirs = onStoredWinningSide ? m.games_loser : m.games_winner;
+  const total = gamesMine + gamesTheirs;
+
+  // The 20% component, as the engine scores it: 1 / 0.5 / 0.
+  const resultScore = m.isDraw ? 0.5 : (onStoredWinningSide ? 1 : 0);
+  const resultWord = m.isDraw ? 'draw' : (onStoredWinningSide ? 'won' : 'lost');
+
+  const rows = [
+    ['Pre-match expected score', view.mine.expected.toFixed(2)],
+    ['Share of games won', total ? `${gamesMine} of ${total} (${Math.round((gamesMine/total)*100)}%)` : '—'],
+    ['Match result contribution', `${resultScore.toFixed(2)} (${resultWord})`],
+    ['Blended performance score', `${view.mine.actual.toFixed(2)}  =  0.80 × ${total ? (gamesMine/total).toFixed(2) : '—'} + 0.20 × ${resultScore.toFixed(2)}`],
+    ['Difference', `${view.mine.residual > 0 ? '+' : ''}${view.mine.residual.toFixed(2)}`],
+  ];
+
+  const people = focusPlayer ? [facts.byPlayer[focusPlayer]]
+    : Object.values(facts.byPlayer).sort((a,b)=> a.playerId < b.playerId ? -1 : 1);
+  const perPlayer = people.filter(Boolean).map(p=>{
+    const k = (typeof RatingExplainer !== 'undefined') ? RatingExplainer.kText(p.kUsed) : String(Math.round(p.kUsed*10)/10);
+    const rel = `${Math.round(p.previousReliability*100)}% → ${Math.round(p.newReliability*100)}%`;
+    const move = `${p.ratingDelta > 0 ? '+' : ''}${p.ratingDelta}`;
+    return `<div class="wm-calc-row"><span>${p.playerId}</span><b>K ${k} · reliability ${rel} · ${move}</b></div>`;
+  }).join('');
+
+  // For one named player, close the loop: K times the difference IS the
+  // movement above. Four of these on a neutral card would be noise.
+  const focus = focusPlayer ? facts.byPlayer[focusPlayer] : null;
+  const arithmetic = focus
+    ? `<div class="wm-calc-sum">${(typeof RatingExplainer !== 'undefined') ? RatingExplainer.kText(focus.kUsed) : Math.round(focus.kUsed)} × (${view.mine.actual.toFixed(2)} − ${view.mine.expected.toFixed(2)}) = ${focus.ratingDelta > 0 ? '+' : ''}${focus.ratingDelta}</div>`
+    : '';
+
   return `<details class="wm-calc">
     <summary class="wm-calc-summary">See full calculation</summary>
     <div class="wm-calc-body">
-      ${rows.map(([k, v])=>`<div class="wm-calc-row"><span>${k}</span><b>${v}</b></div>`).join('')}
-      ${e.arithmetic ? `<div class="wm-calc-sum">K × (performance − expected) = ${e.arithmetic}</div>` : ''}
-      <div class="wm-calc-note">The performance score is 0.80 × the share of games won + 0.20 × the match result. Every figure here was recorded when the match was rated and is read back, never recomputed.</div>
+      <div class="wm-calc-label">For ${label}</div>
+      ${rows.map(([k,v])=>`<div class="wm-calc-row"><span>${k}</span><b>${v}</b></div>`).join('')}
+      <div class="wm-calc-label">Each player's own weighting and movement</div>
+      ${perPlayer}
+      ${arithmetic}
+      <div class="wm-calc-note">Every figure here was recorded when the match was rated and is read back, never recomputed. K is worked out per player from that player's own evidence, which is why the four movements differ.</div>
     </div>
   </details>`;
 }
@@ -5275,36 +5320,20 @@ function buildMatchDetailBlock(m, contextHasMonthFigure){
   const winnersWithRatings = m.winners.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
   const losersWithRatings = m.losers.map(n => `${n} (${m.deltas && m.deltas[n] ? Math.round(m.deltas[n].preMatchRating) : ratingOf(n)})`).join(' &amp; ');
 
-  const actualPct = Math.round(m.game_share_winner*100);
+  // One line, not four. The expectation, what was actually taken, and how the
+  // match ended -- everything else that used to sit here was explaining the
+  // model rather than the match, and belongs in the disclosure.
   const expectedPct = Math.round(m.expected_score*100);
-  // A GAME-SHARE comparison, and nothing else. A side can match its expected
-  // share exactly and still move up, because the result contributes separately;
-  // calling that "performed above expectation" would be untrue of the games.
-  const shareDiff = actualPct - expectedPct;
-  const band = (typeof RatingExplainer !== 'undefined') ? RatingExplainer.GAME_SHARE_BAND : 3;
-  // Starts its own line, so it starts with a capital.
-  const Side = sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1);
-  const perfLabel = shareDiff > band ? `<span class="perf-pos">${Side} won more games than expected</span>`
-                   : (shareDiff < -band ? `<span class="perf-neg">${Side} won fewer games than expected</span>`
-                   : (shareDiff === 0 ? `<span style="color:var(--text-dim);">${Side} matched the game-share expectation</span>`
-                   : `<span style="color:var(--text-dim);">${Side} won about the expected share of games</span>`));
-  const perf = Math.round(m.performance_residual*1000)/10;
+  const actualPct = Math.round(m.game_share_winner*100);
+  const total = m.games_winner + m.games_loser;
+  const resultWord = m.isDraw ? 'not finished' : 'won match';
 
   return `<div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px; color:var(--text-dim); line-height:1.6;">
     <div><b style="color:var(--text);">${winnersWithRatings}</b> vs ${losersWithRatings} <span style="font-size:10.5px;">(ratings going in)</span></div>
     <div style="margin-top:4px;">${favLabel}</div>
-    <div>Expected to win about ${expectedPct}% of the games; took ${m.games_winner} of ${m.games_winner+m.games_loser} (${actualPct}%)${m.isDraw ? ' — the match was not finished' : ' and won the match'}.</div>
-    <div style="margin-top:4px;">${perfLabel}. <span style="font-size:10.5px;">The match result also contributes to the rating calculation.</span></div>
+    <div>Expected ${expectedPct}% of games · won ${m.games_winner}/${total} (${actualPct}%) · ${resultWord}</div>
     ${matchDeltaLineHtml(m)}
-    <details class="wm-calc">
-      <summary class="wm-calc-summary">See full calculation</summary>
-      <div class="wm-calc-body">
-        <div class="wm-calc-row"><span>Performance score delivered</span><b>${m.actual_score.toFixed(2)}</b></div>
-        <div class="wm-calc-row"><span>Pre-match expected score</span><b>${m.expected_score.toFixed(2)}</b></div>
-        <div class="wm-calc-row"><span>Difference</span><b>${perf > 0 ? '+' : ''}${(perf/100).toFixed(2)}</b></div>
-        <div class="wm-calc-note">Figures are for the ${sideLabel}. The performance score is 0.80 × the share of games won + 0.20 × the match result. K is per player, so each player's own weighting is on their profile card.</div>
-      </div>
-    </details>
+    ${buildMatchCalcDisclosureHtml(m)}
   </div>`;
 }
 
@@ -5522,7 +5551,8 @@ function renderH2H(){
     };
   });
   box.querySelectorAll('.h2h-month-game').forEach(el=>{
-    el.onclick = ()=>{
+    el.onclick = (ev)=>{
+      if(ev.target.closest && ev.target.closest('details')) return; // see the note in renderGamesTab
       const id = el.dataset.gameid;
       expandedGameId = (expandedGameId === id) ? null : id;
       renderH2H();
@@ -6322,7 +6352,12 @@ Player C &amp; Player D"></textarea>
   box.innerHTML = html;
 
   box.querySelectorAll('.game-card-clickable').forEach(el=>{
-    el.onclick = ()=>{
+    el.onclick = (ev)=>{
+      // A disclosure inside the card is its own control. Without this, clicking
+      // "See full calculation" bubbled up here, collapsed the card and
+      // re-rendered it -- so the disclosure looked completely inert. It worked
+      // on the profile card only because that card has no click handler.
+      if(ev.target.closest && ev.target.closest('details')) return;
       const id = el.dataset.gameid;
       expandedGameId = (expandedGameId === id) ? null : id;
       renderGamesTab();
