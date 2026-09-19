@@ -238,6 +238,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
 | Ranking state terminology: Ranked / Idle / Inactive | Separate ranking eligibility from participation status. **Ranked** = active and currently meets the live-ranking rule. **Idle** = still part of Money Padel but currently below the recent-match threshold, so not shown in the live ranking. **Inactive** = explicitly not currently involved/participating. Idle is derived from recent activity; Inactive is an explicit club/player-status field. |
 | Included Idle/Inactive players merge into the visible ranking | The filter toggles are not separate lower sections. When **Include idle** is on, Idle players join the main visible ranking pool and are sorted/ranked exactly as if currently eligible, while retaining an `IDLE` badge. When **Include inactive** is on, true Inactive players likewise join the same visible ranking pool and receive filtered-view rank positions, while retaining an `INACTIVE` badge. With both on, everyone appears in one ordered list. Official eligibility/status remains unchanged; these are filtered-view ranks only. |
+| Match sharing / WhatsApp is a future communication layer | Suggested/requested matches should eventually support native Share / WhatsApp-friendly copy (with a Copy message fallback) because club coordination currently happens mainly in WhatsApp. This is useful follow-on work, not required to block the current Home visual refinement unless Shaun explicitly promotes it. |
+| Home lower section: Club Pulse actionable, Match ideas collapsed, Last Result replaces Next on Court | Refine Home for usefulness over decoration. Club Pulse cards are clickable to the relevant player profile; `All Insights` must open the Insights/Call Outs area at its top, not mid-scroll. `Match to Make` becomes a collapsed `Match ideas` section by default. Replace `Next on Court` with a data-driven `Last Time Out` / `Your Last Result` card using the selected player's most recent rated match, score, rating movement and light factual commentary. Upcoming remains in Play; Home should not depend on Shaun manually maintaining future fixtures. |
 | Ranking eligibility must be shared across Home/Rankings/Profile/Club Pulse | Shaun spotted Ant Slice showing `#–` on Home despite recent activity. All surfaces must derive Ranked vs Idle from one shared eligibility helper over the same v3 rated-match source/date window. A player must never be Ranked on one surface and Idle on another. Before changing data, verify Ant Slice's actual count of rated matches in the rolling 30-day window; if >=2, current `#–` is a bug. |
 | Games cards show historical tier beside each player | On collapsed and expanded Games cards, show each player's **tier at match date** beside their name (e.g. `Eli (A) & Len (A) def Osh (A) & Rishi (B)`). Use the same temporal-tier source for visible labels and game-type classification so the UI can never display one tier while filtering the match as another. |
 | Games tab supports historical tier-composition filtering | Add a Games filter based on the **tiers that applied when each match was played**, not current tiers. Support broad tier environments (all-A/all-B/all-C, mixed) and specific canonical matchup types such as `AA vs AA`, `AB vs BB`, `AA vs AB`, `AB vs AB`. The filter must combine with Month and Player; e.g. Player=Len + Game type=`AB vs BB` shows only Len's matches of that historical composition. Team orientation must not create separate categories. |
@@ -247,27 +249,90 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: CGPT and Shaun.**
+**Owner / baton: Claude Code — Home lower-section usefulness + visual refresh.**
 
-The ranking-pool toggles now merge idle and inactive players into the ordered
-list, and Games carries historical tier labels plus tier-composition filters.
-Details in the CCode handoff of 19 Sep in Section 6.
+Shaun reviewed the lower half of Home and wants it to be more useful, less
+decorative, and less dependent on manually maintained data.
 
-What is wanted back:
+### 1) Club Pulse becomes actionable
 
-1. Confirm the merged ranking view reads correctly, including the note that
-   positions there are for that view and not official ranks.
-2. Confirm the Games tier labels and the game-type options are what is wanted
-   for inspecting club patterns. The options are generated from the data, so
-   they will change as the record grows.
-3. Screenshots are still blocked on the Firestore daily read quota; three shots
-   show superseded wording and the README names them.
+- Keep Club Pulse visible.
+- Make each Club Pulse card clickable; clicking the featured player opens that
+  player's profile.
+- `All Insights` must open the existing Insights / Call Outs area at the **top**
+  of that experience. It currently lands part-way through the long Call Outs
+  content because it reuses the old tab/scroll state.
+- Reset/position scroll intentionally when entering Insights from Home.
 
-CCode has no other queued work. The rating-model questions in Section 5 remain
-parked and unauthorised.
+### 2) Match to Make becomes optional / collapsed
 
-Do not change Sequential-v1 match mathematics.
+`Match to Make` may be useful occasionally but should not permanently consume
+Home space.
 
+- Rename/reframe as **Match ideas** (or equivalent concise label).
+- Collapsed by default.
+- Summary copy can say something like `Balanced games suggested for you`.
+- Expanding reveals the existing recommended matchup card(s).
+- Preserve the existing underlying matchup logic; this is hierarchy/presentation
+  work, not a new recommendation engine.
+
+### 3) Replace Next on Court with Last Time Out / Your Last Result
+
+`Next on Court` technically reads confirmed Upcoming games involving the selected
+player, but Upcoming is currently manually maintained by Shaun. Home should not
+depend on that data being complete.
+
+Replace it with a card built automatically from the selected player's most recent
+rated v3 match.
+
+Preferred content:
+
+- heading: **Last Time Out** or **Your Last Result**;
+- opponent/partner and result;
+- scoreline;
+- that player's exact rating movement from persisted journey/match facts;
+- one short, lighthearted but factual commentary line;
+- `View match ›` opens the corresponding match detail/breakdown.
+
+Commentary should be deterministic from existing facts and restrained, e.g.:
+
+- close win: `Got it done. Tight match, but you came through.`
+- upset win: `Statement win. You beat a side that went in as favourites.`
+- loss but better game-share than expected: `Better than the scoreline suggests.`
+- draw: `Nothing between you. One to run back.`
+- heavy loss: `Tough one. Time to run it back.`
+
+Do not invent psychological claims, trash talk, or new calculations. Use result,
+scoreline, persisted expectation/game share and stored rating movement only.
+
+Upcoming remains available in Play; removing Next on Court from Home does not
+remove or change the Upcoming feature.
+
+### 4) Monthly snapshot remains visible
+
+Keep the monthly snapshot / `View Full Review` area visible. It is automatic and
+useful enough to retain in the Home hierarchy.
+
+### 5) Future backlog — match sharing
+
+Do not block this pass on notifications. Record follow-on work for suggested /
+requested matches to support native Share (which can route to WhatsApp) plus a
+`Copy message` fallback. Suggested message should include teams and concise
+match context such as expected balance. No notification system is required now.
+
+### Acceptance
+
+- Club Pulse cards open the correct player profile;
+- `All Insights` lands at the top of Insights/Call Outs, not mid-page;
+- Match ideas are collapsed by default and expandable;
+- Next on Court is removed from Home and replaced by selected player's latest
+  rated result;
+- Last Result card is sourced from persisted v3 match/journey facts and links to
+  the right match;
+- commentary is short, factual and deterministic;
+- Upcoming remains untouched in Play;
+- no Sequential-v1 or stored-rating changes;
+- add targeted browser coverage for each interaction.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -460,6 +525,22 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (Home usefulness refresh)
+Shaun wants the lower half of Home simplified around things that are reliably
+useful.
+
+Club Pulse stays visible but becomes actionable (cards → profiles; All Insights
+→ top of Insights). Match to Make becomes a collapsed Match ideas section.
+Replace manually dependent Next on Court with an automatic Last Time Out card
+from the selected player's most recent rated match, including score, rating
+movement and one short factual/lighthearted comment.
+
+WhatsApp/native sharing for suggested/requested matches is recorded as follow-on
+work, not a blocker for this pass.
+
+**Baton → CCode.** Implement Home hierarchy/interaction refresh only; no engine
+changes.
 
 ### CCode — 19 Sep 2026 (ranking-pool toggles corrected; Games tier context)
 
@@ -2129,16 +2210,15 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. ~~Include idle / Include inactive widen the ranking pool~~ — **done**
-   (`5b637cd`). Two toggles; merged, rating-ordered, renumbered, badges kept,
-   official state provably unchanged.
-2. ~~Historical tier labels on every Games card~~ — **done**, collapsed and
-   expanded, from the same temporal source as the classification.
-3. ~~Tier-composition filters, orientation-independent, composing with Month and
-   Player~~ — **done**, with options generated from the data and counts shown.
-4. ~~Targeted coverage~~ — **done**. 299/299, including a player-selected
-   `AB vs BB` case and rank re-numbering per toggle.
-5. ~~No engine or stored-rating changes~~ — untouched.
-6. **Regenerate the screenshots** once the beta's Firestore read quota resets:
-   `node scripts/screenshots.js`. Only the journey read is outstanding.
-7. **Baton to CGPT/Shaun.**
+1. **Refresh Home lower section** per Section 4.
+2. Make Club Pulse cards open the featured player's profile.
+3. Fix `All Insights` so it opens Insights/Call Outs at the top.
+4. Collapse `Match to Make` into **Match ideas** by default.
+5. Replace `Next on Court` with **Last Time Out / Your Last Result** from the
+   selected player's latest rated match, including score, exact rating movement,
+   short factual commentary, and `View match`.
+6. Keep Upcoming in Play unchanged.
+7. Add targeted browser coverage for the new Home interactions.
+8. Keep native Share / WhatsApp + Copy message as backlog follow-on work.
+9. Do not change Sequential-v1 or stored ratings/history.
+10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
