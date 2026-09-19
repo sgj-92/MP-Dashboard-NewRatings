@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `8600f1e` |
-| Tests | **270 / 270 passing** (36 of them drive a real browser) |
+| Last verified implementation commit | `1a7a037` |
+| Tests | **283 / 283 passing** (41 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -244,100 +244,27 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — separate Idle vs Inactive player states.**
+**Owner / baton: CGPT and Shaun.**
 
-Shaun has identified that the current UI uses `INACTIVE` for two different
-things: players who are still part of Money Padel but temporarily do not meet
-the live-ranking activity threshold, and players who are genuinely not
-participating at all. These must be separated.
+Ranked / Idle / Inactive are separated, and the eligibility bug Shaun spotted is
+confirmed and fixed — it affected five players, not one. Details and the
+verification table are in the CCode handoff of 19 Sep in Section 6.
 
-### Terminology and state model
+What is wanted back:
 
-Use three user-facing states:
+1. Confirm the Idle wording and the two filters read correctly.
+2. Note that the fix changes who holds a rank: **Ant Slice, Dennis, Chloe, Jams
+   and Aubyn now have ranks** on Home, Profile and Club Pulse where they
+   previously showed `#–`. That is the correction, not a side effect, but it is
+   visible and worth expecting.
+3. Screenshots are still blocked on the Firestore daily read quota; three shots
+   show superseded wording and the README names them.
 
-- **Ranked** — active player who currently meets the live Power Rankings
-  eligibility rule (currently 2+ matches in the last 30 days).
-- **Idle** — still an active Money Padel player, but currently below the
-  live-ranking activity threshold.
-- **Inactive** — explicitly not currently involved / not participating at all.
+CCode has no other queued work. The rating-model questions in Section 5 remain
+parked and unauthorised.
 
-Internally keep the dimensions separate:
+Do not change Sequential-v1 match mathematics.
 
-- explicit player participation status: `ACTIVE | INACTIVE`;
-- derived ranking state for active players: `RANKED | IDLE`.
-
-Do not derive true Inactive status from the 30-day ranking rule.
-
-### Rankings UI
-
-- Players currently shown below the divider because they have fewer than 2
-  matches in the last 30 days should display **IDLE**, not `INACTIVE`.
-- Change the divider to something like:
-  `Idle players — fewer than 2 matches in the last 30 days`.
-- Ranked players remain the normal ordered ranking above that divider.
-- True Inactive players should not be mixed into the Idle group.
-
-### Filters
-
-Add clear options so the two states can be controlled independently.
-
-Preferred structure:
-
-- **Ranking status**: Ranked / Include idle
-- **Player status**: Active / Include inactive
-
-Default should preserve the current player-facing experience unless existing
-behavior already intentionally differs: Ranked players visible; Idle may remain
-shown beneath the ranked list; true Inactive players hidden unless explicitly
-included.
-
-If true Inactive players are included, show them in a separate section below
-Idle with copy such as `Inactive players — not currently participating`.
-
-### Data / admin implications
-
-If the app does not yet have an explicit active/inactive participation field,
-add the narrowest safe state needed so Inactive can be set independently of
-ranking eligibility. Do not overload lifetime matches, recent activity, tier,
-or reliability to infer it.
-
-Preserve historical ratings and results for Inactive players; changing
-participation status is presentation/eligibility metadata, not a rating event.
-
-### Acceptance
-
-- an active player below the recent-match threshold renders as `IDLE`, not
-  `INACTIVE`;
-- a true Inactive player can be represented separately and excluded by default;
-- filters can include Idle and Inactive independently;
-- existing 2+ matches / 30 days ranking rule is unchanged;
-- no Sequential-v1 or historical rating changes;
-- targeted browser tests cover Ranked, Idle and Inactive states and filters.
-
-### Eligibility consistency bug to verify
-
-Shaun spotted Ant Slice showing `#– in Tier A · #– Overall` on Home despite
-recent activity. Do not assume the Home state is correct.
-
-Before implementation, calculate Ant Slice's count of **rated v3 matches in the
-rolling 30-day window ending on the current app date** using the same source that
-should feed Rankings eligibility.
-
-- If Ant Slice has **2+** qualifying matches, the current Home/Profile `#–` state
-  is a bug and must be fixed.
-- If he has **<2**, the UI may correctly show him as Idle, but it should use the
-  new explicit `IDLE` state rather than looking like missing ranking data.
-
-Architecturally, create/reuse one shared eligibility helper for:
-
-- Rankings list and rank numbers;
-- Home `Your Game` rank display;
-- Player Profile rank display;
-- Club Pulse / any promotion-watch or rank-derived widgets.
-
-That helper must use the same v3 rated-match dataset and rolling date rule on
-every surface. Add a regression test that the same player receives the same
-Ranked/Idle state and rank availability across those surfaces.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -530,6 +457,93 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 19 Sep 2026 (Ranked / Idle / Inactive; eligibility bug confirmed)
+
+**Done. Baton to CGPT/Shaun.** No Sequential-v1 changes, no historical rating
+changes, and the 2+/30-day rule is unchanged.
+
+#### The verification the Ledger asked for, first
+
+**Ant Slice has EIGHT rated v3 matches in the rolling 30 days to 2026-09-19** —
+four times the threshold. So the `#– in Tier A · #– Overall` on Home **was a
+bug**, and he was not alone: **Dennis, Chloe, Jams and Aubyn** were all
+ranking-eligible and all showed no rank.
+
+| player | lifetime rated | in 30-day window | showed a rank? |
+|---|---|---|---|
+| Ant Slice | 8 | **8** | no — bug |
+| Dennis | 9 | 3 | no — bug |
+| Chloe | 7 | 3 | no — bug |
+| Jams | 8 | 3 | no — bug |
+| Aubyn | 5 | 2 | no — bug |
+
+**Cause.** `getViewerSnapshot` filtered on `x.total>=10 && isRankingEligible(…)`.
+That `10` is the rankings list's **default min-games display filter**, not an
+eligibility rule. A display filter must never decide whether somebody has a
+rank. `computeClubPulse` carried the same stray condition, so Club Pulse could
+name a "top ranked" player the rankings list did not have at the top.
+
+**A second divergence, found while centralising.** `isRankingEligible` counted
+`MATCHES`, which deliberately excludes draws. **A draw is rated** — it moves
+every player in it — so eligibility depended on whether a player's recent games
+happened to finish. Aubyn sits exactly on that line right now: **2** in the
+window counting the draw, **1** without.
+
+#### The state model
+
+Two dimensions, neither derived from the other:
+
+| | |
+|---|---|
+| **PARTICIPATION** | `ACTIVE \| INACTIVE` — explicit club status, already in the data as `BASE_ACTIVE` / `p.active`, already admin-editable |
+| **RANKING** | `RANKED \| IDLE` — derived, and only for ACTIVE players |
+
+`assets/js/playerState.js` is the single authority. It reads the **v3 rated
+set** (draws included) over a rolling 30 days, and `isRankingEligible`,
+`getViewerSnapshot`, the rankings divider, Home and Club Pulse all go through
+it. An INACTIVE player has `ranking === null` rather than `IDLE`: they are not
+sitting out, they are not in the running, and "Idle" would imply they are coming
+back.
+
+No new data field was needed — the participation flag already existed and seven
+players carry it (Twoshay, Del, Kam, bruh, Kevin, Abby, Alfie).
+
+#### The UI
+
+Players below the threshold now read **IDLE** in gold, under *"Idle players —
+fewer than 2 matches in the last 30 days"*. They are still members, and the old
+`Inactive` tag read as "this player has left". True inactive players get their
+own section, *"Inactive players — not currently participating"*, hidden unless
+asked for.
+
+Two independent filters — **Ranking status** (Ranked / Include idle) and
+**Player status** (Active / Include inactive). Defaults preserve exactly what a
+player sees today. Verified against the record:
+
+| filters | rows | idle | inactive |
+|---|---|---|---|
+| default | 33 | 13 | 0 |
+| Ranked only | 20 | 0 | 0 |
+| + inactive | 34 | 13 | 1 |
+| Ranked + inactive | 21 | 0 | 1 |
+
+**One collision fixed on the way in.** The min-games presets were wired with an
+unscoped `document.querySelectorAll('.preset-btn')` — a shared button style.
+Adding the state filters would have meant a min-games press clearing their
+selection, and a state-filter press feeding `parseInt(undefined)` into
+`minGames`. Both selectors are scoped now, with a test that they do not fight.
+
+| | |
+|---|---|
+| Tests | **283 / 283** (41 in a real browser) |
+| New | 8 module tests for the state model; 5 browser tests — the Ant Slice case by name, cross-surface agreement for every player in the list, Idle-not-Inactive wording, all four filter combinations, and the button collision |
+
+**Screenshots are still outstanding.** The beta's Firestore daily read quota has
+not reset; `players` and `matches` are cached, the 666-event `ratingJourney`
+still 429s. Three shots continue to show superseded wording and the README names
+them. I verified the new Idle and Inactive sections by rendering them from the
+seeded fixture locally instead.
 
 ### CGPT — 19 Sep 2026 (Ant Slice eligibility consistency)
 Shaun identified a likely ranking-eligibility inconsistency: Ant Slice shows
@@ -1966,6 +1980,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `1a7a037` | Ranked / Idle / Inactive separated behind one shared eligibility helper; five active players were wrongly rankless |
 | `8600f1e` | Compact expanded Games card; `See full calculation` fixed (clicks were collapsing the card underneath) and unified across all three cards |
 | `a0e3ead` | Game-share wording correction: matching the expectation is no longer called performing above it; capture script caches the live record |
 | `3de23bf` | Plain-English rating explanations with the decimals behind a disclosure; Games given its own All-time month after finding it opened on August |
@@ -2010,18 +2025,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Separate Ranked / Idle / Inactive states** per Section 4.
-2. Relabel current recent-activity non-qualifiers as **Idle** and update the
-   divider copy.
-3. Add an explicit participation-status path for true **Inactive** players if
-   one does not already exist.
-4. Add independent filter controls for including Idle and Inactive players.
-5. Keep the 2+ matches / 30 days ranking rule unchanged.
-6. Preserve all ratings/history; status changes are metadata only.
-7. **Verify Ant Slice** against the rolling 30-day rated-match window. If he has
-   2+ qualifying matches, fix the erroneous `#–` rank state.
-8. Centralize eligibility/rank availability so Home, Rankings, Profile and Club
-   Pulse use one shared helper and cannot disagree.
-9. Add browser/regression coverage for Ranked, Idle, Inactive, filters and
-   cross-surface consistency.
-10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+1. ~~Verify Ant Slice's eligibility before implementing~~ — **done**. Eight
+   rated matches in the 30-day window; the `#–` was a bug, and four other
+   players had it too.
+2. ~~Separate Idle from Inactive~~ — **done** (`1a7a037`). One shared helper
+   (`assets/js/playerState.js`) over the v3 rated set, draws included, used by
+   Rankings, Home, Profile and Club Pulse.
+3. ~~Independent filters and a separate Inactive section~~ — **done**, with the
+   current player-facing defaults preserved.
+4. ~~Targeted browser tests for all three states and the filters~~ — **done**.
+   283/283.
+5. ~~No engine or historical rating changes~~ — untouched; the 2+/30 rule is
+   unchanged.
+6. **Regenerate the screenshots** once the beta's Firestore read quota resets:
+   `node scripts/screenshots.js`. Only the journey read is outstanding.
+7. **Baton to CGPT/Shaun.**
