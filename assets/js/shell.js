@@ -77,7 +77,11 @@ function goToSection(section){
     const summaryEl = document.getElementById('summaryView');
     if(summaryEl) summaryEl.style.display = 'none';
     renderHomeDashboard();
-    document.getElementById('homeDashboard').style.display = 'block';
+    // The dashboard element is created lazily by the first render(); Home can
+    // be entered before that (deep link, scripted navigation), so build it on
+    // demand rather than dereferencing null.
+    const dash = document.getElementById('homeDashboard') || buildHomeDashboard();
+    if(dash) dash.style.display = 'block';
   } else {
     // #homeDashboard is a new element app.js's own tab-visibility system has
     // no knowledge of, so it must be hidden explicitly here -- otherwise,
@@ -1672,6 +1676,7 @@ function buildHomeDashboard(){
   dash.id = 'homeDashboard';
   dash.style.display = 'none';
   const legacySummary = document.getElementById('summaryView');
+  if(!legacySummary || !legacySummary.parentNode) return null;
   legacySummary.parentNode.insertBefore(dash, legacySummary);
   return dash;
 }
@@ -1716,14 +1721,20 @@ function buildLastResultCardHtml(name){
   const theirs = m.winners.includes(name) ? m.losers : m.winners;
   const result = m.isDraw ? 'draw' : (m.winners.includes(name) ? 'win' : 'loss');
   const onStoredWinningSide = m.winners.includes(name);
-  const myGames = onStoredWinningSide ? m.games_winner : m.games_loser;
-  const theirGames = onStoredWinningSide ? m.games_loser : m.games_winner;
-  const total = myGames + theirGames;
+  // getDisplayMatches() hands back stored matches, not enriched ones, so the
+  // game counts are summed from the sets here rather than read off fields that
+  // only exist after enrichMatches(). Sets are stored winner-first.
+  const sets = Array.isArray(m.sets) ? m.sets : [];
+  const winnerGames = sets.reduce((t, set) => t + set[0], 0);
+  const loserGames = sets.reduce((t, set) => t + set[1], 0);
+  const myGames = onStoredWinningSide ? winnerGames : loserGames;
+  const total = winnerGames + loserGames;
 
   const commentary = LastResult.commentaryFor({
     result,
     gameShare: total ? myGames / total : null,
     expected: view ? view.mine.expected : null,
+    actual: view ? view.mine.actual : null,
     ratingGap: view ? (view.mine.preRating - view.theirs.preRating) : null,
   });
 
@@ -1759,7 +1770,7 @@ function buildLastResultCardHtml(name){
 }
 
 function renderHomeDashboard(){
-  const dash = document.getElementById('homeDashboard');
+  const dash = document.getElementById('homeDashboard') || buildHomeDashboard();
   if(!dash) return;
   const viewer = getCurrentViewer();
   if(!viewer){

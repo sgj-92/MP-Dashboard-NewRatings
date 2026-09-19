@@ -2126,6 +2126,71 @@ test('the Last Time Out commentary is one of the fixed, factual lines', { skip }
   } finally { await app.close(); }
 });
 
+// A line drawn from the fixed set is not enough: the card has to be feeding the
+// module the right facts. It previously read game counts off fields that only
+// exist on ENRICHED matches, while getDisplayMatches() hands back stored ones,
+// so the game share arrived as null and every defeat -- however lopsided --
+// fell through to the same generic line. Nothing in the module's own tests
+// could see that, because they call it with the facts it documents.
+test('the commentary matches the facts the record holds, not a fallback', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      render();
+      const rows = [];
+      ['Ant Slice', 'Rishi', 'Eli', 'Osh', 'Len', 'Max', 'Jords', 'Tom'].forEach((name) => {
+        setCurrentViewer(name);
+        goToSection('home');
+        renderHomeDashboard();
+        const note = document.querySelector('#homeDashboard .lr-note');
+        if (!note) return;
+
+        // Rebuild the facts independently of the card, straight from the record.
+        const rated = Object.values(V3_MATCH_FACTS).filter((f) => f.byPlayer && f.byPlayer[name]);
+        const latest = rated.slice().sort((a, b) => (a.date !== b.date
+          ? (a.date < b.date ? 1 : -1)
+          : String(b.matchId).localeCompare(String(a.matchId))))[0];
+        const m = getDisplayMatches().find((x) => x.id === latest.matchId);
+        const view = MatchFacts.forPlayer(latest, name);
+        const onWinningSide = m.winners.includes(name);
+        const winnerGames = m.sets.reduce((t, set) => t + set[0], 0);
+        const loserGames = m.sets.reduce((t, set) => t + set[1], 0);
+        const total = winnerGames + loserGames;
+        const key = LastResult.commentaryKeyFor({
+          result: m.isDraw ? 'draw' : (onWinningSide ? 'win' : 'loss'),
+          gameShare: total ? (onWinningSide ? winnerGames : loserGames) / total : null,
+          expected: view.mine.expected,
+          actual: view.mine.actual,
+          ratingGap: view.mine.preRating - view.theirs.preRating,
+        });
+        rows.push({
+          name,
+          shown: note.textContent.trim(),
+          want: LastResult.LINES[key],
+          key,
+          gameShare: total ? Math.round(((onWinningSide ? winnerGames : loserGames) / total) * 100) / 100 : null,
+        });
+      });
+      return { rows, heavyShare: LastResult.HEAVY_SHARE };
+    });
+
+    assert.ok(r.rows.length >= 5, `not enough players produced a card (${r.rows.length})`);
+    r.rows.forEach((row) => {
+      assert.strictEqual(row.shown, row.want,
+        `${row.name}: the record says ${row.key} (game share ${row.gameShare}) but the card said "${row.shown}"`);
+      assert.ok(row.gameShare !== null,
+        `${row.name}: the game share reached the module as null, so the bands were never applied`);
+    });
+    // And the facts must actually be varying the line. If every player landed on
+    // the same key, this test would pass just as happily against the fallback
+    // behaviour it exists to catch.
+    const keys = [...new Set(r.rows.map((row) => row.key))];
+    assert.ok(keys.length >= 2,
+      `every player got the same line (${keys.join(', ')}), so the branches are untested`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
 // A draw is rated but is deliberately absent from MATCHES, which is what the
 // profile's match log is built from -- so the profile cannot show one, and the
 // most recent result genuinely can be a draw. Both paths are checked.

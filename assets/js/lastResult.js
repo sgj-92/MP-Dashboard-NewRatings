@@ -41,10 +41,17 @@
   //   result       'win' | 'loss' | 'draw'   from the record, never inferred
   //   gameShare    their side's share of games, 0..1
   //   expected     the persisted pre-match expected score, 0..1
+  //   actual       the performance score the engine recorded, 0..1
   //   ratingGap    their pairing's rating minus the opposition's, going in
+  //
+  // `expected` is the engine's expected *performance* score, not an expected
+  // share of games, so it is only ever compared against `actual` -- the same
+  // quantity, recorded at the same time. `gameShare` is a share of games and is
+  // only ever compared against the game-share bands below. Comparing one
+  // against the other would be comparing two different measurements.
   function commentaryKeyFor(facts) {
     if (!facts || !facts.result) return null;
-    const { result, gameShare, expected, ratingGap } = facts;
+    const { result, gameShare, expected, actual, ratingGap } = facts;
 
     if (result === 'draw') return 'DRAW';
 
@@ -55,10 +62,11 @@
       return 'ROUTINE_WIN';
     }
 
-    // A defeat in which more of the games were taken than the expectation
-    // implied is a genuinely different result from a defeat in which fewer
-    // were, and saying so is the one useful thing to say about it.
-    if (typeof gameShare === 'number' && typeof expected === 'number' && gameShare > expected) {
+    // A defeat in which the side scored better than the engine expected of them
+    // is a genuinely different result from one in which they scored worse, and
+    // saying so is the one useful thing to say about it. Both numbers are read
+    // back from the record; nothing is recomputed.
+    if (typeof actual === 'number' && typeof expected === 'number' && actual > expected) {
       return 'BETTER_THAN_SCORELINE';
     }
     if (typeof gameShare === 'number' && gameShare <= HEAVY_SHARE) return 'HEAVY_LOSS';

@@ -22,12 +22,34 @@ test('a tight win and a routine win read differently', () => {
   assert.strictEqual(L.commentaryKeyFor({ result: 'win', gameShare: 0.72, expected: 0.65, ratingGap: 120 }), 'ROUTINE_WIN');
 });
 
-// The useful thing to say about a defeat: whether more of the contest was taken
-// than the expectation implied.
+// The useful thing to say about a defeat: whether the side scored better than
+// the engine expected of them.
 test('a defeat that beat the expectation is not the same as a hammering', () => {
-  assert.strictEqual(L.commentaryKeyFor({ result: 'loss', gameShare: 0.42, expected: 0.30, ratingGap: -150 }), 'BETTER_THAN_SCORELINE');
-  assert.strictEqual(L.commentaryKeyFor({ result: 'loss', gameShare: 0.18, expected: 0.55, ratingGap: 60 }), 'HEAVY_LOSS');
-  assert.strictEqual(L.commentaryKeyFor({ result: 'loss', gameShare: 0.44, expected: 0.60, ratingGap: 80 }), 'LOSS');
+  assert.strictEqual(L.commentaryKeyFor({ result: 'loss', gameShare: 0.42, expected: 0.30, actual: 0.40, ratingGap: -150 }), 'BETTER_THAN_SCORELINE');
+  assert.strictEqual(L.commentaryKeyFor({ result: 'loss', gameShare: 0.18, expected: 0.55, actual: 0.14, ratingGap: 60 }), 'HEAVY_LOSS');
+  assert.strictEqual(L.commentaryKeyFor({ result: 'loss', gameShare: 0.44, expected: 0.60, actual: 0.35, ratingGap: 80 }), 'LOSS');
+});
+
+// `expected` is the engine's expected performance score (0.80 x game share +
+// 0.20 x result), NOT an expected share of games. Comparing a game share
+// against it would be comparing two different measurements -- the exact
+// confusion the rest of the app was cleaned up to avoid.
+test('the expectation is judged against the score the engine recorded, never against the game share', () => {
+  // A game share above the expectation, but the recorded score came in below
+  // it: the engine's own reading wins, and it is not a moral victory.
+  assert.strictEqual(
+    L.commentaryKeyFor({ result: 'loss', gameShare: 0.45, expected: 0.40, actual: 0.36, ratingGap: 0 }),
+    'LOSS');
+  // And the reverse: a low game share with a recorded score above expectation
+  // is still the better-than-it-looked defeat.
+  assert.strictEqual(
+    L.commentaryKeyFor({ result: 'loss', gameShare: 0.25, expected: 0.18, actual: 0.20, ratingGap: 0 }),
+    'BETTER_THAN_SCORELINE');
+  // With no recorded score at all, the game-share bands still decide -- they
+  // are only ever compared against each other.
+  assert.strictEqual(
+    L.commentaryKeyFor({ result: 'loss', gameShare: 0.22, expected: 0.40, ratingGap: 0 }),
+    'HEAVY_LOSS');
 });
 
 test('the same facts always give the same line', () => {

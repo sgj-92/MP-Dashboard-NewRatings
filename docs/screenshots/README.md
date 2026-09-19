@@ -6,6 +6,12 @@ Review aids for CGPT and Shaun, not release documentation. Regenerate rather tha
 Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,
 so a capture of the seeded fixture would show ratings that no longer exist.
 
+### Home — the lower half
+
+![Home — the lower half](00-home.png)
+
+Club Pulse cards open the player they name. Match ideas is collapsed until asked for. Last Time Out is built automatically from the player's own most recent rated match — result, scoreline, one deterministic line, and the rating movement the engine recorded. The monthly snapshot stays.
+
 ### Power Rankings — all time
 
 ![Power Rankings — all time](01-rankings-all-time.png)
