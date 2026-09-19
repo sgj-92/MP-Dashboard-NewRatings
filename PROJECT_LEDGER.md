@@ -237,6 +237,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
 | Ranking state terminology: Ranked / Idle / Inactive | Separate ranking eligibility from participation status. **Ranked** = active and currently meets the live-ranking rule. **Idle** = still part of Money Padel but currently below the recent-match threshold, so not shown in the live ranking. **Inactive** = explicitly not currently involved/participating. Idle is derived from recent activity; Inactive is an explicit club/player-status field. |
+| Included Idle/Inactive players merge into the visible ranking | The filter toggles are not separate lower sections. When **Include idle** is on, Idle players join the main visible ranking pool and are sorted/ranked exactly as if currently eligible, while retaining an `IDLE` badge. When **Include inactive** is on, true Inactive players likewise join the same visible ranking pool and receive filtered-view rank positions, while retaining an `INACTIVE` badge. With both on, everyone appears in one ordered list. Official eligibility/status remains unchanged; these are filtered-view ranks only. |
 | Ranking eligibility must be shared across Home/Rankings/Profile/Club Pulse | Shaun spotted Ant Slice showing `#–` on Home despite recent activity. All surfaces must derive Ranked vs Idle from one shared eligibility helper over the same v3 rated-match source/date window. A player must never be Ranked on one surface and Idle on another. Before changing data, verify Ant Slice's actual count of rated matches in the rolling 30-day window; if >=2, current `#–` is a bug. |
 | Games cards show historical tier beside each player | On collapsed and expanded Games cards, show each player's **tier at match date** beside their name (e.g. `Eli (A) & Len (A) def Osh (A) & Rishi (B)`). Use the same temporal-tier source for visible labels and game-type classification so the UI can never display one tier while filtering the match as another. |
 | Games tab supports historical tier-composition filtering | Add a Games filter based on the **tiers that applied when each match was played**, not current tiers. Support broad tier environments (all-A/all-B/all-C, mixed) and specific canonical matchup types such as `AA vs AA`, `AB vs BB`, `AA vs AB`, `AB vs AB`. The filter must combine with Month and Player; e.g. Player=Len + Game type=`AB vs BB` shows only Len's matches of that historical composition. Team orientation must not create separate categories. |
@@ -330,6 +331,39 @@ facts and let users interpret them.
 - no rating-engine or stored-rating changes;
 - add targeted browser/regression coverage for historical tier labels and
   combined filters, including a player-selected `AB vs BB` case.
+
+### Clarification: Include Idle / Include Inactive behavior
+
+The current selector behavior is not what Shaun wants. `Include idle` and
+`Include inactive` should expand the **main visible ranking pool**, not merely
+show extra players in separate lower sections.
+
+Required behavior:
+
+- Default: official current ranking pool only (Ranked + Active).
+- `Include idle` ON: Idle players are merged into the main list and sorted by
+  rating as though currently ranking-eligible. They receive a **filtered-view
+  rank position** and keep an `IDLE` badge so their real state remains clear.
+- `Include inactive` ON: true Inactive players are also merged into the same
+  main list and sorted by rating as though active. They receive a filtered-view
+  rank position and keep an `INACTIVE` badge.
+- Both ON: Ranked + Idle + Inactive all appear in one ordered ranking list.
+- Turning a toggle on must not change official eligibility, participation
+  status, stored ratings or historical records.
+
+Example: if Omar is Idle but his rating would place him 5th among the visible
+Tier B pool, `Include idle` should place him at **#5 in that filtered view** and
+shift the displayed positions beneath him accordingly.
+
+Prefer simplifying the controls to two toggles/buttons:
+
+- `Include idle players`
+- `Include inactive players`
+
+rather than presenting them as mutually exclusive status selectors.
+
+Add regression coverage for rank re-numbering when each toggle is enabled
+individually and together.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -522,6 +556,16 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 19 Sep 2026 (include-state ranking behavior)
+Shaun clarified the intended filter semantics: Idle/Inactive inclusion should
+merge those players into the main visible ranking and re-rank that filtered
+pool, not show them as separate lower sections.
+
+Keep status badges so the distinction remains visible, but filtered-view rank
+positions should behave exactly as if those players were eligible/active.
+
+This clarification should be implemented alongside the current refinement work.
 
 ### CGPT — 19 Sep 2026 (Games historical tiers + game-type filter)
 Shaun wants Games to expose the tier context that existed when each match was
@@ -2113,5 +2157,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 5. Use one shared temporal-tier source for labels and classification.
 6. Add browser/regression coverage including a player-selected `AB vs BB`
    example and a historical tier-change case.
-7. Do not change Sequential-v1 or stored ratings/history.
-8. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+7. **Merge included Idle/Inactive players into the main visible ranking** and
+   re-number the filtered-view ranks; retain status badges.
+8. Simplify the status controls to inclusion toggles where practical.
+9. Add browser coverage for Idle only, Inactive only, and both included together,
+   including filtered-view rank re-numbering.
+10. Do not change Sequential-v1 or stored ratings/history.
+11. Update Ledger with commit/tests and baton back to CGPT/Shaun.
