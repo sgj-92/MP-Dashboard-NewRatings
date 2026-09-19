@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `5b637cd` |
-| Tests | **299 / 299 passing** (45 of them drive a real browser) |
+| Last verified implementation commit | `f5d4095` |
+| Tests | **316 / 316 passing** (57 of them drive a real browser) |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -249,7 +249,17 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**Owner / baton: Claude Code — Home lower-section usefulness + visual refresh.**
+**DONE (`af84d87`, `f5d4095`). Owner / baton: CGPT / Shaun — visual acceptance
+of the new Home screen.** All five parts delivered, 316/316 tests, screenshots
+regenerated including `00-home.png`. See the CCode handoff of 19 Sep 2026 in
+Section 6, which also records a commentary defect found after the first commit
+and fixed. Part 5 (match sharing) is recorded as backlog in Section 5 and was
+deliberately not implemented.
+
+The original task follows, unchanged, as the acceptance reference.
+
+**Original owner / baton: Claude Code — Home lower-section usefulness + visual
+refresh.**
 
 Shaun reviewed the lower half of Home and wants it to be more useful, less
 decorative, and less dependent on manually maintained data.
@@ -365,6 +375,22 @@ and the current engine left unchanged. Revisit together later with live data:
    aggressive.
 
 None of the above is authorised for implementation yet.
+
+### Product backlog — match sharing (recorded 19 Sep 2026, not scheduled)
+
+Raised by Shaun in the Home lower-section task and deliberately kept out of that
+pass. **No notification system is required or proposed.**
+
+Suggested and requested matches should be shareable:
+
+- native Share (which on a phone can route to WhatsApp);
+- a `Copy message` fallback where native Share is unavailable;
+- the suggested message includes the teams and concise match context, such as
+  the expected balance of the game.
+
+Not started, not authorised, no owner assigned. It sits behind the current
+refinement work and needs a product decision on where sharing appears (Match
+ideas only, or any matchup card) before it is scheduled.
 
 1. **RESOLVED — monthly historical read strategy.** Use a month-filtered
    `ratingJourney` query (and the required Firestore index if needed). Section 2
@@ -525,6 +551,81 @@ None of the above is authorised for implementation yet.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 19 Sep 2026 (Home lower section rebuilt; a commentary defect found by looking)
+
+**All five parts of the Home task are done.** Commits `af84d87` (the work) and
+`f5d4095` (a defect found afterwards, below).
+
+| | |
+|---|---|
+| Commits | `af84d87`, `f5d4095` |
+| Tests | **316 / 316**, 57 in a real browser |
+| Screenshots | regenerated, 17 including the new `00-home.png`, 0 page errors |
+| Engine / stored ratings | untouched, as required |
+
+**1) Club Pulse is actionable.** Every card carries a chevron and
+`data-pulse-player`, and opens that player's profile. `All Insights` now enters
+the Insights area at the top rather than part-way down the Call Outs content:
+it clicks the legacy tab and then resets both the view's own scroll and the
+window's, because the old tab/scroll state was what landed it mid-page.
+
+**2) Match ideas is collapsed by default.** `Balanced games suggested for you` /
+`Show suggestions ›`, remembering its state for the session. The underlying
+matchup logic is unchanged — this was hierarchy work, not a new recommender.
+
+**3) Next on Court is gone, replaced by Last Time Out.** Built from the player's
+most recent rated v3 match: date, historical tier, teams, scoreline oriented so
+a defeat reads as one, one commentary line, the engine's own per-player rating
+movement, and `View match ›`.
+
+`View match` needed two fixes that only appeared once it was clicked. A draw
+opened an empty profile, because draws are deliberately absent from `MATCHES`,
+which the profile's match log is built from — it now falls back to the Games
+feed. A September match was then filtered out by the Rankings month scope, which
+the profile sheet shares; the month is widened around the synchronous sheet
+build and restored immediately after.
+
+**4) The monthly snapshot and `View Full Review` are unchanged.**
+
+**5) Match sharing is recorded in Section 5** as product backlog, not started
+and not authorised, per the instruction not to block this pass on it.
+
+#### The commentary was wrong, and only the rendered screen said so
+
+The line under each result is chosen by `lastResult.js` from facts the engine
+already recorded. Its own tests passed throughout. The screenshot showed
+`Not your day. On to the next.` under a 2-6, 3-6, 0-6 defeat — five games out of
+twenty-three, which is `Tough one. Time to run it back.`
+
+The card summed its game counts from `games_winner` / `games_loser`. Those exist
+only on **enriched** matches; `getDisplayMatches()` returns stored ones. Both
+were `undefined`, the game share arrived as `null`, and **every** defeat —
+however lopsided — fell through to the same generic line. The counts are now
+summed from the stored sets.
+
+Fixing the inputs exposed a second, quieter error in the same branch: it
+compared a share of games against `expected`, which is the engine's expected
+**performance** score (0.80 × game share + 0.20 × result), not an expected share
+of games. Two different measurements — the exact confusion the rest of the app
+was cleaned up to avoid. It now compares `actual` against `expected`, both read
+back from the record, and the game share is only ever compared against the
+game-share bands.
+
+This is the third defect in this refinement run that module tests could not
+reach and looking at the screen caught immediately. The new browser test rebuilds
+each player's facts straight from the record and asserts the rendered line
+matches, and it fails if every player lands on the same line — which is what the
+broken version did.
+
+Also: `#homeDashboard` was created lazily by the first `render()`, so entering
+Home before that (deep link, scripted navigation, the screenshot script) threw on
+a null dereference. It is now built on demand.
+
+**Baton → CGPT / Shaun** for visual acceptance of the Home screen. The
+screenshots are current. Nothing is blocked on my side; the rating-model backlog
+in Section 5 remains parked and match sharing needs a product decision before it
+can be scheduled.
 
 ### CGPT — 19 Sep 2026 (Home usefulness refresh)
 Shaun wants the lower half of Home simplified around things that are reliably
