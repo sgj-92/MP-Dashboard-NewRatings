@@ -246,6 +246,9 @@ Shaun's decisions, including where an agent recommended otherwise.
 | CGPT product/UX acceptance requirements satisfied | 18 Sep 2026 after `e0fdcbc`: all eight requested presentation fixes are implemented and regression-tested (242/242; 21 browser). The date-edit refusal and non-duplicative Key takeaways are approved departures from the mockup. Final pixel-level look check remains with Shaun/on-device because CGPT cannot render private-repo PNG pixels directly from the GitHub connector. |
 | Add player-facing Power Rating Guide in More | Players need both a short explanation and a detailed methodology view so small/unequal rating movements are understandable and defensible. The guide must explain expectation vs actual performance, reliability/K, why wins can move little, why losses can still gain rating, why partners move by different amounts, why reassessed/new players move faster, why club decisions are separate, and that ratings never reset monthly. Do **not** change Sequential-v1 merely because movements look small. |
 | Historical correction controls are admin-on-demand | The Play history must remain a player-facing results surface. `Correct match`, `Remove and replay`, and replay-warning copy must not render permanently on every game card. Hide them entirely for non-admin users; for admin, expose a compact per-card `…` / `Manage` control that reveals the maintenance actions only on demand. |
+| Player Tags adopts the Admin/Manage visual system | Keep `Add a new player` in an admin-style card. Put existing players in a second compact admin card/list. Each player initially renders as a compact summary row (name, tier/starting-tier summary, active/inactive, chevron) and expands inline to expose the existing Current Tier / Starting Tier / Status controls. Use the same sans-serif admin typography, not the large public-facing serif player-name style. Preserve all existing data behavior. |
+| Admin/Manage uses collapsed accordions by default | Every major Admin/Manage section should use one consistent accordion component with title left and subtle chevron right. The entire header row is tappable. **All sections default collapsed whenever Admin/Manage is opened.** Multiple sections may remain open. Reuse the existing dark/gold card system and remove emoji-style admin heading icons in favour of the premium admin heading treatment. |
+| Match-card Manage belongs with submission metadata | On historical match cards, move `… Manage` off the matchup/player-name row and place it on the same horizontal row as `Submitted by …`, aligned right. Row hierarchy: matchup uses full width; score beneath; submission metadata left + Manage right. This is especially to improve wrapping on narrow iPhones. |
 | Player-facing rating explanations use match/game language first | Replace exposed `Performance score 0.xx against 0.xx expected` wording in normal player-facing UI with plain language: whether the team were favourites/underdogs/evenly matched, the approximate percentage of games they were expected to win, the percentage they actually won, the match result, whether they outperformed/met/underperformed expectation, and the resulting rating movement. Keep exact blended performance score, K and reliability only behind `See full calculation` / technical disclosure. Do not imply the model is games-share only: match result still contributes 20%. |
 | Games tab defaults to All time | Shaun explicitly confirmed the Games view should open on `All time`. This is intentionally different from other monthly views. Users may still select a specific month manually. |
 | Refinement phase: wording only; methodology questions parked | For the current refinement phase, do **not** change Sequential-v1. Fix the player-facing explanation so it accurately separates game-share expectation from the separate 20% match-result component. The broader questions about responsiveness, reliability/K and expectation symmetry are recorded in the backlog for a later evidence-led model review. |
@@ -395,6 +398,34 @@ Example filter order where present:
 Add regression coverage for canonical partner order, equal-tier stability,
 orientation preservation for equal team compositions, and strength-based
 filter ordering independent of counts.
+
+### Admin/Manage mobile refinement
+
+Shaun aligned the current screenshots with a prior GPT design pass. Treat the
+following as one coherent UI refactor, with no data/model changes:
+
+1. **Historical match cards:** move `… Manage` to the `Submitted by …` row,
+   right-aligned. Matchup text gets the full card width; score stays on its own
+   row. Do not truncate matchup text unnecessarily.
+2. **Admin/Manage accordion:** convert each major admin section into the same
+   collapsible component. Entire header row tappable; chevron down/up;
+   multiple sections may stay open; **all sections reset to collapsed whenever
+   the Admin/Manage screen is entered/opened**.
+3. **Admin headings:** remove emoji-style heading icons such as `🔮` and `🏷️`
+   and use the established premium Money Padel admin heading treatment.
+4. **Player Tags:** keep `Add a new player` as an admin card. Add an
+   `Existing players` admin card/list. Each player starts as a compact summary
+   row using admin sans-serif typography, with tier / starting-tier / status
+   summary and chevron. Tapping expands inline to the existing editable
+   Current Tier / Starting Tier / Active-Inactive controls.
+5. **Visual consistency:** reuse existing dark/gold tokens, borders, spacing,
+   muted/active treatments, and components. Do not invent a parallel visual
+   system.
+6. **Scope guard:** presentation/interaction refactor only. Do not change player
+   data, ratings, historical tier behavior, active-player filtering, prediction
+   logic, or match-management behavior.
+7. **Primary viewport:** narrow iPhone/mobile first; add targeted browser
+   regression coverage for layout and collapse/reset behavior.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -751,6 +782,19 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (Admin/Manage UX alignment)
+Shaun reconciled the current screenshots with a separate GPT design pass and
+approved the combined direction. CCode should treat this as one mobile-first
+Admin/Manage presentation refactor:
+
+- Match `Manage` moves to the `Submitted by` row;
+- all major Admin/Manage sections become collapsed-by-default accordions;
+- emoji-style admin heading icons are removed;
+- Player Tags becomes an admin-style compact expandable record list;
+- existing data and business logic remain untouched.
+
+This work is approved and unblocked.
 
 ### CCode — 20 Sep 2026 (NEXT 13 done — Reliability is asked for and answered)
 
@@ -2885,27 +2929,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Refresh Home lower section** per Section 4.
-2. Make Club Pulse cards open the featured player's profile.
-3. Fix `All Insights` so it opens Insights/Call Outs at the top.
-4. Collapse `Match to Make` into **Match ideas** by default.
-5. Replace `Next on Court` with **Last Time Out / Your Last Result** from the
-   selected player's latest rated match, including score, exact rating movement,
-   short factual commentary, and `View match`.
-6. Keep Upcoming in Play unchanged.
-7. Add targeted browser coverage for the new Home interactions.
-8. Keep native Share / WhatsApp + Copy message as backlog follow-on work.
-9. Do not change Sequential-v1 or stored ratings/history.
-10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
-11. **DONE (`f26fa3a`).** Canonicalise Games partnership display and matchup-filter ordering using
-    `S > A > B > C` and partnership strength
-    `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Higher-tier partner
-    first; stronger partnership first; equal-tier/equal-composition ties preserve
-    stored order/orientation; counts do not control filter order.
-12. **DONE (`aef42a7`).** Reassessment Reliability: MOVE-SCALED approved with
-    **D = 150 points** and a **20% minimum/floor**. Modelling `9ac4285`, rule
-    implemented as `Reassessment.recommendReliability` (`move-scaled-v1`).
-13. **DONE (`2767782`).** Use-recommendation / Override with attribution and
-    reason, storing both the system recommendation and the board's final choice.
-    The event schema already carried `recommendationReliability`, so no stored
-    field was added.
+1. **Admin/Manage mobile refinement — approved and unblocked.**
+2. Move historical match-card `… Manage` to the same row as `Submitted by …`,
+   aligned right, leaving the matchup row full-width.
+3. Convert every major Admin/Manage section to a consistent accordion with
+   full-row tap target and chevron; **default all collapsed whenever the screen
+   is opened**; allow multiple sections open.
+4. Remove emoji-style Admin/Manage section icons and align headings to the
+   premium existing admin design language.
+5. Restyle Player Tags: `Add a new player` card + `Existing players` compact
+   list; each player summary row expands inline to Current Tier / Starting Tier
+   / Status controls; use admin sans-serif typography.
+6. Preserve all player/rating/history/filter/prediction/match-management logic.
+7. Verify on narrow iPhone viewport and add targeted browser coverage for
+   wrapping, accordion reset/collapse behavior, and player-row expand/collapse.
+8. Update Ledger with implementation commit/tests and baton back to CGPT/Shaun.
