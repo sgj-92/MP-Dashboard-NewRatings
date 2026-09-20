@@ -4516,16 +4516,19 @@ function buildReviewPanelHtml(name){
     </div>`;
   }
 
-  html += buildReviewReliabilityHtml(d, s, snap, name);
+  html += `<div id="reviewReliabilityBlock">${buildReviewReliabilityHtml(d, s, snap, name)}</div>`;
 
   html += `<div class="fg-controls" style="margin-top:6px;">
     <div class="fg-row"><label class="fg-label">Note (recorded)</label><input id="reviewNote" class="fg-select" value="${d.notes || ''}" placeholder="Why the club decided this" /></div>
   </div>`;
 
+  // Always rendered, even when empty: typing into a field updates this in
+  // place rather than re-rendering the screen, and it has to exist to be
+  // updated. Before, validation ran only at render time, so entering a valid
+  // Reliability and reason left the old warnings on screen and the stage
+  // button disabled until something unrelated forced a re-render.
   const missing = MonthlyReview.incompleteReasons(reviewDraftForCheck(), snap);
-  if(missing.length){
-    html += `<div class="section-sub" style="color:var(--gold-bright); margin-top:6px;">${missing.map(m=>`• ${m}`).join('<br/>')}</div>`;
-  }
+  html += `<div id="reviewMissing" class="section-sub" style="color:var(--gold-bright); margin-top:6px;">${missingHtml(missing)}</div>`;
   html += `<div class="difficulty-row" style="margin-top:8px;">
     <button class="preset-btn" id="reviewStageBtn" style="flex:1;" ${missing.length?'disabled':''}>Review what will be recorded</button>
     <button class="preset-btn" id="reviewCloseBtn" style="flex:1;">Close</button>
@@ -4534,6 +4537,54 @@ function buildReviewPanelHtml(name){
 
   if(reviewPending) html += buildReviewConfirmHtml();
   return html;
+}
+
+// Re-attachable, because the Reliability block is rebuilt in place whenever the
+// rating changes and its buttons go with it.
+function wireReviewReliabilityChoices(){
+  document.querySelectorAll('.review-reliability').forEach(el=>{
+    el.onclick = ()=>{
+      if(!reviewDraft) return;
+      reviewDraft = { ...reviewDraftForCheck(), reliabilityChoice: el.dataset.reliability };
+      reviewPending = null; reviewMessage = '';
+      renderManage();
+    };
+  });
+}
+
+function missingHtml(missing){
+  return missing.length ? missing.map(m=>`• ${m}`).join('<br/>') : '';
+}
+
+// Validation used to run only while the screen was being built, so typing a
+// valid answer changed nothing until something else forced a re-render. This
+// folds the fields into the draft and refreshes what the answer affects,
+// WITHOUT rebuilding the screen -- a re-render on every keystroke would take
+// the caret out of the field being typed into, and a re-render on blur can
+// swallow the click that caused it.
+//
+// `fromRating` says the rating changed, which is the one case where the
+// Reliability step's own content is stale too: its recommendation is priced
+// against the anchor. That block is only rebuilt then, because rebuilding it
+// while someone is typing INTO it would destroy the field under them.
+function refreshReviewValidation({ fromRating } = {}){
+  if(!reviewDraft) return;
+  reviewDraft = reviewDraftForCheck();
+  const snap = reviewSnapshot();
+  if(!snap) return;
+
+  if(fromRating){
+    const host = document.getElementById('reviewReliabilityBlock');
+    const s = snap[reviewDraft.playerId];
+    if(host && s) host.innerHTML = buildReviewReliabilityHtml(reviewDraft, s, snap, reviewDraft.playerId);
+    wireReviewReliabilityChoices();
+  }
+
+  const missing = MonthlyReview.incompleteReasons(reviewDraftForCheck(), snap);
+  const box = document.getElementById('reviewMissing');
+  if(box) box.innerHTML = missingHtml(missing);
+  const stage = document.getElementById('reviewStageBtn');
+  if(stage) stage.disabled = missing.length > 0;
 }
 
 // ---- Step 3: Reliability, once a rating is on the table ----
@@ -4662,13 +4713,19 @@ function wireReviewSection(){
   });
 
   // Step 3. Same contract as step 2: choosing completes the draft, writes nothing.
-  document.querySelectorAll('.review-reliability').forEach(el=>{
-    el.onclick = ()=>{
-      if(!reviewDraft) return;
-      reviewDraft = { ...reviewDraftForCheck(), reliabilityChoice: el.dataset.reliability };
-      reviewPending = null; reviewMessage = '';
-      renderManage();
-    };
+  wireReviewReliabilityChoices();
+
+  // Live validation. Typing is the whole point: the answer must be accepted as
+  // it is given, not on the next unrelated tap.
+  [
+    { id: 'reviewOverrideRating', fromRating: true },
+    { id: 'reviewCorrectedRating', fromRating: true },
+    { id: 'reviewRelOverride', fromRating: false },
+    { id: 'reviewNote', fromRating: false },
+  ].forEach(({ id, fromRating })=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('input', ()=> refreshReviewValidation({ fromRating }));
   });
 
   const stageBtn = document.getElementById('reviewStageBtn');

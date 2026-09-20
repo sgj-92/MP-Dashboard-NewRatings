@@ -952,6 +952,140 @@ test('a match card gives the matchup the full width and puts Manage on the submi
   } finally { await app.close(); }
 });
 
+// Shaun found this on the live beta: Override Reliability chosen, 50 entered, a
+// reason entered — and the form still showed the old warnings with
+// "Review what will be recorded" disabled. Validation ran only while the screen
+// was being built, so a valid answer changed nothing until something unrelated
+// forced a re-render.
+//
+// The flow below is exactly the one reported, driven through real input events
+// with NO manual re-render anywhere.
+test('entering a Reliability override and a reason enables the review by itself', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner'; currentUserName = 'Shaun';
+      document.querySelector('#tabrow .tab-btn[data-tab="manage"]').click();
+      activeTab = 'manage'; lastRenderedTab = null; renderActiveTab();
+      document.querySelector('[data-acc-toggle="review"]').click();
+      reviewSubject = 'Ant Slice';
+      renderManage();
+      document.querySelector('.review-tier[data-event="PROMOTION"]').click();
+      [...document.querySelectorAll('.review-decision')].find((b) => b.dataset.decision === 'CLUB_OVERRIDE').click();
+
+      const type = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        el.value = value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      };
+      const stage = () => document.getElementById('reviewStageBtn');
+      const warnings = () => (document.getElementById('reviewMissing') || {}).innerText || '';
+      const step = () => ({ disabled: stage().disabled, warnings: warnings().trim() });
+
+      const out = { start: step() };
+
+      // A rating, typed. The Reliability step must follow it without a
+      // re-render, and its recommendation must be priced against what was typed.
+      const s = MonthlyReview.preReviewSnapshot(V3_JOURNEY, reviewToday())['Ant Slice'];
+      out.typedRating = Math.round((s.rating + 60) * 10) / 10;
+      type('reviewOverrideRating', String(out.typedRating));
+      out.afterRating = step();
+      out.relButtons = document.querySelectorAll('.review-reliability').length;
+      out.recommendationShown = (document.getElementById('reviewReliabilityBlock') || {}).innerText || '';
+
+      // Override Reliability -> 50 -> a reason. Nothing else.
+      document.querySelector('.review-reliability[data-reliability="OVERRIDE"]').click();
+      out.afterChoosingOverride = step();
+      out.typedFifty = type('reviewRelOverride', '50');
+      out.afterFifty = step();
+      type('reviewNote', 'Board: steadier than the move suggests.');
+      out.afterReason = step();
+
+      // And what the draft will actually record.
+      const snap = MonthlyReview.preReviewSnapshot(V3_JOURNEY, reviewToday());
+      out.chosen = MonthlyReview.chosenReliability(reviewDraftForCheck(), snap);
+      out.missing = MonthlyReview.incompleteReasons(reviewDraftForCheck(), snap);
+      out.writes = window.__writes.length;
+      return out;
+    });
+
+    // The reported flow, step by step.
+    assert.strictEqual(r.start.disabled, true, 'nothing is answered yet');
+    assert.strictEqual(r.relButtons, 2, 'the Reliability step follows a typed rating without a re-render');
+    assert.match(r.recommendationShown, /Recommended: \d+%/,
+      'and its recommendation is shown for what was typed');
+    assert.strictEqual(r.afterRating.disabled, true);
+    assert.match(r.afterRating.warnings, /must say what happens to Reliability/,
+      'the warning updates live to the next real requirement, not the stale one');
+    assert.doesNotMatch(r.afterRating.warnings, /needs a rating/,
+      'the rating has been given, so that warning must be gone');
+
+    assert.strictEqual(r.typedFifty, true, 'the override field must be on screen to type into');
+    assert.match(r.afterChoosingOverride.warnings, /needs a percentage/);
+    assert.doesNotMatch(r.afterFifty.warnings, /needs a percentage/, '50 answered that');
+    assert.match(r.afterFifty.warnings, /needs a reason/);
+
+    // The point of the whole fix.
+    assert.strictEqual(r.afterReason.warnings, '', `warnings must clear, got: ${r.afterReason.warnings}`);
+    assert.strictEqual(r.afterReason.disabled, false,
+      'the stage button must enable by itself, with no extra tap or reopen');
+
+    assert.ok(Math.abs(r.chosen - 0.5) < 1e-9, `50% must be what gets recorded, got ${r.chosen}`);
+    assert.deepStrictEqual(r.missing, []);
+    assert.strictEqual(r.writes, 0, 'none of this writes anything');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Typing must not fight the person doing it.
+test('live validation does not steal focus or lose what is being typed', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner'; currentUserName = 'Shaun';
+      document.querySelector('#tabrow .tab-btn[data-tab="manage"]').click();
+      activeTab = 'manage'; lastRenderedTab = null; renderActiveTab();
+      document.querySelector('[data-acc-toggle="review"]').click();
+      reviewSubject = 'Ant Slice';
+      renderManage();
+      document.querySelector('.review-tier[data-event="PROMOTION"]').click();
+      [...document.querySelectorAll('.review-decision')].find((b) => b.dataset.decision === 'CLUB_OVERRIDE').click();
+
+      const s = MonthlyReview.preReviewSnapshot(V3_JOURNEY, reviewToday())['Ant Slice'];
+      const el = document.getElementById('reviewOverrideRating');
+      el.focus();
+      // One character at a time, as a person types.
+      const target = String(Math.round((s.rating + 60) * 10) / 10);
+      const kept = [];
+      for (const ch of target) {
+        el.value += ch;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        kept.push(document.activeElement === el && document.getElementById('reviewOverrideRating') === el);
+      }
+      const out = { focusHeld: kept.every(Boolean), value: el.value, target };
+
+      document.querySelector('.review-reliability[data-reliability="OVERRIDE"]').click();
+      const rel = document.getElementById('reviewRelOverride');
+      rel.focus();
+      '50'.split('').forEach((ch) => {
+        rel.value += ch;
+        rel.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      out.relFocusHeld = document.activeElement === rel;
+      out.relValue = rel.value;
+      return out;
+    });
+
+    assert.strictEqual(r.focusHeld, true, 'the rating field must survive its own keystrokes');
+    assert.strictEqual(r.value, r.target, 'and keep what was typed');
+    assert.strictEqual(r.relFocusHeld, true, 'so must the Reliability field');
+    assert.strictEqual(r.relValue, '50');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
 test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
   const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
   assert.match(msg, /identifier is built from its date/);
