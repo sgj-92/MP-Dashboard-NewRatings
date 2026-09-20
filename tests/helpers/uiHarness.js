@@ -144,11 +144,18 @@ async function open(options = {}) {
       },
     };
   }, {
-    data: {
-      players: Object.fromEntries(fixture().players.map((d) => [d.id, d])),
-      matches: Object.fromEntries(fixture().matches.map((d) => [d.id, d])),
-      ratingJourney: Object.fromEntries(fixture().ratingJourney.map((d) => [d.id, d])),
-    },
+    // `options.record` loads a different record than the seeded fixture -- what
+    // the live beta actually holds, for instance, which is how a divergence
+    // reported from a phone gets reproduced here instead of guessed at.
+    data: (() => {
+      const r = options.record || fixture();
+      const keyed = (arr) => Object.fromEntries((arr || []).map((d) => [d.id, d]));
+      return {
+        players: keyed(r.players),
+        matches: keyed(r.matches),
+        ratingJourney: keyed(r.ratingJourney || r.journey),
+      };
+    })(),
     failReads: !!options.failReads,
   });
 

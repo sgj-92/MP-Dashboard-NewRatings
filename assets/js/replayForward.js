@@ -343,6 +343,65 @@
     return { identical: differences.length === 0, differences: differences.slice(0, 40), count: differences.length };
   }
 
+  // A record whose stored state no longer agrees with a replay of its own
+  // history cannot be edited: plan() refuses, and that refusal is right --
+  // planning an edit on top of a disagreement would build on numbers the
+  // history does not support.
+  //
+  // This is the way back. It builds the WRITE-ONLY plan that brings the record
+  // into agreement with its own inputs: the documents a completed replay would
+  // have written. It changes no input. The matches are the record; everything
+  // it rewrites is derived from them, so applying it is not a decision about
+  // what happened, only about finishing the arithmetic.
+  //
+  // Written for the failure this was found by: a replay that wrote part of its
+  // output and stopped, leaving the tail of the journey and the player state
+  // holding pre-change values. `wouldDelete` is reported rather than acted on,
+  // because a repair that needs to delete something is not a partial write and
+  // the caller should stop and look at it.
+  function planRepair(stored, provenance) {
+    const inputs = inputsFromRecord(stored);
+    const rebuilt = docsOf(inputs, replayInputs(inputs), provenance || {}, stored.journey);
+    const storedDocs = {
+      [Store.COLLECTIONS.matches]: stored.matches || [],
+      [Store.COLLECTIONS.journey]: stored.journey || [],
+      [Store.COLLECTIONS.players]: stored.players || [],
+    };
+    const d = diffDocs(storedDocs, rebuilt);
+
+    // A superseded decision is stored but never replayed, so a rebuild does not
+    // contain it. It must not be deleted -- the whole point of superseding
+    // rather than overwriting is that the original stays in the record.
+    const supersededIds = {};
+    (stored.journey || []).forEach((e) => { if (e && e.supersedes) supersededIds[e.supersedes] = true; });
+    const wouldDelete = [];
+    Object.entries(d.deletes).forEach(([c, ids]) => ids.forEach((id) => {
+      if (!supersededIds[id]) wouldDelete.push(`${c}/${id}`);
+    }));
+
+    const was = {};
+    (stored.players || []).forEach((p) => { was[p.id] = p; });
+    const moved = [];
+    (rebuilt[Store.COLLECTIONS.players] || []).forEach((p) => {
+      const prior = was[p.id];
+      if (!prior) { moved.push({ playerId: p.id, from: null, to: p.rating, delta: null }); return; }
+      if (Math.abs(prior.rating - p.rating) > EPSILON) {
+        moved.push({ playerId: p.id, from: prior.rating, to: p.rating, delta: Math.round((p.rating - prior.rating) * 10) / 10 });
+      }
+    });
+    moved.sort((a, b) => Math.abs(b.delta || 0) - Math.abs(a.delta || 0));
+
+    return {
+      writes: d.writes,
+      deletes: {},
+      documentsToWrite: d.changed,
+      documentsToDelete: 0,
+      wouldDelete,
+      playersMoved: moved,
+      staleByCollection: Object.fromEntries(Object.entries(d.writes).map(([c, docs]) => [c, docs.length])),
+    };
+  }
+
   // The whole plan for one change: what to write, what to delete, and which
   // players' ratings move as a result. Refuses outright if a no-op replay does
   // not already reproduce the record.
@@ -469,5 +528,5 @@
     };
   }
 
-  return { inputsFromRecord, applyChange, plan, commit, verifyNoOp, diffDocs, unseenPlayers, sameDoc, EPSILON, BATCH_LIMIT };
+  return { inputsFromRecord, applyChange, plan, planRepair, commit, verifyNoOp, diffDocs, unseenPlayers, sameDoc, EPSILON, BATCH_LIMIT };
 });

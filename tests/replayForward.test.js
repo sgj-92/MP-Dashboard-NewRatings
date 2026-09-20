@@ -244,3 +244,117 @@ test('an untouched event keeps the attribution it was written with', () => {
   assert.strictEqual(p.writes[Store.COLLECTIONS.journey].length, 4);
   assert.strictEqual(provenance.createdBy, 'seed-beta');
 });
+
+// ---------------------------------------------------------------------------
+// Repairing a half-finished replay.
+//
+// Found in the live beta, not here: a removal wrote part of its ~500 documents
+// and stopped, leaving the tail of the journey and the player state holding
+// pre-change values. Every match was intact; only the derived numbers were
+// half-written. plan() then refused every further edit, correctly and
+// permanently -- nothing in the app could clear it.
+
+test('a record whose replay was half-written can be repaired without touching a match', async () => {
+  const { stored, provenance } = record();
+
+  // Write a change in full, into memory, so we have a correct "after".
+  const change = { type: 'delete', matchId: stored.matches[10].id };
+  const planned = RF.plan({ stored, change, provenance });
+  const after = JSON.parse(JSON.stringify(stored));
+  const applyTo = (rec, writes, deletes) => {
+    Object.entries(deletes || {}).forEach(([c, ids]) => {
+      const key = c === Store.COLLECTIONS.journey ? 'journey' : c;
+      rec[key] = rec[key].filter((d) => !ids.includes(d.id));
+    });
+    Object.entries(writes || {}).forEach(([c, docs]) => {
+      const key = c === Store.COLLECTIONS.journey ? 'journey' : c;
+      const by = {}; rec[key].forEach((d) => { by[d.id] = d; });
+      docs.forEach((d) => { by[d.id] = d; });
+      rec[key] = Object.values(by);
+    });
+  };
+  applyTo(after, planned.writes, planned.deletes);
+  assert.strictEqual(RF.verifyNoOp(after, provenance).count, 0, 'the fully applied change must verify');
+
+  // Now the half-written record: the deletes and the first half of the writes
+  // landed; the rest never did.
+  const half = JSON.parse(JSON.stringify(stored));
+  const allWrites = [];
+  Object.entries(planned.writes).forEach(([c, docs]) => docs.forEach((d) => allWrites.push([c, d])));
+  const landed = allWrites.slice(0, Math.floor(allWrites.length / 2));
+  const partial = {};
+  landed.forEach(([c, d]) => { (partial[c] = partial[c] || []).push(d); });
+  applyTo(half, partial, planned.deletes);
+
+  const broken = RF.verifyNoOp(half, provenance);
+  assert.ok(broken.count > 0, 'a half-written replay must not verify');
+  assert.throws(() => RF.plan({ stored: half, change: { type: 'delete', matchId: half.matches[0].id }, provenance }),
+    /does not reproduce it/, 'and no further edit may be planned on top of it');
+
+  // The repair.
+  const repair = RF.planRepair(half, provenance);
+  assert.strictEqual(repair.wouldDelete.length, 0, 'a partial write is repaired by writing, never by deleting');
+  assert.strictEqual(repair.documentsToDelete, 0);
+  assert.strictEqual(repair.documentsToWrite, broken.count,
+    'every disagreement, and nothing else, is rewritten');
+
+  const repaired = JSON.parse(JSON.stringify(half));
+  applyTo(repaired, repair.writes, repair.deletes);
+  assert.strictEqual(RF.verifyNoOp(repaired, provenance).count, 0, 'the repaired record replays to itself');
+
+  // It finishes the change that was interrupted -- it does not undo it, and it
+  // invents nothing: the result is the record the completed write would have left.
+  assert.strictEqual(repaired.matches.length, after.matches.length);
+  const ratingOf = (rec, id) => rec.players.find((p) => p.id === id).rating;
+  repaired.players.forEach((p) => {
+    assert.ok(Math.abs(p.rating - ratingOf(after, p.id)) < RF.EPSILON,
+      `${p.id} must end where the completed write would have left them`);
+  });
+
+  // And the diagnostics agree.
+  const players = {};
+  repaired.players.forEach((p) => { players[p.id] = p; });
+  assert.strictEqual(BD.run({ players, matches: repaired.matches, journey: repaired.journey }).healthy, true);
+});
+
+test('repairing a healthy record is a no-op', () => {
+  const { stored, provenance } = record();
+  const repair = RF.planRepair(stored, provenance);
+  assert.strictEqual(repair.documentsToWrite, 0);
+  assert.strictEqual(repair.playersMoved.length, 0);
+  assert.strictEqual(repair.wouldDelete.length, 0);
+});
+
+// A superseded club decision is stored but never replayed, so a rebuild does
+// not contain it. verifyNoOp already excludes it; a repair must too, or the
+// first repair after any correction would quietly delete the audit trail that
+// superseding rather than overwriting exists to protect.
+test('a repair never proposes removing a superseded decision', () => {
+  const { stored, provenance } = record();
+  const HA = require('../assets/js/historicalAdjustment.js');
+
+  // A real correction, made through the supported path.
+  const adjustment = {
+    playerId: 'Shaun', effectiveDate: '2026-07-01', tierEvent: 'PROMOTION', newTier: 'B',
+    ratingDecision: 'CORRECT_INITIAL_CLASSIFICATION', correctedRating: 1400,
+    reason: 'Board: entered C as an unknown; the initial estimate was wrong.', createdBy: 'Board',
+  };
+  const first = HA.plan({ stored, adjustment, provenance });
+
+  const corrected = JSON.parse(JSON.stringify(stored));
+  const by = {}; corrected.journey.forEach((d) => { by[d.id] = d; });
+  (first.writes[Store.COLLECTIONS.journey] || []).forEach((d) => { by[d.id] = d; });
+  corrected.journey = Object.values(by);
+  const byP = {}; corrected.players.forEach((d) => { byP[d.id] = d; });
+  (first.writes[Store.COLLECTIONS.players] || []).forEach((d) => { byP[d.id] = d; });
+  corrected.players = Object.values(byP);
+
+  const superseded = corrected.journey.filter((e) => e.supersedes).map((e) => e.supersedes);
+  assert.ok(superseded.length > 0, 'this test is pointless unless something was actually superseded');
+
+  const repair = RF.planRepair(corrected, provenance);
+  superseded.forEach((id) => {
+    assert.ok(!repair.wouldDelete.some((d) => d.endsWith('/' + id)),
+      `a repair must not propose removing the superseded ${id}`);
+  });
+});
