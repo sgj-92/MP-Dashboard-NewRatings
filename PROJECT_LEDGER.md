@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `2767782` |
-| Tests | **377 / 377 passing** (67 of them drive a real browser) |
+| Last verified implementation commit | `5bd7999` |
+| Tests | **381 / 381 passing** (71 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -782,6 +782,54 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (Admin/Manage mobile refinement — all seven points done)
+
+`Ledger CCode`. Commit `5bd7999`. **381 / 381 tests**, 71 in a browser.
+Screenshots regenerated. Presentation and interaction only — no player data,
+rating, tier, filtering, prediction or match-management behaviour touched, as
+the scope guard required.
+
+**Match cards.** `… Manage` now sits on the `Submitted by` line, right-aligned,
+with the matchup taking the card's full width and the score on its own row. At
+375px the matchup no longer wraps around the button. A browser test checks every
+card in the feed: Manage in the submission row, never the title row, title width
+equal to the card's, nothing clipped.
+
+**Accordion.** Ten sections, one component, full header row as the tap target.
+Several may be open. Every section collapses again whenever the screen is
+**entered** — entered, not re-rendered: `renderManage` runs on every toggle,
+staged decision and saved setting, and resetting there would slam a section shut
+the moment it was opened. **The whole admin screen now fits on one phone
+screen.**
+
+**A defect that change introduced, and the test that now guards it.** Six
+wirings in `renderManage` had always found their element present. A collapsed
+section is not in the DOM at all, so the first render threw. All six now
+tolerate absence, and a test opens and closes every section in turn.
+
+**Player tags.** `Add a new player` keeps its card; `Existing players` is a
+record list — name, tier summary, active pill, chevron — expanding in place to
+the same three controls. Admin sans-serif, deliberately not the public serif
+player styling, which made a maintenance list read like a leaderboard. The
+starting-tier control takes its own row: *"Started: same as now"* has nowhere to
+truncate to that still means anything, and it was being cut to *"same as nc"*.
+
+**Headings.** Emoji icons removed from Admin/Manage, and the three sections that
+built their own heading no longer repeat what the accordion header says.
+
+**Scope note, deliberate:** three emoji headings survive OUTSIDE Admin/Manage —
+`📋 Players worth calling out` (Insights), `⚡ Admin: add straight to Upcoming`
+(Upcoming) and `🔒 Admin actions` (Games lock screen). The instruction was about
+Admin/Manage, and the scope guard was explicit. Say the word and they go too.
+
+**Also fixed in passing:** `Club override` still offered to set *"the rating
+and/or reliability"*. Step 3 has owned Reliability since `2767782`.
+
+**Baton → CGPT / Shaun** for on-device acceptance of the new Admin/Manage and the
+narrow-iPhone match card. Still open and unanswered: the card-orientation
+reading from the canonical-tier work (stronger-partnership-first applies to the
+matchup label, not to the sides of a card, where order carries the result).
 
 ### CGPT — 20 Sep 2026 (Admin/Manage UX alignment)
 Shaun reconciled the current screenshots with a separate GPT design pass and
@@ -2929,7 +2977,11 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Admin/Manage mobile refinement — approved and unblocked.**
+**All items below are DONE (`5bd7999`).** Nothing is queued for CCode; the
+rating-model backlog and match sharing in Section 5 remain parked and
+unauthorised.
+
+1. **DONE.** Admin/Manage mobile refinement — approved and unblocked.
 2. Move historical match-card `… Manage` to the same row as `Submitted by …`,
    aligned right, leaving the matchup row full-width.
 3. Convert every major Admin/Manage section to a consistent accordion with
