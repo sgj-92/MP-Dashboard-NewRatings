@@ -36,7 +36,7 @@ rating chokepoint now reads v3 persisted state.
 | Last verified implementation commit | `ecab0f2` |
 | Tests | **321 / 321 passing** (59 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
-| **Live record status** | **DIVERGED — 145 derived documents half-written. Repair planned and awaiting Shaun. See Open Questions.** |
+| **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -352,7 +352,7 @@ match context such as expected balance. No notification system is required now.
 
 ## 5. OPEN QUESTIONS / DECISIONS
 
-### BLOCKER — the live record is half-written, and the repair needs Shaun's go-ahead
+### RESOLVED 20 Sep — the live record was half-written; repaired with Shaun's approval
 
 **Raised by CCode, 20 Sep 2026, from Shaun's second removal attempt.** The app
 refused it: *"Replaying the record unchanged does not reproduce it (145
@@ -391,20 +391,25 @@ documents, changes no match, and deletes nothing.
 `scripts/repair-replay-divergence.js` (dry run by default). The dry run is done
 and is recorded above. **No write has been made to the live beta.**
 
-**Decision needed from Shaun — one of:**
+**Shaun chose to finish the removal, 20 Sep.** The alternative offered and not
+taken was re-adding `Osh vs Len` and replaying back to 157 matches, which would
+have been a different decision rather than a safer version of the same one.
 
-1. **Finish the removal** (recommended). Run the repair. Ratings land exactly
-   where his approved plan said. Editing works again immediately.
-2. **Undo the removal instead.** Re-add `Osh vs Len` and replay back to 157
-   matches. Only if he has changed his mind about deleting it — it is a
-   different decision, not a safer version of the same one.
+**Applied and verified.** 145 documents written, none deleted, no match touched:
 
-Nothing else in the app should be edited until one of these is done: every
-correction and removal stays refused while the record disagrees with itself.
+| | |
+|---|---|
+| Replay-to-self | **0 differences** |
+| Diagnostics | **8 / 8** at record level (the ninth check compares against the running app and only exists in the browser) |
+| Live record | 156 matches · 664 journey events · 34 players |
+| `Osh` | **1712** — as approved |
+| `Len` | **1677.6** — as approved |
+| Re-running the repair | reports nothing to do; it is idempotent |
+| Editing | a removal plans cleanly again (5 players moved, 9 documents), writing nothing |
 
-**Follow-on, not blocking:** should the app detect this state and offer the
-repair itself, rather than only refusing? Today the only way out is a script
-CCode runs. That is a product decision.
+**Follow-on, still open, not blocking:** should the app detect this state and
+offer the repair itself, rather than only refusing? Today the only way out is a
+script CCode runs, which is no use to Shaun on a phone. Product decision.
 
 
 ### Rating model backlog — parked during refinement
@@ -611,6 +616,55 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (the live record was half-written; found, measured, repaired)
+
+**Shaun's second removal was refused:** *"Replaying the record unchanged does not
+reproduce it (145 difference(s))."* The refusal was the safety rule working.
+
+**I had told him the day before that the first removal completed and the record
+was sound. That was wrong.** I checked the `matches` collection, saw 156, and
+concluded the whole write had landed. Deletions run first, so that one
+collection looked finished while 145 of the 509 derived documents had never been
+written. Checking one collection is not checking the record.
+
+**What it was.** The removal wrote 364 of 509 documents and stopped — the app
+was closed part-way through ~500 one-at-a-time writes, before batching landed in
+`fc33a44`. Every match was intact. The journey before 2026-09-03 was correct;
+114 events from 2026-09-03 to 2026-09-17 and 31 player documents still held
+pre-removal values.
+
+**What made the repair safe to propose.** Replaying the 156 stored matches
+reproduced, player for player and number for number, the *same* 31 movements
+Shaun's original confirmation screen had shown him. The repair was not a new
+decision about what happened; it was the arithmetic of the removal he had
+already authorised, finished. Full detail and the verification are in Section 5.
+
+**Built for it, and kept:**
+
+- `ReplayForward.planRepair` — the write-only plan that brings a record back into
+  agreement with its own history. Never deletes: `wouldDelete` is reported
+  instead, because a repair needing a deletion is not a partial write. Superseded
+  decisions are excluded, or the first repair after any correction would delete
+  the audit trail that superseding exists to protect.
+- `scripts/repair-replay-divergence.js` — dry run by default, `--write` to apply,
+  then re-reads and verifies replay-to-self and diagnostics.
+- The browser harness now loads an arbitrary record, which is how the live
+  divergence was reproduced here rather than reasoned about. It is also how the
+  `All games (1)` Shaun saw was settled: the live record renders all 156 games
+  under default filters, so that was a filter he had set, not data loss.
+
+**Tests 321 / 321.** The repair path is covered by a test that half-applies a
+real plan, confirms the record then refuses every edit, repairs it, and checks
+the result equals what the completed write would have left.
+
+**Two things worth keeping.** First, batching (`fc33a44`) removes the cause: 634
+documents now leave in two atomic batches, so there is no long window in which
+closing the app leaves a half-written record. Second, the app can still *reach*
+this state by other means and has no way out of it — see the open follow-on in
+Section 5.
+
+**Baton → CGPT / Shaun.** Home visual acceptance from 19 Sep is still open.
 
 ### CCode — 20 Sep 2026 (a removal that looked stuck; replay writes now batch)
 
