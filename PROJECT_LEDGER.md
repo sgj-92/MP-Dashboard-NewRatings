@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `4bbda90` |
-| Tests | **383 / 383 passing** (71 of them drive a real browser) |
+| Last verified implementation commit | `352cd72` |
+| Tests | **385 / 385 passing** (73 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 155 matches · 666 journey events · 34 players — replays to itself, diagnostics 8/8 |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
@@ -794,6 +794,53 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (live validation fixed; and a stale NEXT item corrected)
+
+`352cd72`. **385 / 385 tests**, 73 in a browser.
+
+**Reproduced before fixing.** Driving the reported flow showed
+`incompleteReasons()` returning `[]` on the folded draft while the button sat
+disabled and the warnings still asked for the percentage and reason that had
+just been entered. Validation and the disabled state were computed while the
+screen was being built and never again.
+
+**Every review input now folds into the draft on `input` and refreshes the
+warnings and the button in place.** In place, not by re-rendering: a re-render
+on each keystroke takes the caret out of the field being typed into, and one on
+blur can swallow the click that caused it. A second test types character by
+character and asserts focus and content survive — that is the fix this fix could
+easily have regressed into.
+
+**The rating fields additionally rebuild the Reliability step**, because its
+recommendation is priced against the anchor and was otherwise stale. That block
+is rebuilt *only* for a rating change; rebuilding it while someone types into its
+own field would destroy the field under them.
+
+**Widened beyond the two fields named, deliberately.** The rating inputs had the
+identical defect and it is upstream: typing a rating left the warning reading
+*"an override needs a rating"* when a rating had just been given. Fixing two of
+four would have left the same bug one field away.
+
+The regression test is the reported flow exactly — Override Reliability → `50` →
+a reason → warnings clear and the button enables — driven through real input
+events with no manual re-render anywhere. **It fails against the code before this
+commit**, which is the only way to know it tests the defect.
+
+#### Conflict found and corrected in the Ledger
+
+**NEXT item 7 reinstated work that is already done**, and described it wrongly:
+*"Historical correction — Tom/Fatch B baseline remains approved … both historical
+Reliability 10% … before live write."*
+
+That correction was **applied at `4bbda90`** earlier the same day, at **20%**,
+not 10% — Shaun changed it from 10% to 20% directly, and the Decisions Log rows
+in the very same commit record both the application and the change. Item 7 is
+leftover text from the earlier list, contradicting the Decisions Log in the same
+document. Corrected, with the evidence, rather than re-run: re-applying it would
+have overwritten a verified correction with a superseded figure.
+
+**Baton → CGPT / Shaun.** NEXT is clear again.
 
 ### CGPT — 20 Sep 2026 (live validation bug in reassessment override)
 Shaun found a UI-state defect in Admin Monthly Review:
@@ -3165,18 +3212,19 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Fix Monthly Review live validation bug — approved and unblocked.**
-2. When `reviewRelOverride` or `reviewNote` changes, immediately refresh the
-   review draft and re-run `MonthlyReview.incompleteReasons()`.
-3. Update the visible warning messages and `Review what will be recorded`
-   enabled/disabled state in place; no extra selection or screen reopen.
-4. Add browser regression coverage for:
-   `Override Reliability → 50 → reason → button enables automatically`.
-5. Preserve all existing rating/reliability methodology and audit semantics.
-6. Update Ledger with commit/tests and baton back.
+**All items are DONE (`352cd72`).** Monthly Review validation now updates as the
+board types: warnings and the `Review what will be recorded` button refresh on
+every keystroke, in place, without stealing focus.
 
-### Still queued after the UI-state bug
+### Corrected — the previously queued item 7 was already complete
 
-7. **Historical correction — Tom/Fatch B baseline** remains approved:
-   Tom (1 Jul) → 1400; Fatch (1 Aug) → 1400; both historical Reliability 10%;
-   supersede old anchors and replay forward with preview before live write.
+The Tom/Fatch B-baseline correction is **not outstanding**. It was applied at
+**`4bbda90`** with anchors of **1400** and Reliability of **20%** — Shaun changed
+it from the earlier 10% — verified by replay-to-self (0 differences) and
+diagnostics (8/8). The queued text asking for it to be re-applied at 10% was
+leftover from the earlier list and contradicted the Decisions Log in the same
+commit. Re-running it would have overwritten a verified correction with a
+superseded figure.
+
+Nothing is queued for CCode and no question is open for Shaun. The rating-model
+backlog and match sharing in Section 5 remain parked and unauthorised.
