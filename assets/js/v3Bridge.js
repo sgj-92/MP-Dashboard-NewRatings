@@ -60,6 +60,11 @@
       state.error = 'The v3 players collection is empty. Has the backfill been run?';
       return state;
     }
+    // The documents exactly as stored, kept beside the shapes the app uses.
+    // Verifying that the record still replays to itself needs the stored form,
+    // and re-reading 34 documents to get back what was just read would be a
+    // read budget spent on nothing.
+    state.rawPlayerDocs = docs;
     docs.forEach((d) => {
       const problems = validatePlayerDoc(d);
       if (problems.length) {
@@ -110,9 +115,12 @@
 
   // Ordering is pinned to (date, sourceIndex) exactly as the engine orders it,
   // so the application and the rating it displays walk the same sequence.
-  async function loadMatches(backend) {
+  // `collect`, when given, receives the documents as stored -- the shape the
+  // replay verifier needs, which the legacy shape below has already lost.
+  async function loadMatches(backend, collect) {
     const docs = await backend.getAll('matches');
     if (!docs || docs.length === 0) throw new Error('The v3 matches collection is empty.');
+    if (collect) collect.raw = docs;
     return docs
       .map(toLegacyMatchShape)
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.sourceIndex - b.sourceIndex));

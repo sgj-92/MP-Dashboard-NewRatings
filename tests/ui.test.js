@@ -376,6 +376,195 @@ test('a correction still reports itself as a correction', { skip }, async () => 
   } finally { await app.close(); }
 });
 
+// A half-written replay leaves the matches intact and the derived documents
+// not, after which the app refuses every edit -- correctly, and silently. It
+// said nothing to anyone who was not mid-edit, and kept nothing. Found in the
+// live beta the hard way.
+test('a diverged record is detected, logged once, and described to each reader differently', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      // A genuine divergence: the stored state stops matching the history.
+      window.__data.players.Shaun.rating += 25;
+      await loadV3State();
+      recomputeAll();
+
+      healthCheckDone = false; healthReport = null;
+      const writesBefore = window.__writes.length;
+      const report = await runRecordHealthCheck();
+
+      const stored = Object.values(window.__data.healthReports || {});
+      return {
+        found: !!report,
+        id: report && report.id,
+        differenceCount: report && report.differenceCount,
+        playersAffected: report && report.playersAffected,
+        documentsToRepair: report && report.documentsToRepair,
+        storedCount: stored.length,
+        storedStatus: stored[0] && stored[0].status,
+        seenCount: stored[0] && stored[0].seenCount,
+        // No read was spent finding this: the record was already in memory.
+        writesMade: window.__writes.length - writesBefore,
+        // What each reader is told.
+        asBoard: (() => { isUnlocked = true; adminRole = 'board'; return recordHealthMessage(); })(),
+        asOwner: (() => { isUnlocked = true; adminRole = 'owner'; return recordHealthMessage(); })(),
+        ownerFlagBoard: (() => { adminRole = 'board'; return isOwnerAdmin(); })(),
+        ownerFlagOwner: (() => { adminRole = 'owner'; return isOwnerAdmin(); })(),
+      };
+    });
+
+    assert.strictEqual(r.found, true, 'the divergence must be detected');
+    assert.match(r.id, /^REPLAY_DIVERGENCE__/);
+    assert.ok(r.differenceCount > 0);
+    assert.ok(r.playersAffected >= 1, 'the report must size the problem');
+    assert.ok(r.documentsToRepair >= 1);
+
+    // Written down, once.
+    assert.strictEqual(r.storedCount, 1, 'exactly one report document');
+    assert.strictEqual(r.storedStatus, 'OPEN');
+    assert.strictEqual(r.seenCount, 1);
+
+    // Two readers.
+    assert.strictEqual(r.ownerFlagBoard, false, 'a board unlock is not an owner unlock');
+    assert.strictEqual(r.ownerFlagOwner, true);
+    assert.match(r.asBoard, /editing is paused/i);
+    assert.ok(!/ratingJourney|players/.test(r.asBoard), `the board must not be handed internals: "${r.asBoard}"`);
+    assert.match(r.asOwner, /place\(s\)/);
+    assert.match(r.asOwner, /No match is affected/);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The shape it actually took in the live beta: a removal that wrote part of its
+// output and stopped, leaving the matches intact and the tail of the derived
+// documents holding pre-change values.
+test('the half-written replay that happened in the beta is detected and sized', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      const backend = RatingStore.firestoreCompatBackend(db);
+      const stored = await readStoredRecord(backend);
+      const target = stored.matches.find((m) => m.date === '2026-06-02') || stored.matches[5];
+      const planned = ReplayForward.plan({ stored, change: { type: 'delete', matchId: target.id }, provenance: {} });
+
+      // The deletes land first and complete; then half the writes land and the
+      // rest never do.
+      Object.entries(planned.deletes).forEach(([c, ids]) => ids.forEach((id) => { delete window.__data[c][id]; }));
+      const all = [];
+      Object.entries(planned.writes).forEach(([c, docs]) => docs.forEach((d) => all.push([c, d])));
+      all.slice(0, Math.floor(all.length / 2)).forEach(([c, d]) => { window.__data[c][d.id] = d; });
+
+      await loadV3State();
+      recomputeAll();
+      healthCheckDone = false; healthReport = null;
+      const report = await runRecordHealthCheck();
+      isUnlocked = true; adminRole = 'owner';
+      return {
+        planned: { writes: planned.documentsToWrite, landed: Math.floor(all.length / 2) },
+        report, owner: recordHealthMessage(),
+        matchGone: !Object.values(window.__data.matches).some((m) => m.id === target.id),
+        matchesLeft: Object.keys(window.__data.matches).length,
+      };
+    });
+
+    // The matches are intact -- only the derived documents are half-written.
+    assert.strictEqual(r.matchGone, true, 'the deletes completed, as they do');
+    assert.ok(r.report, 'a half-written replay must be detected');
+    assert.ok(r.report.differenceCount > 10,
+      `this should be a substantial divergence, got ${r.report.differenceCount}`);
+    assert.ok(r.report.staleByCollection.ratingJourney > 0, 'journey events are left stale');
+    assert.ok(r.report.staleByCollection.players > 0, 'and so is the player state');
+    assert.strictEqual(r.report.staleByCollection.matches, 0, 'but no match is stale');
+    assert.strictEqual(r.report.wouldDelete, 0, 'a partial write is repaired by writing, never deleting');
+    assert.ok(r.report.earliestAffectedDate, 'the affected span must be recorded');
+    assert.match(r.owner, /No match is affected/);
+    assert.match(r.owner, new RegExp(r.report.earliestAffectedDate));
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the same divergence seen again updates the one report instead of filing another', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      window.__data.players.Shaun.rating += 25;
+      await loadV3State();
+      recomputeAll();
+
+      healthCheckDone = false; healthReport = null;
+      await runRecordHealthCheck();
+      currentUserName = 'Someone Else';
+      healthCheckDone = false;                      // a second session
+      await runRecordHealthCheck();
+
+      const stored = Object.values(window.__data.healthReports || {});
+      return { count: stored.length, seenCount: stored[0].seenCount, seenBy: stored[0].seenBy, firstSeenAt: stored[0].firstSeenAt, lastSeenAt: stored[0].lastSeenAt };
+    });
+    assert.strictEqual(r.count, 1, 'four phones must not leave four reports');
+    assert.strictEqual(r.seenCount, 2);
+    assert.ok(r.firstSeenAt <= r.lastSeenAt);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a healthy record is checked and nothing is written', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      healthCheckDone = false; healthReport = null;
+      const before = window.__writes.length;
+      const report = await runRecordHealthCheck();
+      return {
+        report,
+        writes: window.__writes.length - before,
+        reports: Object.keys(window.__data.healthReports || {}).length,
+        message: recordHealthMessage(),
+        ranTwice: await runRecordHealthCheck(),   // once per session, not once per call
+      };
+    });
+    assert.strictEqual(r.report, null, 'a sound record produces no report');
+    assert.strictEqual(r.writes, 0, 'and writes nothing');
+    assert.strictEqual(r.reports, 0);
+    assert.strictEqual(r.message, '');
+    assert.strictEqual(r.ranTwice, null);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The refusal an operator actually meets, rather than the check that precedes it.
+test('an edit refused by a diverged record explains itself at the reader\'s level', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      window.__data.players.Shaun.rating += 25;
+      await loadV3State();
+      recomputeAll();
+      isUnlocked = true; adminRole = 'board'; currentUserName = 'Board Member';
+      healthCheckDone = false; healthReport = null;
+
+      const target = MATCHES.find((m) => m.date === '2026-06-02');
+      armedDeleteId = target.id;
+      await deleteMatch(target.id);
+      const board = { message: matchFixMessage, planned: !!matchFixPlan };
+
+      matchFixReset();
+      adminRole = 'owner';
+      await deleteMatch(target.id);
+      return { board, owner: { message: matchFixMessage, planned: !!matchFixPlan },
+               reports: Object.keys(window.__data.healthReports || {}).length };
+    });
+
+    assert.strictEqual(r.board.planned, false, 'no edit may be planned on a diverged record');
+    assert.strictEqual(r.owner.planned, false);
+    assert.match(r.board.message, /editing is paused/i);
+    assert.ok(!/differs|ratingJourney/.test(r.board.message),
+      `the board must not meet a wall of document ids: "${r.board.message}"`);
+    assert.match(r.owner.message, /No match is affected/);
+    assert.strictEqual(r.reports, 1, 'the refusal records it too, once');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
 test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
   const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
   assert.match(msg, /identifier is built from its date/);

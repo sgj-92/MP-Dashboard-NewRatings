@@ -289,6 +289,10 @@ const STORAGE_KEY_MY_UNLOCKED = 'moneypadel_my_unlocked';  // personal — local
 
 let ownerPasswordHash = null;
 let boardPasswordHash = null;
+// WHICH admin, not just whether. The board has a password of its own, so
+// "unlocked" has never meant "this is Shaun". Anything that should reach the
+// owner and not the board needs this, and until now nothing recorded it.
+let adminRole = null;   // 'owner' | 'board' | null
 let isUnlocked = false;
 
 function simpleHash(str){
@@ -315,12 +319,27 @@ async function savePasswordHash(key, hash){
   }
 }
 async function loadMyUnlocked(){
-  try { const v = localStorage.getItem(STORAGE_KEY_MY_UNLOCKED); if(v) return JSON.parse(v) === true; } catch(e){ /* not set yet */ }
+  try {
+    const v = localStorage.getItem(STORAGE_KEY_MY_UNLOCKED);
+    if(v){
+      const parsed = JSON.parse(v);
+      // Older devices stored a bare boolean. An unlock with no recorded role is
+      // treated as 'board': the lesser of the two, so a stale value can never
+      // hand someone the owner's view.
+      if(parsed === true){ adminRole = 'board'; return true; }
+      if(parsed && parsed.unlocked){ adminRole = parsed.role === 'owner' ? 'owner' : 'board'; return true; }
+    }
+  } catch(e){ /* not set yet */ }
+  adminRole = null;
   return false;
 }
-async function saveMyUnlocked(val){
-  try { localStorage.setItem(STORAGE_KEY_MY_UNLOCKED, JSON.stringify(!!val)); } catch(e){ /* best effort */ }
+async function saveMyUnlocked(val, role){
+  try {
+    localStorage.setItem(STORAGE_KEY_MY_UNLOCKED,
+      JSON.stringify(val ? { unlocked: true, role: role || adminRole || 'board' } : { unlocked: false }));
+  } catch(e){ /* best effort */ }
 }
+function isOwnerAdmin(){ return isUnlocked && adminRole === 'owner'; }
 
 function buildLockScreenHtml(){
   const settingNew = !ownerPasswordHash && !boardPasswordHash;
@@ -367,7 +386,8 @@ function wireLockScreen(onUnlocked){
       }
       ownerPasswordHash = hash;
       isUnlocked = true;
-      await saveMyUnlocked(true);
+      adminRole = 'owner';
+      await saveMyUnlocked(true, 'owner');
       applyTabVisibility();
       onUnlocked();
     };
@@ -378,7 +398,10 @@ function wireLockScreen(onUnlocked){
       const h = simpleHash(p);
       if(h === ownerPasswordHash || h === boardPasswordHash){
         isUnlocked = true;
-        await saveMyUnlocked(true);
+        // The owner's password wins if both happen to be the same, which is the
+        // safe way round: it grants more, and only to someone who knows it.
+        adminRole = (h === ownerPasswordHash) ? 'owner' : 'board';
+        await saveMyUnlocked(true, adminRole);
         applyTabVisibility();
         onUnlocked();
       } else {
@@ -931,6 +954,14 @@ let V3_MATCH_FACTS = {}; // matchId -> what the engine did in that match, read b
 // the same source as the monthly views -- a label and a classification that
 // disagreed would be worse than either alone.
 let V3_TIER_AS_OF = null;
+// The record as stored, kept for one purpose: checking that replaying it still
+// reproduces it. Assembled from documents the load already read.
+let V3_RECORD = null;
+// The divergence found this session, if any. One check per session -- it is
+// pure arithmetic over data already in memory, but it replays the whole
+// history, so it runs once and off the critical path.
+let healthReport = null;
+let healthCheckDone = false;
 let MONTHLY_VIEWS = null;
 let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
   ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
@@ -942,7 +973,8 @@ async function loadV3State(){
     V3_STATE = await V3Bridge.load(backend);
     if(V3_STATE.loaded){
       try {
-        V3_MATCHES = await V3Bridge.loadMatches(backend);
+        const rawMatches = {};
+        V3_MATCHES = await V3Bridge.loadMatches(backend, rawMatches);
         // Loaded at start-up rather than lazily because the app opens on a
         // monthly view, so a lazy read would fire immediately anyway.
         V3_JOURNEY = await V3Bridge.loadJourney(backend);
@@ -965,10 +997,13 @@ async function loadV3State(){
           changes: TierHistory.changesFromJourney(V3_JOURNEY),
         }).tierAsOf;
         MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF });
+        // The record in its stored form, which is what a replay is verified
+        // against. Assembled from documents already read; it costs nothing.
+        V3_RECORD = { matches: rawMatches.raw || [], journey: V3_JOURNEY, players: V3_STATE.rawPlayerDocs || [] };
       }
       catch(e){
         V3_MATCHES = []; V3_JOURNEY = []; MONTHLY_VIEWS = null;
-        V3_MATCH_FACTS = {}; V3_TIER_AS_OF = null;
+        V3_MATCH_FACTS = {}; V3_TIER_AS_OF = null; V3_RECORD = null;
         V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 history: ' + e.message};
       }
     }
@@ -4123,8 +4158,28 @@ function estimateMatchesPerMonth(){
   return counts.length ? Math.round(counts.reduce((a,b)=>a+b,0) / counts.length) : null;
 }
 
+// A divergence found this session, shown where an admin would look for it.
+// The board is told the record needs repair and that editing is paused; the
+// detail goes to the owner, who is the one who can do anything about it.
+function buildRecordHealthHtml(){
+  if(!healthReport) return '';
+  const owner = isOwnerAdmin();
+  const message = recordHealthMessage();
+  return `<div class="callout-card" style="padding:12px; margin-top:8px; border-color:var(--red);">
+    <div style="font-weight:700; color:#e8a5a1;">The record needs repair</div>
+    <div class="section-sub" style="margin-top:4px; color:var(--text);">${message}</div>
+    ${owner ? `<div class="section-sub" style="font-size:10.5px; margin-top:6px;">
+      Logged as <code>${healthReport.id}</code> · first seen ${String(healthReport.firstSeenAt).slice(0,10)}
+      · seen ${healthReport.seenCount} time${healthReport.seenCount===1?'':'s'}${(healthReport.seenBy||[]).length ? ' by ' + healthReport.seenBy.join(', ') : ''}.
+      No match has been changed or lost: the matches are the record, and only the numbers derived from them are behind.
+      Repairing it replays the stored matches and rewrites those numbers — run by Claude Code, who shows the full plan before anything is written.
+    </div>` : ''}
+  </div>`;
+}
+
 function buildDiagnosticsSectionHtml(){
   let html = `<div class="section-heading">🩺 Beta diagnostics</div>`;
+  html += buildRecordHealthHtml();
   html += `<div class="section-sub">Reads the three collections straight from the database and checks whether the record still hangs together — every rating is the end of a recorded chain, and nothing else in the app would notice if one had a gap. Read-only, and run on demand rather than at page load, because it reads everything.</div>`;
   html += `<div class="fg-controls"><div class="fg-row">
     <button class="preset-btn" id="runDiagnosticsBtn" style="width:100%;" ${diagnosticsRunning?'disabled':''}>${diagnosticsRunning ? 'Reading…' : 'Run diagnostics'}</button>
@@ -4779,6 +4834,7 @@ function renderManage(){
 
   document.getElementById('lockNowBtn').onclick = async ()=>{
     isUnlocked = false;
+    adminRole = null;
     await saveMyUnlocked(false);
     applyTabVisibility();
     renderManage();
@@ -5184,7 +5240,23 @@ async function stageMatchCorrection(change, describe){
     matchFixMessage = '';
   } catch(e){
     matchFixPlan = null;
-    matchFixMessage = e.message;
+    // A diverged record is not this edit's fault and not this operator's
+    // problem to read forty document ids about. It is recorded once and
+    // described at the level the reader can act on.
+    if(e.divergence){
+      if(!healthReport && typeof HealthReport !== 'undefined'){
+        let repair = null;
+        try { repair = ReplayForward.planRepair(V3_RECORD || {}, {}); } catch(x){ /* optional */ }
+        healthReport = HealthReport.buildReport({
+          check: e.divergence, repair, record: V3_RECORD,
+          seenBy: (currentUserName && currentUserName.trim()) || null,
+        });
+        await storeHealthReport(healthReport);
+      }
+      matchFixMessage = recordHealthMessage() || e.message;
+    } else {
+      matchFixMessage = e.message;
+    }
   }
   matchFixBusy = false;
   renderGamesTab();
@@ -6661,6 +6733,7 @@ Player C &amp; Player D"></textarea>
 
   document.getElementById('gamesLockNowBtn').onclick = async ()=>{
     isUnlocked = false;
+    adminRole = null;
     await saveMyUnlocked(false);
     applyTabVisibility();
     renderGamesTab();
@@ -6746,6 +6819,72 @@ function pendingToEngineMatch(m, id){
     type: m.type || 'doubles',
     drawSideAssignmentArbitrary: !!m.isDraw,
   };
+}
+
+// ===================== RECORD HEALTH =====================
+// Every rating in the record is derived by replaying the stored matches in
+// order. If a replay is ever left half-written, the matches stay intact but the
+// derived documents do not, and the app then refuses every edit -- correctly,
+// and silently. It says nothing to anyone who is not trying to edit at that
+// moment, and nothing is kept.
+//
+// This notices, and writes it down once. It does not repair: repairing is a
+// decision, and it is not one to offer from a phone beside the thing it would
+// rewrite.
+//
+// Costs no read. The record is already in memory, and the check is arithmetic.
+// It replays the whole history though -- tens of milliseconds here, a few
+// hundred on a phone -- so it runs once a session, after the first render.
+async function runRecordHealthCheck(){
+  if(healthCheckDone) return null;
+  healthCheckDone = true;
+  if(typeof ReplayForward === 'undefined' || typeof HealthReport === 'undefined') return null;
+  if(!V3_RECORD || !V3_RECORD.matches.length || !V3_RECORD.journey.length) return null;
+
+  let check;
+  try { check = ReplayForward.verifyNoOp(V3_RECORD, {}); }
+  catch(e){
+    // A check that cannot run is not a clean bill of health, but it is also not
+    // a divergence, and inventing one would be worse than saying nothing.
+    console.error('record health check could not run:', e && e.message);
+    return null;
+  }
+  if(check.identical) return null;
+
+  let repair = null;
+  try { repair = ReplayForward.planRepair(V3_RECORD, {}); } catch(e){ /* the counts are optional */ }
+
+  healthReport = HealthReport.buildReport({
+    check, repair, record: V3_RECORD,
+    seenBy: (currentUserName && currentUserName.trim()) || getCurrentViewer()?.name || null,
+  });
+  await storeHealthReport(healthReport);
+  return healthReport;
+}
+
+// One document per distinct divergence. Seeing the same one again updates it
+// rather than filing another, so four people opening the app on four phones
+// leave one report saying it was seen four times.
+async function storeHealthReport(report){
+  if(!report || !db) return;
+  try {
+    const ref = db.collection(HealthReport.COLLECTION).doc(report.id);
+    const snap = await ref.get();
+    const merged = snap && snap.exists ? HealthReport.merge(snap.data(), report) : report;
+    healthReport = merged;
+    await ref.set(merged);
+  } catch(e){
+    // Failing to record it must never break the app for the person who found
+    // it. They are told either way; the write is the part that can fail.
+    console.error('could not store the health report:', e && e.message);
+  }
+}
+
+// What a refusal says, and to whom. The board holds an admin password too, so
+// "admin" has never meant the owner -- see adminRole.
+function recordHealthMessage(){
+  if(!healthReport) return '';
+  return HealthReport.messageFor(healthReport, { owner: isOwnerAdmin() });
 }
 
 async function readStoredRecord(backend){
@@ -7034,6 +7173,13 @@ async function init(){
   recomputeAll();
   applyTabVisibility();
   render();
+
+  // After the screen exists, never before it. Whoever opens the app finds the
+  // problem, so a half-written record is noticed the same day rather than
+  // whenever somebody next happens to try an edit.
+  const runHealthCheck = ()=>{ runRecordHealthCheck().catch(()=>{}); };
+  if(typeof requestIdleCallback === 'function') requestIdleCallback(runHealthCheck, { timeout: 4000 });
+  else setTimeout(runHealthCheck, 1200);
 }
 
 init();

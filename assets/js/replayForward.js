@@ -408,11 +408,15 @@
   function plan({ stored, change, provenance }) {
     const check = verifyNoOp(stored, provenance);
     if (!check.identical) {
+      // The document ids are carried on the error rather than concatenated
+      // into it. Which of them anyone should be shown is the caller's decision:
+      // the board holds an admin password too, and forty document ids tell them
+      // nothing they can act on.
       const err = new Error(
         'Replaying the record unchanged does not reproduce it (' + check.count + ' difference(s)). ' +
-        'The stored ratings and the stored history have diverged, so no edit can be planned on top of them.\n- ' +
-        check.differences.join('\n- '));
+        'The stored ratings and the stored history have diverged, so no edit can be planned on top of them.');
       err.differences = check.differences;
+      err.divergence = check;
       throw err;
     }
 
