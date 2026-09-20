@@ -273,6 +273,109 @@ test('correcting a rated game shows the blast radius and writes only on confirma
   } finally { await app.close(); }
 });
 
+// Removing a June match rewrites ~500 documents. Sent one at a time that is
+// ~500 sequential round trips -- minutes of apparently nothing happening on a
+// phone, with the only progress text rendered at the top of the tab, far above
+// an operator scrolled into a match card. Reported from the live beta.
+test('a removal writes in batches, reports progress in its own panel, and says it removed', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      isUnlocked = true; currentUserName = 'Tester';
+      const target = MATCHES.find((m) => m.date === '2026-06-02');
+      const label = `${target.winners.join(' & ')} vs ${target.losers.join(' & ')}`;
+
+      armedDeleteId = target.id;
+      await deleteMatch(target.id);
+      const planned = { write: matchFixPlan.documentsToWrite, remove: matchFixPlan.documentsToDelete };
+
+      // The panel the operator is looking at must carry the progress itself.
+      renderGamesTab();
+      const panelMsgBeforeExists = !!document.getElementById('matchFixPanelMsg');
+
+      // Capture what the progress line actually said while the write ran.
+      const ticks = [];
+      const realProgress = setMatchFixProgress;
+      setMatchFixProgress = (text) => {
+        ticks.push({ text, inPanel: !!document.getElementById('matchFixPanelMsg') });
+        realProgress(text);
+      };
+      window.__batches = [];
+      await commitMatchCorrection();
+      setMatchFixProgress = realProgress;
+
+      const banner = document.getElementById('matchFixOutcome');
+      return {
+        planned,
+        panelMsgBeforeExists,
+        ticks,
+        batches: window.__batches.slice(),
+        gone: !ALL_MATCHES.some((m) => m.id === target.id),
+        message: matchFixMessage,
+        bannerText: banner ? banner.innerText : null,
+        label,
+      };
+    });
+
+    assert.strictEqual(r.gone, true, 'the match must actually be removed');
+    assert.ok(r.planned.write > 100, `this fixture should rewrite a lot of documents, got ${r.planned.write}`);
+
+    // Batched, not one round trip per document.
+    const ops = r.batches.reduce((n, size) => n + size, 0);
+    assert.strictEqual(ops, r.planned.write + r.planned.remove,
+      'every planned operation must go out in a batch');
+    assert.ok(r.batches.length <= Math.ceil(ops / 500),
+      `${ops} operations should need ${Math.ceil(ops / 500)} batch(es), took ${r.batches.length}`);
+    r.batches.forEach((size) => assert.ok(size <= 500, `a batch of ${size} exceeds Firestore's limit`));
+
+    // Progress, said where the button is.
+    assert.strictEqual(r.panelMsgBeforeExists, true, 'the panel must have its own message line');
+    assert.ok(r.ticks.length >= 2, `progress must be reported more than once, got ${r.ticks.length}`);
+    r.ticks.forEach((t) => assert.strictEqual(t.inPanel, true,
+      'progress must be written into the panel, not only the top of the tab'));
+    assert.ok(r.ticks.some((t) => /Removing/.test(t.text)),
+      `progress must name the action, got: ${r.ticks.map((t) => t.text).join(' / ')}`);
+    assert.ok(r.ticks.every((t) => !/Correcting/.test(t.text)),
+      'a removal must never describe itself as a correction');
+
+    // And the outcome, which has to outlive the card it was started from.
+    assert.match(r.message, /^Removed and replayed\./,
+      `a removal must not report itself as corrected: "${r.message}"`);
+    assert.ok(r.bannerText, 'the outcome must be shown somewhere the operator can see it');
+    assert.match(r.bannerText, /Removed and replayed/);
+  } finally { await app.close(); }
+});
+
+// The same path, for a correction: the wording must follow the action both ways.
+test('a correction still reports itself as a correction', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(async () => {
+      isUnlocked = true; currentUserName = 'Tester';
+      const target = MATCHES.find((m) => m.date === '2026-06-02');
+      await stageMatchCorrection({
+        type: 'edit',
+        match: {
+          id: target.id, date: target.date, sourceIndex: 1,
+          teamA: target.winners, teamB: target.losers, sets: [[6, 1], [6, 1]],
+          outcome: RatingEngine.OUTCOME.A_WINS, type: 'doubles', drawSideAssignmentArbitrary: false,
+        },
+      }, 'Correct the score.');
+      const ticks = [];
+      const realProgress = setMatchFixProgress;
+      setMatchFixProgress = (t) => { ticks.push(t); realProgress(t); };
+      await commitMatchCorrection();
+      setMatchFixProgress = realProgress;
+      const banner = document.getElementById('matchFixOutcome');
+      return { message: matchFixMessage, ticks, bannerText: banner ? banner.innerText : null };
+    });
+    assert.match(r.message, /^Corrected and replayed\./);
+    assert.ok(r.ticks.some((t) => /Correcting/.test(t)));
+    assert.ok(r.ticks.every((t) => !/Removing/.test(t)));
+    assert.match(r.bannerText || '', /Corrected and replayed/);
+  } finally { await app.close(); }
+});
+
 test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
   const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
   assert.match(msg, /identifier is built from its date/);

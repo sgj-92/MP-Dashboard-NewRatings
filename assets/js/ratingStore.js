@@ -230,6 +230,15 @@
       },
       async getAll(collection) { return Object.values(data[collection] || {}); },
       async remove(collection, id) { delete (data[collection] || {})[id]; },
+      // Present so the batching path is the one the tests exercise too. A batch
+      // is atomic against the real backend, so it is applied here in one go
+      // rather than interleaved with anything else.
+      async commitBatch(ops) {
+        ops.forEach((o) => {
+          if (o.op === 'delete') delete (data[o.collection] || {})[o.id];
+          else (data[o.collection] = data[o.collection] || {})[o.id] = o.doc;
+        });
+      },
       raw: data,
     };
   }
@@ -251,6 +260,23 @@
       async getAll(collection) {
         const snap = await db.collection(collection).get();
         return snap.docs.map((d) => d.data());
+      },
+      // A replay rewrites hundreds of documents. One batched write per 500
+      // operations replaces one round trip per document, which is the
+      // difference between a couple of seconds and a couple of minutes on a
+      // phone. Each batch is atomic: it lands whole or not at all.
+      //
+      // Only offered when the SDK in use actually batches. ReplayForward.commit
+      // falls back to one document at a time when this is absent, so a backend
+      // without it still writes correctly -- just slowly.
+      commitBatch: typeof db.batch !== 'function' ? undefined : async function (ops) {
+        const batch = db.batch();
+        ops.forEach((o) => {
+          const ref = db.collection(o.collection).doc(o.id);
+          if (o.op === 'delete') batch.delete(ref);
+          else batch.set(ref, o.doc);
+        });
+        await batch.commit();
       },
     };
   }

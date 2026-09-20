@@ -5190,20 +5190,68 @@ async function stageMatchCorrection(change, describe){
   renderGamesTab();
 }
 
+// Progress goes straight into the panel's own line rather than through
+// renderGamesTab(), which would rebuild the whole feed on every tick.
+function setMatchFixProgress(text){
+  matchFixMessage = text;
+  const el = document.getElementById('matchFixPanelMsg');
+  if(el) el.textContent = text;
+}
+
+// The outcome has to outlive the thing that produced it. A removal deletes the
+// match, so its card -- and the panel the button was in -- is gone from the
+// feed by the time there is anything to report. The admin line at the top of
+// the tab is where this used to be said, hundreds of pixels above an operator
+// scrolled deep into a match card, which is indistinguishable from nothing
+// happening at all.
+function showMatchFixOutcome(text, failed){
+  const id = 'matchFixOutcome';
+  document.getElementById(id)?.remove();
+  const el = document.createElement('div');
+  el.id = id;
+  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:78px;z-index:9998;'
+    + `background:${failed ? '#5b1a17' : '#1d2a1c'};color:${failed ? '#ffd9d6' : '#d7f0d2'};`
+    + `border:1px solid ${failed ? '#8a2a25' : '#3d5c38'};border-radius:10px;`
+    + 'padding:12px 14px;font-size:13px;line-height:1.45;display:flex;gap:12px;align-items:flex-start;';
+  const msg = document.createElement('div');
+  msg.style.cssText = 'flex:1; min-width:0;';
+  msg.textContent = text;
+  const close = document.createElement('button');
+  close.className = 'preset-btn';
+  close.textContent = 'Dismiss';
+  close.style.cssText = 'flex:0 0 auto; padding:4px 10px; font-size:12px;';
+  close.onclick = ()=> el.remove();
+  el.appendChild(msg); el.appendChild(close);
+  document.body.appendChild(el);
+  // A success can see itself out; a failure stays until it has been read.
+  if(!failed) setTimeout(()=>{ if(document.getElementById(id) === el) el.remove(); }, 12000);
+  return el;
+}
+
 async function commitMatchCorrection(){
   if(!matchFixPlan) return;
-  matchFixBusy = true; matchFixMessage = 'Writing…'; renderGamesTab();
+  // A removal and a correction are different actions and always said
+  // differently -- sharing one wording is how "Corrected and replayed" ended
+  // up reporting a deletion.
+  const isRemoval = !!(matchFixPlan.change && matchFixPlan.change.type === 'delete');
+  const verb = isRemoval ? 'Removing' : 'Correcting';
+  matchFixBusy = true; matchFixMessage = verb + '…'; renderGamesTab();
   try {
-    await ReplayForward.commit(RatingStore.firestoreCompatBackend(db), matchFixPlan);
+    await ReplayForward.commit(RatingStore.firestoreCompatBackend(db), matchFixPlan, {
+      onProgress: (done, total)=> setMatchFixProgress(
+        done >= total ? 'Written. Re-reading the record…' : `${verb}… ${done} of ${total} documents`),
+    });
     const what = matchFixPlan.describe;
     matchFixReset();
     editingMatchId = null;
     armedDeleteId = null;
     await loadV3State();
     recomputeAll();
-    matchFixMessage = 'Corrected and replayed. ' + what;
+    matchFixMessage = (isRemoval ? 'Removed and replayed. ' : 'Corrected and replayed. ') + what;
+    showMatchFixOutcome(matchFixMessage, false);
   } catch(e){
-    matchFixMessage = 'Write failed: ' + e.message;
+    matchFixMessage = (isRemoval ? 'Removal failed: ' : 'Write failed: ') + e.message;
+    showMatchFixOutcome(matchFixMessage, true);
   }
   matchFixBusy = false;
   render();
@@ -5232,9 +5280,10 @@ function buildMatchFixConfirmHtml(){
     <div class="section-sub" style="margin-top:6px; font-weight:700; color:var(--text);">${moved.length} player${moved.length===1?'':'s'} end on a different rating</div>
     <div class="section-sub" style="font-size:10.5px; max-height:160px; overflow:auto;">${moved.length ? moved.map(m=>`${m.playerId} ${m.delta>0?'+':''}${m.delta} → ${Math.round(m.to*10)/10}`).join(' &nbsp;·&nbsp; ') : nobody}</div>
     <div class="difficulty-row" style="margin-top:8px;">
-      <button class="preset-btn${isRemoval ? ' match-action-destructive' : ''}" id="matchFixCommitBtn" style="flex:1;" ${matchFixBusy?'disabled':''}>${commitLabel}</button>
-      <button class="preset-btn" id="matchFixCancelBtn" style="flex:1;">Cancel</button>
+      <button class="preset-btn${isRemoval ? ' match-action-destructive' : ''}" id="matchFixCommitBtn" style="flex:1;" ${matchFixBusy?'disabled':''}>${matchFixBusy ? 'Working…' : commitLabel}</button>
+      <button class="preset-btn" id="matchFixCancelBtn" style="flex:1;" ${matchFixBusy?'disabled':''}>Cancel</button>
     </div>
+    <div id="matchFixPanelMsg" class="section-sub" style="margin-top:6px; min-height:14px; color:var(--gold-bright);">${matchFixBusy ? matchFixMessage : ''}</div>
   </div>`;
 }
 

@@ -411,18 +411,63 @@
     };
   }
 
-  async function commit(backend, planned) {
-    let written = 0, deleted = 0;
+  // Firestore's cap on the number of operations in one batched write.
+  const BATCH_LIMIT = 500;
+
+  // Removing one June match rewrites ~500 documents. Sending them one at a time
+  // meant ~500 sequential round trips: on a phone that is minutes of apparently
+  // nothing happening, which is how an operator concludes the button is broken
+  // and starts pressing things. A backend that can batch does it in two.
+  //
+  // `onProgress(done, total)` is called before the first operation and after
+  // each batch, so the caller can say how far along it is against a number the
+  // confirmation panel already showed.
+  async function commit(backend, planned, { onProgress } = {}) {
     // Deletions first: a removed match's events must not linger beside the
     // rewritten ones, where a reader would see both.
+    const ops = [];
     for (const [collection, ids] of Object.entries(planned.deletes)) {
-      for (const id of ids) { await backend.remove(collection, id); deleted++; }
+      for (const id of ids) ops.push({ op: 'delete', collection, id });
     }
     for (const [collection, docs] of Object.entries(planned.writes)) {
-      for (const doc of docs) { await backend.set(collection, doc.id, doc); written++; }
+      for (const doc of docs) ops.push({ op: 'set', collection, id: doc.id, doc });
     }
-    return { written, deleted };
+
+    // diffDocs derives deletions as "in the record before, absent after", so a
+    // deleted id can never also be written and the two sets are disjoint. A
+    // batch applies its operations atomically rather than in sequence, so if
+    // that ever stopped being true the delete-then-write ordering above would
+    // quietly stop meaning anything. Checked rather than assumed.
+    const writeKeys = new Set(ops.filter((o) => o.op === 'set').map((o) => o.collection + '/' + o.id));
+    const clash = ops.find((o) => o.op === 'delete' && writeKeys.has(o.collection + '/' + o.id));
+    if (clash) throw new Error(`plan both deletes and writes ${clash.collection}/${clash.id}`);
+
+    const total = ops.length;
+    let done = 0;
+    if (onProgress) onProgress(done, total);
+
+    const run = async (chunk) => {
+      if (backend.commitBatch) await backend.commitBatch(chunk);
+      else {
+        for (const o of chunk) {
+          if (o.op === 'delete') await backend.remove(o.collection, o.id);
+          else await backend.set(o.collection, o.id, o.doc);
+        }
+      }
+      done += chunk.length;
+      if (onProgress) onProgress(done, total);
+    };
+
+    // A backend with no batching still reports progress usefully, so the
+    // fallback path steps one operation at a time rather than in blocks of 500.
+    const step = backend.commitBatch ? BATCH_LIMIT : 1;
+    for (let i = 0; i < ops.length; i += step) await run(ops.slice(i, i + step));
+
+    return {
+      written: ops.filter((o) => o.op === 'set').length,
+      deleted: ops.filter((o) => o.op === 'delete').length,
+    };
   }
 
-  return { inputsFromRecord, applyChange, plan, commit, verifyNoOp, diffDocs, unseenPlayers, sameDoc, EPSILON };
+  return { inputsFromRecord, applyChange, plan, commit, verifyNoOp, diffDocs, unseenPlayers, sameDoc, EPSILON, BATCH_LIMIT };
 });

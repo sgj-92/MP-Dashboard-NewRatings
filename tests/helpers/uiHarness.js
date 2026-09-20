@@ -91,6 +91,9 @@ async function open(options = {}) {
   await page.addInitScript(({ data, failReads }) => {
     window.__writes = [];
     window.__data = data;
+    // One entry per batched write actually committed, so a test can assert that
+    // a replay went out in a couple of round trips rather than hundreds.
+    window.__batches = [];
     const fail = () => { throw new Error('stubbed read failure'); };
     window.firebase = {
       initializeApp() {},
@@ -100,6 +103,9 @@ async function open(options = {}) {
             return {
               doc(id) {
                 return {
+                  // A batch collects refs and applies them later, so a ref has
+                  // to carry what it points at.
+                  _collection: name, _id: id,
                   async get() { const v = (data[name] || {})[id]; return { exists: !!v, data: () => v }; },
                   async set(v) { window.__writes.push({ collection: name, id, doc: v }); (data[name] = data[name] || {})[id] = v; },
                   async delete() { window.__writes.push({ collection: name, id, deleted: true }); delete (data[name] || {})[id]; },
@@ -108,6 +114,29 @@ async function open(options = {}) {
               async get() {
                 if (failReads) fail();
                 return { docs: Object.values(data[name] || {}).map((v) => ({ data: () => v })) };
+              },
+            };
+          },
+          // The application batches its replay writes, so the stub has to as
+          // well: without this the tests would exercise the one-at-a-time
+          // fallback while the real app takes a path nothing covers.
+          batch() {
+            const ops = [];
+            return {
+              set(ref, v) { ops.push({ op: 'set', collection: ref._collection, id: ref._id, doc: v }); },
+              delete(ref) { ops.push({ op: 'delete', collection: ref._collection, id: ref._id }); },
+              async commit() {
+                if (ops.length > 500) throw new Error('batched write exceeds 500 operations');
+                window.__batches.push(ops.length);
+                ops.forEach((o) => {
+                  if (o.op === 'delete') {
+                    window.__writes.push({ collection: o.collection, id: o.id, deleted: true });
+                    delete (data[o.collection] || {})[o.id];
+                  } else {
+                    window.__writes.push({ collection: o.collection, id: o.id, doc: o.doc });
+                    (data[o.collection] = data[o.collection] || {})[o.id] = o.doc;
+                  }
+                });
               },
             };
           },
