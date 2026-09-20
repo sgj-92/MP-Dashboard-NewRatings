@@ -35,7 +35,7 @@ rating chokepoint now reads v3 persisted state.
 | Branch | `main` |
 | Last verified implementation commit | `352cd72` |
 | Tests | **385 / 385 passing** (73 of them drive a real browser) |
-| Firestore (live, re-read 20 Sep) | 155 matches · 666 journey events · 34 players — replays to itself, diagnostics 8/8 |
+| Firestore (live, re-read 20 Sep, after Shaun's three reviews) | 155 matches · **672** journey events · 34 players — replays to itself, diagnostics 8/8 |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -794,6 +794,44 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (reconciliation: the validation fix is confirmed in live use)
+
+`Ledger CCode` with NEXT empty, so this is a reconciliation pass rather than new
+implementation. **No code changed. 385 / 385 tests, working tree clean.**
+
+**The live record has moved since the last read, and the reason is good news.**
+672 journey events, up from 666, with **no new matches** — Shaun recorded **three
+monthly reviews** through the screen fixed an hour earlier in `352cd72`:
+
+| | Effective | Re-anchor | Reliability | |
+|---|---|---|---|---|
+| Rishi | 20 Sep | 1464.2 → **1640.0** (+175.8) | chose **50%**, recommended 20% | **club override** |
+| Ant Slice | 20 Sep | 1625.1 → **1460.0** (−165.1) | 20% = recommendation | accepted |
+| Jams | 20 Sep | 1114.4 → **1320.0** (+205.6) | 20% = recommendation | accepted |
+
+**Rishi is the exact flow Shaun reported as broken** — Override Reliability, a
+percentage the system did not suggest, and a reason — and it went through. Every
+audit requirement the decision asked for is present on all three: attributed to
+Shaun, sourced to Admin Monthly Review, **both** the chosen and recommended
+figures stored, the method named, and a reason recorded (*"Has played lots of
+games with A-tier players"*, *"Hasn't met A tier standard since returning from
+injury"*, *"Played well against As"*).
+
+**This is also the first DEMOTION in the record.** Ant Slice, A → B, re-anchored
+down 165 points. The demotion path had unit coverage but had never been exercised
+by a person; it behaved correctly and the record still replays to itself.
+
+**Record health:** 155 matches · 672 journey events · 34 players, **replay-to-self
+0 differences, diagnostics 8/8**. Screenshots regenerated against it.
+
+**Standing measurement (Open Question 1a).** The journey is **672 events**
+against a review point of 5000. **Not due**, and roughly where the earlier
+projection expected it.
+
+**Nothing is queued and nothing is blocked.** The rating-model backlog and match
+sharing in Section 5 remain parked and unauthorised, and both need a Shaun
+decision before they become work.
 
 ### CCode — 20 Sep 2026 (live validation fixed; and a stale NEXT item corrected)
 
