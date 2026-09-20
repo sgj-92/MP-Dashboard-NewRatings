@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `352cd72` |
-| Tests | **385 / 385 passing** (73 of them drive a real browser) |
+| Last verified implementation commit | `49af41b` |
+| Tests | **395 / 395 passing** (75 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep, after Shaun's three reviews) | 155 matches · **672** journey events · 34 players — replays to itself, diagnostics 8/8 |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
@@ -795,6 +795,46 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (split-month League Table delivered)
+
+`49af41b`. **395 / 395 tests**, 75 in a browser. Screenshots regenerated. No
+rating-engine, history or stored-fact changes.
+
+**Each match is filed by `tierAsOf(player, matchDate)`** — before the effective
+date is the old tier, on or after it the new one. That is the boundary the
+engine's own tier history already uses, asserted against it in a test, so the
+League Table cannot drift from every other temporal-tier surface. Points stay
+where they were earned.
+
+**Verified against the live record.** Rishi's 21 September games sit in **Tier
+B**, Ant Slice's 5 in **A** and Jams' 3 in **C** — their old tiers, because every
+September match predates the 20 Sep changes. Before this, all 21 of Rishi's
+would have arrived in the A table carrying points earned against Bs.
+
+**A judgement call worth recording, because it changes what Shaun sees.** All
+three movers changed on 20 Sep and **none has played since**, so a label built
+from the tiers they *played in* would read plain `B`, `A`, `C` — a September row
+saying nothing happened in a month that plainly contained a move. The Ledger's
+word is *"occupies"*, so the `All together` tier column is built from the
+**recorded tier changes**, not from the dates they got on court. It reads
+**`B → A`**, **`A → B`**, **`C → B`**. If Shaun wants it to describe only the
+tiers actually played in, it is a one-line change.
+
+**Generic, as required.** No player, month or tier is named anywhere in the
+code. `leagueSplit.js` holds the decisions and knows nothing about the app; the
+monthly aggregation gained an optional key that is **off by default**, so every
+other caller is untouched. `V3_TIER_HISTORY` now keeps the whole history rather
+than only the lookup — knowing *when* someone moved cannot be recovered by
+sampling dates, and a second move in one month would have been missed.
+
+**Coverage:** the boundary date, promotion and demotion, two moves in one month,
+a return to a former tier, unknown tiers, and key round-tripping against
+free-text names; plus a browser test that moves a real fixture player mid-month
+and asserts two rendered rows, points that stay isolated and sum to the whole
+month, and a single `All together` row.
+
+**Baton → CGPT / Shaun.** NEXT is clear.
 
 ### CGPT — 20 Sep 2026 (split-month League Table treatment)
 Shaun has now made the three emergency mid-month tier changes and approved the League Table treatment for any player who occupies two tiers within one month.
@@ -3266,13 +3306,15 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **Split-month League Table treatment — approved and unblocked.**
-2. Refactor tier-scoped monthly league aggregation to group by player + `tierAsOf(player, matchDate)`, not current/end-of-month tier.
-3. Before the effective date allocate to old tier; on/after it allocate to new tier.
-4. Keep each segment's P/W/L/D/GD/points isolated; do not transfer historical points/results.
-5. Permit one player row in each tier actually represented during that month.
-6. `All together` remains one whole-month row and shows the tier transition (`B → A`, etc.).
-7. Use Rishi B→A, Ant Slice A→B and Jams C→B as acceptance cases, not hardcoded exceptions.
-8. Add module/browser coverage for boundary-date allocation, split rows, isolated points and All-together display.
-9. Preserve Sequential-v1, rating history and stored match facts unchanged.
-10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+**All items are DONE (`49af41b`).** The League Table splits a month by the tier
+in force on each match date; points never transfer between tiers; `All together`
+stays one row and shows the transition.
+
+Nothing is queued for CCode. One thing Shaun may want to confirm: the
+`All together` tier column describes the tiers a player **occupied** that month,
+so a player who moved on the 20th and has not played since still reads
+`B → A`. Describing only the tiers they played in is a one-line change if he
+prefers it.
+
+The rating-model backlog and match sharing in Section 5 remain parked and
+unauthorised.
