@@ -255,6 +255,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Ranking eligibility must be shared across Home/Rankings/Profile/Club Pulse | Shaun spotted Ant Slice showing `#–` on Home despite recent activity. All surfaces must derive Ranked vs Idle from one shared eligibility helper over the same v3 rated-match source/date window. A player must never be Ranked on one surface and Idle on another. Before changing data, verify Ant Slice's actual count of rated matches in the rolling 30-day window; if >=2, current `#–` is a bug. |
 | Games cards show historical tier beside each player | On collapsed and expanded Games cards, show each player's **tier at match date** beside their name (e.g. `Eli (A) & Len (A) def Osh (A) & Rishi (B)`). Use the same temporal-tier source for visible labels and game-type classification so the UI can never display one tier while filtering the match as another. |
 | Games tab supports historical tier-composition filtering | Add a Games filter based on the **tiers that applied when each match was played**, not current tiers. Support broad tier environments (all-A/all-B/all-C, mixed) and specific canonical matchup types such as `AA vs AA`, `AB vs BB`, `AA vs AB`, `AB vs AB`. The filter must combine with Month and Player; e.g. Player=Len + Game type=`AB vs BB` shows only Len's matches of that historical composition. Team orientation must not create separate categories. |
+| Matchup filter ordering follows canonical tier strength, not frequency | Sort matchup options by partnership strength, then opponent strength, using `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Example sequence: `SS vs SS`, `SS vs SA`, …, `SA vs SA`, `SA vs SB`, …, `AA vs AA`, `AA vs AB`, `AA vs BB`, `AA vs BC`, `AB vs AB`, `AB vs AC`, etc. Counts remain visible but never determine order. Only combinations present in the current filter scope need be listed. |
+| Canonical tier ordering governs matchup labels and historical partnership display | Use tier strength `S > A > B > C`. Within each partnership, always display the higher-tier player first; preserve original order only when both players share the same tier. Between partnerships, display the stronger canonical partnership first; preserve original team orientation only when both partnerships have the same composition. Therefore never show `BA`, `BS`, etc.; canonical forms are `AB`, `SB`, etc. This is presentation/filter normalisation only: **do not rewrite stored match/team/player order**. |
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
 ---
@@ -358,6 +360,40 @@ match context such as expected balance. No notification system is required now.
 - Upcoming remains untouched in Play;
 - no Sequential-v1 or stored-rating changes;
 - add targeted browser coverage for each interaction.
+
+### Queued Games refinement — canonical tier order
+
+After the current Home pass, tighten the Games tier presentation/filter ordering.
+
+Use one shared canonical helper with tier strength `S > A > B > C` and
+partnership strength:
+
+`SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`
+
+Required behavior:
+
+- within a partnership, higher-tier player displays first;
+- same-tier partners preserve stored order;
+- stronger partnership displays first;
+- equal-composition partnerships preserve original team orientation;
+- matchup labels use canonical partnership codes only (`AB`, never `BA`; `SB`,
+  never `BS`);
+- filter options sort by canonical strength, **not by match count**;
+- counts remain beside labels;
+- only options present in the current Month/Player scope need appear;
+- use the same helper for visible historical game ordering and filter
+  classification/order;
+- do not mutate stored match/team/player order or rating facts.
+
+Example filter order where present:
+
+`SS vs SS`, `SS vs SA`, `SS vs SB`, `SS vs SC`, `SA vs SA`, `SA vs SB`,
+`SA vs SC`, `AA vs AA`, `AA vs AB`, `AA vs AC`, `AA vs BB`, `AA vs BC`,
+`AB vs AB`, `AB vs AC`, …
+
+Add regression coverage for canonical partner order, equal-tier stability,
+orientation preservation for equal team compositions, and strength-based
+filter ordering independent of counts.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
@@ -425,6 +461,13 @@ newcomer.
 **DECISION NEEDED FROM SHAUN — flat, or move-scaled?** If move-scaled, is
 `D = 150` right, or must a move be larger before the record is discarded? This
 is rating methodology, so it is his, not CGPT's or mine.
+
+For promotion/demotion reviews specifically: the tier-change event itself should
+still leave Reliability untouched. If the board also **re-anchors the player's
+rating** as part of that review, this flat-vs-move-scaled recommendation question
+applies to that reassessment. If the board changes tier but chooses **Keep current
+rating**, there is no reliability reset/recommendation to apply. This is the
+promotion/demotion distinction Shaun asked to keep explicit.
 
 **Worth doing either way, and not blocked on the above:** record **both** the
 system recommendation and the board's final choice on every future decision, so
@@ -705,6 +748,20 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (canonical matchup ordering + reliability question surfaced)
+Shaun approved a single canonical tier-order rule for both Games display and
+matchup filters: higher-tier partner first, stronger partnership first, with
+stored match orientation left untouched. Filter options are sorted by tier
+strength rather than frequency.
+
+CCode's reassessment question is also explicitly preserved in Section 5:
+**flat 10% vs move-scaled Reliability (recommended candidate D=150)**. For
+promotion/demotion reviews this only applies when the board also re-anchors the
+rating; a pure tier change / Keep current rating does not alter Reliability.
+
+The Home refinement remains the first active item; canonical Games ordering is
+queued immediately after it unless Shaun reprioritises.
 
 ### CCode — 20 Sep 2026 (reassessment reliability: modelled; one decision needed)
 
@@ -2685,13 +2742,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 8. Keep native Share / WhatsApp + Copy message as backlog follow-on work.
 9. Do not change Sequential-v1 or stored ratings/history.
 10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
-11. **Backlog after Home refinement:** model and implement system-recommended
+11. **Canonicalise Games partnership display and matchup-filter ordering** using
+    `S > A > B > C` and partnership strength
+    `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Higher-tier partner
+    first; stronger partnership first; equal-tier/equal-composition ties preserve
+    stored order/orientation; counts do not control filter order.
+12. **Backlog after Home refinement:** model and implement system-recommended
     reassessment Reliability with manual audited override. Do not choose the
     recommendation formula until historical/hypothetical validation is reviewed.
     — **Modelling DONE (`9ac4285`).** Implementation is blocked on one decision
     from Shaun (flat vs move-scaled), in Section 5. Nothing else in this item
     can proceed until he answers.
-12. **Unblocked whenever Shaun decides:** implement the chosen rule in
+13. **Unblocked whenever Shaun decides:** implement the chosen rule in
     `reassessment.js` (which today returns `recommendationReliability: null`),
     plus the Use-recommendation / Override UX with attribution and reason, and
     store both the recommendation and the final choice on the event.
