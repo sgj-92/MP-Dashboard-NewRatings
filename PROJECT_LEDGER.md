@@ -33,9 +33,10 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `fc33a44` |
-| Tests | **318 / 318 passing** (59 of them drive a real browser) |
-| Firestore (live, re-read 20 Sep) | **156 matches** — one match removed by Shaun through the app |
+| Last verified implementation commit | `ecab0f2` |
+| Tests | **321 / 321 passing** (59 of them drive a real browser) |
+| Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
+| **Live record status** | **DIVERGED — 145 derived documents half-written. Repair planned and awaiting Shaun. See Open Questions.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -350,6 +351,61 @@ match context such as expected balance. No notification system is required now.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
+
+### BLOCKER — the live record is half-written, and the repair needs Shaun's go-ahead
+
+**Raised by CCode, 20 Sep 2026, from Shaun's second removal attempt.** The app
+refused it: *"Replaying the record unchanged does not reproduce it (145
+difference(s))."* That refusal is the safety rule working, not a bug — it will
+not plan an edit on top of a record whose stored ratings and stored history
+disagree.
+
+**What happened.** The removal of `Osh vs Len` on 2026-07-03, approved and
+started on 19 Sep, wrote **364 of its 509 documents and stopped**. The writes
+went one at a time, before batching landed (`fc33a44`), and the app was closed
+part-way through. Deletions run first and completed, so the match is genuinely
+gone — which is why a re-read showed 156 matches and the removal looked finished.
+**Checking one collection was not enough, and that was my error.**
+
+**The damage, measured.** Nothing is lost or corrupt:
+
+| | |
+|---|---|
+| Matches | **all 156 intact** — no match was damaged, and none is missing |
+| Journey events before 2026-09-03 | **545, all correct** |
+| Journey events 2026-09-03 → 2026-09-17 | **114 hold pre-removal values**, 2 already correct |
+| Player documents | **31 hold pre-removal ratings** |
+| Documents missing entirely | **0** |
+| Superseded club decisions | **3, correctly retained** |
+
+145 stale documents = the 509 the plan called for, minus the 364 that landed.
+
+**The repair is the plan Shaun already approved.** Replaying the 156 stored
+matches produces, player for player and number for number, the *same* list of 31
+movements shown on his confirmation screen — `Osh -1.8 → 1712`, `Len +1.7 →
+1677.6`, `Eli -0.2 → 1641.3`, and so on. Applying it does not decide anything
+new; it finishes the arithmetic of the removal he authorised. It writes 145
+documents, changes no match, and deletes nothing.
+
+**Built and tested, not run:** `ReplayForward.planRepair` and
+`scripts/repair-replay-divergence.js` (dry run by default). The dry run is done
+and is recorded above. **No write has been made to the live beta.**
+
+**Decision needed from Shaun — one of:**
+
+1. **Finish the removal** (recommended). Run the repair. Ratings land exactly
+   where his approved plan said. Editing works again immediately.
+2. **Undo the removal instead.** Re-add `Osh vs Len` and replay back to 157
+   matches. Only if he has changed his mind about deleting it — it is a
+   different decision, not a safer version of the same one.
+
+Nothing else in the app should be edited until one of these is done: every
+correction and removal stays refused while the record disagrees with itself.
+
+**Follow-on, not blocking:** should the app detect this state and offer the
+repair itself, rather than only refusing? Today the only way out is a script
+CCode runs. That is a product decision.
+
 
 ### Rating model backlog — parked during refinement
 
