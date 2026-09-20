@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`43401f8`** |
-| Tests | **403 / 403 passing** (81 of them drive a real browser) |
+| Last verified implementation commit | **`3e326e1`** |
+| Tests | **422 / 422 passing** (89 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -162,6 +162,25 @@ that says what is on, sort stays out, tier chips wrap instead of clipping at
 filter, sort, Compare and navigation behaviour is unchanged. Captured in
 `docs/screenshots/16-players-directory.png` and
 `16b-players-directory-filters.png`.
+
+**League screen refinement — DONE (`3e326e1`).** Both disclosures and the
+Last 10 form table. The table used to start 482px down an iPhone SE; Month and
+View now share a row, the explanation folds, and the four tier tables fold as a
+block that says how many it is hiding. **Last 10** is a third table over each
+player's own most recent ten rated games, deliberately not scoped to the
+selected month — the league's own 3/1/0 and game difference, no new metric.
+Short samples show their real P, marked `of 10`, never padded. Aggregation
+lives in `lastTen.js` and was verified against an independent walk of the live
+record. Captured in `docs/screenshots/17-league-by-tier.png`,
+`17b-league-tiers-collapsed.png`, `18-league-last-10.png` and
+`18b-league-last-10-explained.png`.
+
+**A second duplicate explanation, found by collapsing the tier tables.** The
+legacy per-tab explainer also said *"Points: 3 for a win, 1 for a draw"*, so
+the League view carried two explanations with two chevrons. Pre-existing —
+it was buried under the tables. Now hidden on League, kept on Information
+(where its Doughnuts / Player of the Month content is the only explanation
+there is), and restored on every other tab.
 
 **A defect the Directory tests caught, worth keeping visible.** A player name is
 free text and was written into the page unescaped: a name containing `<b>`
@@ -362,14 +381,14 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK / PRODUCT & UI DIRECTION
 
-**Current baton: CCode — NEXT #3, the League Table refinement.** Approved and
-unblocked, not started. Its full direction is immediately below. The two items
-that preceded it in the queue are done: the Tom/Fatch audit (`838ca66`) and the
-Players Directory refresh (`43401f8`).
+**Current baton: CGPT / Shaun.** The whole approved queue is delivered — the
+Tom/Fatch audit (`838ca66`), the Players Directory refresh (`43401f8`) and the
+League refinement (`3e326e1`). **Nothing is queued for CCode.** The open
+questions that need a person are in Section 8.
 
 ---
 
-### League screen refinement — CURRENT TASK, approved and unblocked
+### League screen refinement — DELIVERED (`3e326e1`)
 
 *Restored from the first compaction (`e16da85`), where it was recorded in full;
 the second compaction reduced it to five lines and that shortened version was
@@ -1006,6 +1025,52 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (NEXT #3 League refinement complete; queue empty)
+
+`3e326e1`. **422 / 422 tests (89 browser).** Every point of the restored brief
+in Section 4 is implemented. Presentation and aggregation only — no rating,
+expectation, Reliability, tier-history or stored match fact is read or written.
+
+**Both disclosures.** The explanation folds, closed by default. The tier tables
+fold as a block and the control says how many are hidden; the By tier / All
+together choice and each match's tier allocation are untouched underneath.
+Month and View were also stacked, which was 142px of a phone before the table
+started — they now share a row, both kept exactly as they were. The first table
+moved from 482px down to comfortably on the first screen.
+
+**Last 10 is a third table, not a mode of the other two.** Each player's own
+most recent ten rated games, wherever they fall. Not scoped to the selected
+month, deliberately: two rows then cover the same number of *games* rather than
+the same number of *days*, which is the only thing that makes them comparable.
+The league's own 3/1/0 and its own game difference — no new metric, nothing the
+rating engine can see. A player with fewer than ten games shows the games they
+have, marked `of 10` beside the P it qualifies, never padded. A `Last 5` run
+column says which way the form is going, which a points total cannot.
+`Form (10g)` stays on the monthly tables as instructed; Last 10 does not repeat
+it, because that would be the same fact told twice from the same ten games.
+
+**Verification.** The aggregation is a module (`lastTen.js`) fed from the same
+two sources the monthly table uses, so the two cannot disagree about what a
+game was. Checked against an independent walk of the live record: exact match
+on full and short samples, including draws and game difference.
+
+**Three things found while building, worth the record:**
+
+1. I first gave the screen a `leagueView` variable that duplicated what
+   `leagueGrouped` already said. The split-month test writes only
+   `leagueGrouped`, so the screen disagreed with itself and that test failed.
+   Fixed as a design problem, not a test problem: two booleans, each meaning
+   exactly one thing, which cannot contradict.
+2. **Collapsing the tier tables exposed a pre-existing duplicate.** The legacy
+   per-tab explainer also says *"Points: 3 for a win, 1 for a draw"* — two
+   explanations, two chevrons, one screen. It had always been there, buried
+   under the tables. See Section 1 for the resolution.
+3. Two folds can be open at once, so each body now names the control it belongs
+   to rather than leaving `.lg-fold-body` ambiguous.
+
+**Baton → CGPT / Shaun. Nothing is queued for CCode.** Four questions in
+Section 8 need a person, not an implementer.
 
 ### CCode — 20 Sep 2026 (Ledger restored to the full institutional record)
 
@@ -3580,6 +3645,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `3e326e1` | League refinement: collapsible explanation and tier-table block, Month/View on one row, and a Last 10 form table over each player's own latest ten rated games (`lastTen.js`); duplicate legacy explainer hidden on the League view |
 | `43401f8` | Players Directory refresh: folded secondary filters with a state summary, wrapping tier chips, identity-first rows with a chevron, Inactive-only badging, A–Z-only letter headings; player names HTML-escaped where rendered |
 | `838ca66`, `14d5a67` | Tom/Fatch integrity audit: record verified correct, stale source (`HISTORICAL_REVIEW_DRYRUN.md`) corrected, `apply-historical-decisions.js` made unable to undo it; Ledger history preserved in `LEDGER_ARCHIVE_2026-09-20.md` |
 | `49af41b` | Split-month League Table: match-date tier allocation, isolated tier-segment points/results, whole-month All together transition row |
@@ -3632,26 +3698,27 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
+**Every approved item is delivered. Nothing is queued for CCode.** Baton with
+CGPT / Shaun. `3e326e1`, **422 / 422 tests (89 browser)**.
+
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
-2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters with a state summary, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. All behaviour preserved; six browser regression tests, each verified to fail against the old screen. Player names are now HTML-escaped where they render.
-3. **League Table mobile refinement — approved/unblocked, and the current CCode task.** Full direction in Section 4; CGPT's handoff in Section 6. The acceptance list as originally set, restored verbatim from the first compaction (`e16da85`), which was the only place it survived:
+2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters with a state summary, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. All behaviour preserved. Player names are now HTML-escaped where they render.
+3. **DONE (`3e326e1`).** League refinement. Collapsible explanation, collapsible tier-table block, Month/View on one row, and the Last 10 form table over each player's own latest up-to-10 rated games — P/W/L/D/GD/Pts on the league's own 3/1/0, real sample shown and marked for anyone with fewer than ten. `Form (10g)` kept on the monthly tables. No rating-engine changes.
 
-   - Make the explanatory information beneath the selected month League Table heading collapsible/hideable with a compact disclosure control.
-   - Make the By-tier tables collapsible as one breakdown while preserving the By tier / All together selector and current split-month logic.
-   - Add a dedicated **Last 10** form league table based on each player's latest up-to-10 rated matches overall, not the selected calendar month.
-   - Last 10 columns should present P/W/L/D/GD/Pts cleanly; use 3 points per win and 1 per draw and existing league tiebreak semantics.
-   - Players with fewer than 10 rated games show their real P; never pad the sample.
-   - Preserve the existing compact Form (10g) column on monthly tables unless there is a concrete layout reason to remove it; the new Last 10 table is the expanded comparison view.
-   - Add targeted module/browser tests for both disclosures and the rolling per-player Last 10 selection/aggregation.
-   - No Sequential-v1, rating, Reliability, historical-tier or persisted match changes.
-   - Update this Ledger with commit/tests and baton back to CGPT/Shaun.
+### Needing a person, not an implementer
 
-4. **Standing, every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings.
-5. **Confirm or correct one judgement call from the split-month work.** The `All together` tier column describes the tiers a player **occupied** that month, so a player who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they played in is a one-line change if Shaun prefers it. *(Carried forward from the pre-compaction NEXT, where it was the only open item.)*
-6. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+4. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+5. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C. Whether Tier S is a real tier, a legacy artefact or a data error is a product call. Low urgency, but it should not stay unanswered before beta.
+6. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+7. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+
+### Standing
+
+8. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+9. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
 the tier in force on each match date; points never transfer between tiers;
 `All together` stays one row and shows the transition. Nothing is queued for
-CCode." Item 5 above is the one open question it carried forward.*
+CCode." Item 4 above is the one open question it carried forward.*
