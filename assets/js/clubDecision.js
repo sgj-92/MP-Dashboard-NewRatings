@@ -176,18 +176,30 @@
         tier: after.tier,
         rating: after.rating,
         reliability: Engine.reliability(after.effectiveEvidence),
-      }),
+      }, decision),
     };
   }
 
-  function describe(playerId, before, after) {
+  // `decision` is optional and only sharpens the wording: whether the
+  // Reliability being written is the one the system recommended or a departure
+  // from it is the single thing a later reader most wants to know, and it must
+  // be on the confirmation before anything is written, not inferred afterwards.
+  function describe(playerId, before, after, decision) {
     const bits = [];
     if (before.tier !== after.tier) bits.push(`Tier ${before.tier} → Tier ${after.tier}`);
     if (Math.abs(before.rating - after.rating) > 1e-9) {
       bits.push(`Power Rating ${before.rating.toFixed(1)} → ${after.rating.toFixed(1)}`);
     }
     if (Math.abs(before.reliability - after.reliability) > 1e-9) {
-      bits.push(`Reliability ${Math.round(before.reliability * 100)}% → ${Math.round(after.reliability * 100)}%`);
+      const rec = decision && decision.recommendation
+        ? decision.recommendation.recommendationReliability : null;
+      const followed = typeof rec === 'number' && Math.abs(rec - after.reliability) < 5e-3;
+      const note = typeof rec !== 'number'
+        ? ''
+        : (followed
+          ? ' (as recommended)'
+          : ` (club override — the recommendation was ${Math.round(rec * 100)}%)`);
+      bits.push(`Reliability ${Math.round(before.reliability * 100)}% → ${Math.round(after.reliability * 100)}%${note}`);
     }
     if (!bits.length) return `${playerId}: nothing changes.`;
     return `${playerId}: ${bits.join(', ')}.`;

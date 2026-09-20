@@ -3890,7 +3890,7 @@ async function histLoadContext(){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ histMessage = 'Enter an effective date as YYYY-MM-DD.'; renderManage(); return; }
 
   histAdj = { playerId: player, effectiveDate: date, tierEvent: null, newTier: null,
-    ratingDecision: null, overrideRating: null, overrideReliability: null,
+    ratingDecision: null, overrideRating: null, overrideReliability: null, reliabilityChoice: null,
     correctedRating: null, correctedReliability: null, reason: '', createdBy: reviewActor() };
   histPlan = null; histMessage = '';
   try {
@@ -4344,11 +4344,16 @@ function reviewDraftForCheck(){
   return {
     ...reviewDraft,
     overrideRating: num('reviewOverrideRating', reviewDraft.overrideRating),
-    overrideReliability: pct('reviewOverrideRel', reviewDraft.overrideReliability),
+    // Two inputs can carry a Reliability override: the club-override block in
+    // step 2 (which predates step 3) and step 3's own field. Whichever is on
+    // screen wins; neither silently overwrites the other with a blank.
+    overrideReliability: pct('reviewRelOverride', pct('reviewOverrideRel', reviewDraft.overrideReliability)),
     correctedRating: num('reviewCorrectedRating', reviewDraft.correctedRating),
     correctedReliability: pct('reviewCorrectedRel', reviewDraft.correctedReliability),
     notes: text('reviewNote', reviewDraft.notes) || reviewDraft.notes || null,
     createdBy: reviewActor(),
+    // This screen asks the Reliability question, so it insists on an answer.
+    requireReliabilityAnswer: true,
   };
 }
 let reviewPending = null;      // a prepared decision awaiting explicit confirmation
@@ -4488,18 +4493,21 @@ function buildReviewPanelHtml(name){
     provisional ? 'The initial estimate was wrong — not a reward for development'
       : `${name} is already established, so there is no initial estimate left to correct`);
 
+  // Reliability used to be asked for here as well, which put two Reliability
+  // inputs on one screen once step 3 existed -- the board could set it twice,
+  // differently, and only one would win. Step 3 owns it now.
   if(d.ratingDecision === 'CLUB_OVERRIDE'){
     html += `<div class="fg-controls" style="margin-top:6px;">
       <div class="fg-row"><label class="fg-label">Power Rating</label><input id="reviewOverrideRating" class="fg-select" value="${d.overrideRating ?? ''}" placeholder="leave blank to keep ${(Math.round(s.rating*10)/10).toFixed(1)}" /></div>
-      <div class="fg-row"><label class="fg-label">Reliability %</label><input id="reviewOverrideRel" class="fg-select" value="${d.overrideReliability!=null ? Math.round(d.overrideReliability*100) : ''}" placeholder="leave blank to keep ${Math.round(Engine_reliability(s.effectiveEvidence)*100)}%" /></div>
     </div>`;
   }
   if(d.ratingDecision === 'CORRECT_INITIAL_CLASSIFICATION'){
     html += `<div class="fg-controls" style="margin-top:6px;">
       <div class="fg-row"><label class="fg-label">Corrected Power Rating</label><input id="reviewCorrectedRating" class="fg-select" value="${d.correctedRating ?? ''}" placeholder="the rating the club believes was right" /></div>
-      <div class="fg-row"><label class="fg-label">Reliability % (optional)</label><input id="reviewCorrectedRel" class="fg-select" value="${d.correctedReliability!=null ? Math.round(d.correctedReliability*100) : ''}" placeholder="leave blank to keep the evidence already gathered" /></div>
     </div>`;
   }
+
+  html += buildReviewReliabilityHtml(d, s, snap, name);
 
   html += `<div class="fg-controls" style="margin-top:6px;">
     <div class="fg-row"><label class="fg-label">Note (recorded)</label><input id="reviewNote" class="fg-select" value="${d.notes || ''}" placeholder="Why the club decided this" /></div>
@@ -4518,6 +4526,57 @@ function buildReviewPanelHtml(name){
   if(reviewPending) html += buildReviewConfirmHtml();
   return html;
 }
+
+// ---- Step 3: Reliability, once a rating is on the table ----
+//
+// Shaun's rule (20 Sep): the board should not have to invent a Reliability
+// percentage. The system recommends one from how far the rating actually moves
+// -- the anchor the board chose, not the one the app suggested -- and the board
+// either takes it or departs from it deliberately.
+//
+// A departure has to say why. A percentage with no reason behind it is
+// indistinguishable from a slip of the finger, and this is the permanent record.
+function buildReviewReliabilityHtml(d, s, snap, name){
+  const draft = reviewDraftForCheck();
+  const rec = MonthlyReview.reliabilityRecommendationFor(draft, snap);
+  const now = Engine_reliability(s.effectiveEvidence);
+  const band = (r) => (typeof V3Bridge !== 'undefined' && V3Bridge.reliabilityBand)
+    ? V3Bridge.reliabilityBand(r) : '';
+  const pc = (r) => Math.round(r * 100) + '%';
+
+  let html = `<div class="section-heading" style="margin-top:12px;">3 · Reliability</div>`;
+
+  if(!rec){
+    // Only reachable before the rating question is answered. Saying nothing
+    // would read as "no change needed"; this says which it is.
+    html += `<div class="section-sub">${name} stays at <b style="color:var(--text);">${pc(now)}</b> (${band(now)}). `
+      + `A Reliability recommendation follows the size of the rating change, so answer the rating above first.</div>`;
+    return html;
+  }
+
+  html += `<div class="section-sub">Recommended: <b style="color:var(--text);">${pc(rec.reliability)}</b> (${band(rec.reliability)}), `
+    + `from ${pc(now)} (${band(now)}). ${rec.reason}</div>`;
+  html += `<div class="section-sub" style="font-size:10.5px;">Reliability is how much evidence stands behind the rating, and it sets how fast results move it: `
+    + `${pc(rec.reliability)} means K ${RatingEngine.kForEvidence(RatingEngine.effectiveEvidenceForReliability(rec.reliability)).toFixed(1)}, `
+    + `and about ${Math.max(0, Math.ceil(RatingEngine.effectiveEvidenceForReliability(0.5) - RatingEngine.effectiveEvidenceForReliability(rec.reliability)))} matches back to 50%.</div>`;
+
+  const choice = d.reliabilityChoice || null;
+  const relOpt = (key, label, why) => `<div class="alpha-row">
+    <div class="alpha-name" style="font-size:12.5px;">${label}${why ? `<div style="font-size:10px; color:var(--text-dim);">${why}</div>` : ''}</div>
+    <button class="preset-btn review-reliability ${choice===key?'active':''}" data-reliability="${key}" style="width:104px;">${choice===key ? 'Chosen' : 'Choose'}</button>
+  </div>`;
+  html += relOpt('USE_RECOMMENDATION', 'Use the recommendation', `Records ${pc(rec.reliability)}`);
+  html += relOpt('OVERRIDE', 'Override Reliability', 'The board sets it, with a reason');
+
+  if(choice === 'OVERRIDE'){
+    html += `<div class="fg-controls" style="margin-top:6px;">
+      <div class="fg-row"><label class="fg-label">Reliability %</label><input id="reviewRelOverride" class="fg-select" value="${d.overrideReliability!=null ? Math.round(d.overrideReliability*100) : ''}" placeholder="the percentage the board decides" /></div>
+    </div>`;
+    html += `<div class="section-sub" style="font-size:10.5px;">Recorded as a club override beside the ${pc(rec.reliability)} it departs from, with the note below as its reason.</div>`;
+  }
+  return html;
+}
+
 
 // Nothing is written until this is confirmed, and it states the exact document
 // id and the exact before/after rather than a reassuring summary.
@@ -4569,6 +4628,7 @@ function wireReviewSection(){
         newTier: toTier,
         ratingDecision: null,
         overrideRating: null, overrideReliability: null,
+        reliabilityChoice: null,
         correctedRating: null, correctedReliability: null,
         notes: null,
         recommendation: (eventType === 'TIER_RETAINED' || !s) ? null
@@ -4587,6 +4647,16 @@ function wireReviewSection(){
       if(!reviewDraft) return;
       if(el.disabled) return; // an unavailable branch is never recordable
       reviewDraft = { ...reviewDraftForCheck(), ratingDecision: el.dataset.decision };
+      reviewPending = null; reviewMessage = '';
+      renderManage();
+    };
+  });
+
+  // Step 3. Same contract as step 2: choosing completes the draft, writes nothing.
+  document.querySelectorAll('.review-reliability').forEach(el=>{
+    el.onclick = ()=>{
+      if(!reviewDraft) return;
+      reviewDraft = { ...reviewDraftForCheck(), reliabilityChoice: el.dataset.reliability };
       reviewPending = null; reviewMessage = '';
       renderManage();
     };

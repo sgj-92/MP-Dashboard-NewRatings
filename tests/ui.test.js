@@ -664,6 +664,87 @@ test('canonical ordering never reorders the sides of a decided match', { skip },
   } finally { await app.close(); }
 });
 
+// Step 3 of the monthly review, as it reaches the screen. The module tests
+// prove the rule; this proves the board can actually reach it.
+test('the review asks for Reliability, and says what an override departed from', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner'; currentUserName = 'Shaun';
+      document.querySelector('#tabrow .tab-btn[data-tab="manage"]').click();
+      activeTab = 'manage';
+      reviewSubject = 'Ant Slice';
+      renderManage();
+      document.querySelector('.review-tier[data-event="PROMOTION"]').click();
+
+      const out = {};
+      // Before the rating question is answered there is nothing to price.
+      out.beforeDecision = document.querySelectorAll('.review-reliability').length;
+
+      [...document.querySelectorAll('.review-decision')].find((b) => b.dataset.decision === 'CLUB_OVERRIDE').click();
+      // Once it is answered the question appears, even with the rating field
+      // still blank: a blank rating is a move of zero, which is how the board
+      // changes confidence alone.
+      out.afterDecision = document.querySelectorAll('.review-reliability').length;
+
+      // The board types an anchor 60 points up.
+      const s = MonthlyReview.preReviewSnapshot(V3_JOURNEY, reviewToday())['Ant Slice'];
+      document.getElementById('reviewOverrideRating').value = String(Math.round((s.rating + 60) * 10) / 10);
+      reviewDraft = reviewDraftForCheck();
+      renderManage();
+      out.afterRating = document.querySelectorAll('.review-reliability').length;
+
+      // The step-2 club-override block used to carry a Reliability field of its
+      // own, so the board could set it twice, differently, and only one would
+      // win. Step 3 owns it now, and it appears only once the board asks for it.
+      const relInputs = () => document.querySelectorAll('input[id$="OverrideRel"], #reviewRelOverride').length;
+      out.relInputsBeforeChoice = relInputs();
+
+      const snap = MonthlyReview.preReviewSnapshot(V3_JOURNEY, reviewToday());
+      out.recommended = MonthlyReview.reliabilityRecommendationFor(reviewDraftForCheck(), snap).reliability;
+
+      // Unanswered, the review will not stage.
+      out.blocked = MonthlyReview.incompleteReasons(reviewDraftForCheck(), snap)
+        .some((x) => /must say what happens to Reliability/.test(x));
+      out.stageDisabled = document.getElementById('reviewStageBtn').disabled;
+
+      // Override it, with a reason.
+      document.querySelector('.review-reliability[data-reliability="OVERRIDE"]').click();
+      out.relInputsAfterChoice = relInputs();
+      document.getElementById('reviewRelOverride').value = '45';
+      document.getElementById('reviewNote').value = 'Board: steadier than the move suggests.';
+      reviewDraft = reviewDraftForCheck();
+      renderManage();
+      out.chosen = MonthlyReview.chosenReliability(reviewDraftForCheck(), snap);
+      out.remaining = MonthlyReview.incompleteReasons(reviewDraftForCheck(), snap);
+
+      // Stage it and read the confirmation, which is the last thing the board
+      // sees before anything is written.
+      document.getElementById('reviewStageBtn').click();
+      out.confirm = reviewPending ? reviewPending.map((p) => p.summary).join(' | ') : null;
+      out.writes = window.__writes.length;
+      return out;
+    });
+
+    assert.strictEqual(r.beforeDecision, 0, 'no Reliability question before the rating one is answered');
+    assert.strictEqual(r.afterDecision, 2, 'and it appears as soon as it is');
+    assert.strictEqual(r.afterRating, 2, 'use-the-recommendation and override');
+    assert.strictEqual(r.relInputsBeforeChoice, 0, 'no Reliability field until the board asks to override');
+    assert.strictEqual(r.relInputsAfterChoice, 1, 'and then exactly one — never two');
+    assert.ok(r.recommended > 0.2 && r.recommended < 0.45, `recommended ${r.recommended}`);
+    assert.strictEqual(r.blocked, true, 'a moving rating must be answered for');
+    assert.strictEqual(r.stageDisabled, true);
+    assert.ok(Math.abs(r.chosen - 0.45) < 1e-9, `the override is what gets written, got ${r.chosen}`);
+    assert.deepStrictEqual(r.remaining, []);
+    assert.ok(r.confirm, 'the review must stage');
+    assert.match(r.confirm, /club override/i);
+    assert.match(r.confirm, new RegExp(String(Math.round(r.recommended * 100))),
+      'the confirmation must name the recommendation the board departed from');
+    assert.strictEqual(r.writes, 0, 'staging writes nothing');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
 test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
   const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
   assert.match(msg, /identifier is built from its date/);

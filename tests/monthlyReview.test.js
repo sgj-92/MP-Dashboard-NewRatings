@@ -93,7 +93,7 @@ test('an established player has no initial estimate left to correct', () => {
 test('an override needs a number, and accepting needs something to accept', () => {
   const snap = snapshot();
   assert.ok(MR.incompleteReasons(draft({ ratingDecision: MR.DECISION.CLUB_OVERRIDE }), snap)
-    .some((r) => /needs a rating, a reliability, or both/.test(r)));
+    .some((r) => /needs a rating, a Reliability, or both/.test(r)));
   assert.ok(MR.incompleteReasons(draft({ ratingDecision: MR.DECISION.ACCEPT_RECOMMENDATION, recommendation: null }), snap)
     .some((r) => /no recommendation to accept/.test(r)));
 });
@@ -153,4 +153,120 @@ test('tier history comes from the record, so a new promotion simply appears', ()
   assert.strictEqual(history.tierAsOf('Fatch', '2026-07-15'), 'C');
   assert.strictEqual(history.tierAsOf('Fatch', '2026-08-15'), 'B');
   assert.strictEqual(history.tierAsOf('Fatch', TODAY), 'A');
+});
+
+// ---------------------------------------------------------------------------
+// Step 3: Reliability. Shaun's rule, 20 Sep — the board should not have to
+// invent a percentage, so the system recommends one from how far the rating
+// actually moves, and the board takes it or departs from it deliberately.
+
+const asked = (over) => draft({ requireReliabilityAnswer: true, ...over });
+const relOf = (snap, id) => Engine.reliability(snap[id].effectiveEvidence);
+
+test('the recommendation is priced against the anchor the board chose, not the one suggested', () => {
+  const snap = snapshot();
+  const current = snap.Fatch.rating;
+
+  const small = MR.reliabilityRecommendationFor(
+    asked({ ratingDecision: MR.DECISION.CLUB_OVERRIDE, overrideRating: current + 30 }), snap);
+  const large = MR.reliabilityRecommendationFor(
+    asked({ ratingDecision: MR.DECISION.CLUB_OVERRIDE, overrideRating: current + 200 }), snap);
+
+  assert.ok(small.reliability > large.reliability, 'a bigger re-anchor keeps less');
+  assert.ok(Math.abs(large.reliability - 0.20) < 1e-9, 'past the full distance it reaches the floor');
+  assert.ok(small.reliability < relOf(snap, 'Fatch'), 'and it never rises');
+  assert.strictEqual(small.ratingMove, 30);
+  assert.strictEqual(large.ratingMove, 200);
+});
+
+test('nothing is recommended until the rating question is answered', () => {
+  const snap = snapshot();
+  assert.strictEqual(MR.reliabilityRecommendationFor(asked(), snap), null);
+  // And once it is, a rating the board chose NOT to move is a move of zero --
+  // which recommends leaving Reliability alone, and is how a confidence-only
+  // change is still reachable.
+  const keep = MR.reliabilityRecommendationFor(asked({ ratingDecision: MR.DECISION.KEEP_CURRENT_RATING }), snap);
+  assert.ok(keep);
+  assert.strictEqual(keep.ratingMove, 0);
+  assert.ok(Math.abs(keep.reliability - relOf(snap, 'Fatch')) < 1e-9);
+});
+
+test('a rating that moves must be answered for; one that does not need not be', () => {
+  const snap = snapshot();
+  const current = snap.Fatch.rating;
+  const moving = MR.incompleteReasons(
+    asked({ ratingDecision: MR.DECISION.CLUB_OVERRIDE, overrideRating: current + 120 }), snap);
+  assert.ok(moving.some((r) => /must say what happens to Reliability/.test(r)));
+
+  const still = MR.incompleteReasons(asked({ ratingDecision: MR.DECISION.KEEP_CURRENT_RATING }), snap);
+  assert.ok(!still.some((r) => /must say what happens to Reliability/.test(r)));
+});
+
+// Historical Club Adjustment has no Reliability step and carries its own field.
+// Demanding an answer to a question that screen never asks would make it
+// unusable, which is exactly what happened when this was not scoped.
+test('the demand applies only where the question is actually asked', () => {
+  const snap = snapshot();
+  const current = snap.Fatch.rating;
+  const over = { ratingDecision: MR.DECISION.CLUB_OVERRIDE, overrideRating: current + 120 };
+  assert.ok(MR.incompleteReasons(draft({ ...over, requireReliabilityAnswer: true }), snap)
+    .some((r) => /must say what happens to Reliability/.test(r)));
+  assert.ok(!MR.incompleteReasons(draft(over), snap)
+    .some((r) => /must say what happens to Reliability/.test(r)));
+});
+
+test('using the recommendation writes the recommended number', () => {
+  const snap = snapshot();
+  const review = asked({
+    ratingDecision: MR.DECISION.CLUB_OVERRIDE,
+    overrideRating: snap.Fatch.rating + 60,
+    reliabilityChoice: MR.RELIABILITY_CHOICE.USE_RECOMMENDATION,
+  });
+  const rec = MR.reliabilityRecommendationFor(review, snap);
+  assert.strictEqual(MR.chosenReliability(review, snap), rec.reliability);
+
+  const [, rating] = MR.decisionsFor(review, snap);
+  assert.strictEqual(rating.newReliability, rec.reliability);
+  assert.strictEqual(rating.recommendation.recommendationReliability, rec.reliability);
+  assert.strictEqual(rating.recommendation.reliabilityRule, 'move-scaled-v1');
+});
+
+test('an override needs a percentage and a reason, and both are recorded', () => {
+  const snap = snapshot();
+  const base = {
+    ratingDecision: MR.DECISION.CLUB_OVERRIDE,
+    overrideRating: snap.Fatch.rating + 60,
+    reliabilityChoice: MR.RELIABILITY_CHOICE.OVERRIDE,
+  };
+
+  const noNumber = MR.incompleteReasons(asked({ ...base, notes: 'because' }), snap);
+  assert.ok(noNumber.some((r) => /Overriding Reliability needs a percentage/.test(r)));
+
+  const noReason = MR.incompleteReasons(asked({ ...base, overrideReliability: 0.4 }), snap);
+  assert.ok(noReason.some((r) => /needs a reason/.test(r)),
+    'a percentage with no reason is indistinguishable from a slip of the finger');
+
+  const outOfRange = MR.incompleteReasons(asked({ ...base, overrideReliability: 1, notes: 'x' }), snap);
+  assert.ok(outOfRange.some((r) => /below 100%/.test(r)));
+
+  const good = asked({ ...base, overrideReliability: 0.4, notes: 'Board: more settled than the move implies.' });
+  assert.deepStrictEqual(MR.incompleteReasons(good, snap), []);
+
+  // Both numbers reach the record: what the board chose, and what it departed from.
+  const [, rating] = MR.decisionsFor(good, snap);
+  assert.strictEqual(rating.newReliability, 0.4);
+  const rec = MR.reliabilityRecommendationFor(good, snap);
+  assert.strictEqual(rating.recommendation.recommendationReliability, rec.reliability);
+  assert.notStrictEqual(rating.newReliability, rating.recommendation.recommendationReliability);
+  assert.strictEqual(rating.notes, 'Board: more settled than the move implies.');
+});
+
+// A club override that would change nothing is not a decision, it is a slip.
+test('an override that changes nothing is refused', () => {
+  const snap = snapshot();
+  const reasons = MR.incompleteReasons(asked({
+    ratingDecision: MR.DECISION.CLUB_OVERRIDE,
+    reliabilityChoice: MR.RELIABILITY_CHOICE.USE_RECOMMENDATION,
+  }), snap);
+  assert.ok(reasons.some((r) => /would change nothing/.test(r)));
 });

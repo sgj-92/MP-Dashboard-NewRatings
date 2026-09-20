@@ -39,6 +39,14 @@
     CORRECT_INITIAL_CLASSIFICATION: 'CORRECT_INITIAL_CLASSIFICATION',
   };
 
+  // Reliability is its own answer. The board may take the recommended rating
+  // and still disagree about how much confidence should attach to it, so the
+  // two are not bolted together -- but silence is not an option here either.
+  const RELIABILITY_CHOICE = {
+    USE_RECOMMENDATION: 'USE_RECOMMENDATION',
+    OVERRIDE: 'OVERRIDE',
+  };
+
   const DECISION_LABEL = {
     ACCEPT_RECOMMENDATION: 'Accept the statistical recommendation',
     CLUB_OVERRIDE: 'Club override',
@@ -130,6 +138,56 @@
 
   // The reasons a review is not finished. Returned rather than thrown so the
   // screen can show what is still missing while the board is still deciding.
+  // The rating the board is actually putting on the table, whichever route they
+  // took to it. Null means "no change", which is a rating move of zero.
+  function chosenRating(review) {
+    if (!review) return null;
+    if (review.ratingDecision === DECISION.CORRECT_INITIAL_CLASSIFICATION) return review.correctedRating ?? null;
+    if (review.ratingDecision === DECISION.ACCEPT_RECOMMENDATION) {
+      return review.recommendation ? review.recommendation.recommendationRating : null;
+    }
+    if (review.ratingDecision === DECISION.CLUB_OVERRIDE) return review.overrideRating ?? null;
+    return null; // keep the current rating
+  }
+
+  // What the system recommends for Reliability, priced against the anchor the
+  // board has actually chosen rather than the one this module would have
+  // suggested. A board override of the rating gets its own honest answer.
+  //
+  // Returns null when there is no move to price -- nothing to recommend is a
+  // different thing from recommending no change, and neither is invented.
+  function reliabilityRecommendationFor(review, snapshot) {
+    if (!review || !review.playerId) return null;
+    const s = snapshot ? snapshot[review.playerId] : null;
+    if (!s) return null;
+    // Until the board has answered the rating question there is nothing to
+    // price. Once they have, a rating they chose not to move is a move of
+    // zero -- which recommends leaving Reliability alone, and still lets them
+    // override it deliberately. That is how a confidence-only change is made.
+    if (!review.ratingDecision) return null;
+    const target = chosenRating(review);
+    const move = (target === null || target === undefined) ? 0 : target - s.rating;
+    const before = Engine.reliability(s.effectiveEvidence);
+    return Reassessment.recommendReliability({ currentReliability: before, ratingMove: move });
+  }
+
+  // The Reliability that will actually be written, or null for no change.
+  function chosenReliability(review, snapshot) {
+    if (!review) return null;
+    if (review.reliabilityChoice === RELIABILITY_CHOICE.OVERRIDE) {
+      return review.overrideReliability ?? null;
+    }
+    if (review.reliabilityChoice === RELIABILITY_CHOICE.USE_RECOMMENDATION) {
+      const rec = reliabilityRecommendationFor(review, snapshot);
+      return rec ? rec.reliability : null;
+    }
+    // No reliability answer given. The legacy path: a club override could carry
+    // a reliability on its own, and that still works.
+    if (review.ratingDecision === DECISION.CLUB_OVERRIDE) return review.overrideReliability ?? null;
+    if (review.ratingDecision === DECISION.CORRECT_INITIAL_CLASSIFICATION) return review.correctedReliability ?? null;
+    return null;
+  }
+
   function incompleteReasons(review, snapshot) {
     const out = [];
     const s = review && review.playerId ? snapshot[review.playerId] : null;
@@ -143,12 +201,55 @@
     }
     if (review.ratingDecision === DECISION.CLUB_OVERRIDE) {
       const noRating = review.overrideRating === null || review.overrideRating === undefined;
-      const noRel = review.overrideReliability === null || review.overrideReliability === undefined;
-      if (noRating && noRel) out.push('An override needs a rating, a reliability, or both.');
+      const rel = chosenReliability(review, snapshot);
+      const relUnchanged = rel === null || rel === undefined
+        || (s && Math.abs(rel - Engine.reliability(s.effectiveEvidence)) < 1e-9);
+      if (noRating && relUnchanged) {
+        out.push('An override needs a rating, a Reliability, or both — as it stands it would change nothing.');
+      }
+    }
+
+    // A rating that actually moves has to be answered for. Left unanswered the
+    // Reliability simply stays where it was, which after a large re-anchor
+    // means a stale confidence attached to a number the board has just
+    // replaced -- the quiet version of the mistake this whole step exists to
+    // prevent. A rating that does not move needs no answer: the recommendation
+    // is to leave it alone, and that is what happens by default.
+    //
+    // Only where the question is actually asked. The monthly review screen has
+    // a Reliability step and sets this; Historical Club Adjustment does not --
+    // it carries its own Reliability field and predates the step. Demanding an
+    // answer to a question that screen never puts would simply make it
+    // unusable.
+    if (review.requireReliabilityAnswer && review.ratingDecision && !review.reliabilityChoice && s) {
+      const target = chosenRating(review);
+      const moves = target !== null && target !== undefined && Math.abs(target - s.rating) > 1e-9;
+      if (moves) {
+        out.push('The rating moves, so the board must say what happens to Reliability: '
+          + 'use the recommendation, or override it.');
+      }
     }
     if (review.ratingDecision === DECISION.ACCEPT_RECOMMENDATION) {
       const rec = review.recommendation;
       if (!rec || !rec.recommended) out.push('There is no recommendation to accept. ' + ((rec && rec.reason) || ''));
+    }
+    // An override of the Reliability is a departure from what the system
+    // recommended, so it has to say what it is and why. A percentage with no
+    // reason behind it is indistinguishable from a slip of the finger.
+    if (review.reliabilityChoice === RELIABILITY_CHOICE.OVERRIDE) {
+      const r = review.overrideReliability;
+      if (r === null || r === undefined) {
+        out.push('Overriding Reliability needs a percentage.');
+      } else if (!(typeof r === 'number' && r >= 0 && r < 1)) {
+        out.push('Reliability must be at least 0% and below 100% — it approaches certainty but never reaches it.');
+      }
+      if (!String(review.notes || '').trim()) {
+        out.push('Overriding the recommended Reliability needs a reason, recorded with the decision.');
+      }
+    }
+    if (review.reliabilityChoice === RELIABILITY_CHOICE.USE_RECOMMENDATION
+      && !reliabilityRecommendationFor(review, snapshot)) {
+      out.push('There is no Reliability recommendation to use: the board has not set a rating for it to follow.');
     }
     if (review.ratingDecision === DECISION.CORRECT_INITIAL_CLASSIFICATION) {
       if (s && s.classificationStatus && s.classificationStatus !== 'PROVISIONAL') {
@@ -160,6 +261,25 @@
       }
     }
     return out;
+  }
+
+  // What the record keeps about what the system said, so a later reader can see
+  // whether the board followed it or departed from it. The Reliability
+  // recommendation is carried even when the rating recommendation could not be
+  // made -- the board's own anchor still has a recommended Reliability, and an
+  // override is only meaningful beside the number it overrode.
+  function recommendationToRecord(review, snapshot) {
+    const rating = review.recommendation && review.recommendation.recommended ? review.recommendation : null;
+    const rel = reliabilityRecommendationFor(review, snapshot);
+    if (!rating && !rel) return null;
+    return {
+      ...(rating || {}),
+      methodVersion: rating ? rating.methodVersion : null,
+      recommendationRating: rating ? rating.recommendationRating : null,
+      recommendationReliability: rel ? rel.reliability : null,
+      reliabilityRule: rel ? rel.rule : null,
+      reliabilityReason: rel ? rel.reason : null,
+    };
   }
 
   // The decision (or pair of decisions) to hand to ClubDecision.prepare, in the
@@ -190,9 +310,10 @@
         eventType: Engine.EVENT.INITIAL_CLASSIFICATION_CORRECTION,
         newTier: review.newTier,
         newPowerRating: review.correctedRating,
-        newReliability: review.correctedReliability ?? null,
+        newReliability: chosenReliability(review, snapshot),
         decisionType: DECISION.CORRECT_INITIAL_CLASSIFICATION,
-        recommendation: review.recommendation && review.recommendation.recommended ? review.recommendation : null,
+        reliabilityChoice: review.reliabilityChoice || null,
+        recommendation: recommendationToRecord(review, snapshot),
       }];
     }
 
@@ -214,18 +335,15 @@
       // indistinguishable from the omission this whole rule exists to prevent.
       rating = null;
     }
-    const reliability = review.ratingDecision === DECISION.CLUB_OVERRIDE
-      ? (review.overrideReliability ?? null)
-      : null;
-
     const ratingDecision = {
       ...common,
       eventType: Engine.EVENT.CLUB_RATING_REASSESSMENT,
       newPowerRating: rating,
-      newReliability: reliability,
+      newReliability: chosenReliability(review, snapshot),
       decisionType: review.ratingDecision,
+      reliabilityChoice: review.reliabilityChoice || null,
       allowNoChange: review.ratingDecision === DECISION.KEEP_CURRENT_RATING,
-      recommendation: review.recommendation && review.recommendation.recommended ? review.recommendation : null,
+      recommendation: recommendationToRecord(review, snapshot),
     };
 
     return [tierDecision, ratingDecision];
@@ -256,7 +374,7 @@
   }
 
   return {
-    DECISION, DECISION_LABEL, TIER_MOVE, SAME_DATE_ORDER, eventRank,
+    DECISION, RELIABILITY_CHOICE, chosenRating, chosenReliability, reliabilityRecommendationFor, DECISION_LABEL, TIER_MOVE, SAME_DATE_ORDER, eventRank,
     preReviewSnapshot, recommendationFor, incompleteReasons, decisionsFor, describe,
   };
 });
