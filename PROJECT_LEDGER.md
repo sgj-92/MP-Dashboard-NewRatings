@@ -33,8 +33,9 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `5bd7999` |
-| Tests | **381 / 381 passing** (71 of them drive a real browser) |
+| Last verified implementation commit | `31ca6c1` |
+| Tests | **382 / 382 passing** (71 of them drive a real browser) |
+| Firestore (live, re-read 20 Sep) | 155 matches · 662 journey events · 34 players — replays to itself |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -790,6 +791,69 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (Tom/Fatch re-anchor: preview ready, awaiting Shaun)
+
+`Ledger CCode`. **Preview only — no live write has been made**, as the safety
+condition requires. `31ca6c1`, tests **382 / 382**.
+Run it yourself with `node scripts/correct-tom-fatch-anchors.js`.
+
+The live record was re-read first: **155 matches · 662 journey events · 34
+players**, and it **replays to itself**, so the correction can be planned on it.
+(It was 156/664 at my last read — a further removal has completed cleanly since.)
+
+**What is being replaced**
+
+| | Now | Becomes |
+|---|---|---|
+| Tom, 1 Jul | anchored to Jords at **1352.5** | **1400.0** (+47.5 on the anchor) |
+| Fatch, 1 Aug | anchored to Tom at **1358.6** | **1400.0** (+41.4 on the anchor) |
+
+Reliability stays at **10%** for both, as decided. Both supersede rather than
+replace: revision 3 on each PROMOTION, revision 2 on each
+CLUB_RATING_REASSESSMENT, and the 7 superseded decisions stay in the record.
+
+**Blast radius — 457 documents, 0 removed** (426 journey events, 31 players).
+**31 of 34 players** end on a different rating:
+
+| | |
+|---|---|
+| Tom | **+35.9** → 1386.9 |
+| Fatch | **+34.5** → 1376.5 |
+| Everyone else | between **+3.0** and **−1.1** |
+
+**9 players change rank.** Tom #25→#22 and Fatch #26→#23 rise past Shaun
+(#22→#24), Chloe (#23→#25) and Tarique (#24→#26); elsewhere Del/KC swap #5/#6
+and Stormzy/Carla swap #20/#21.
+
+**The corrected record replays to itself and passes 8/8 diagnostics** — verified
+in memory, before any write.
+
+**A defect found while previewing, and fixed.** Historical adjustments hand
+their decisions straight to the engine as replay inputs; they do not go through
+`ClubDecision.prepare`, which is where the monthly review flattens the
+recommendation onto the event. The engine reads scalars, so the `recommendation`
+object was silently dropped and **every historical adjustment ever written
+stored a null recommendation** — the audit trail could not show whether the board
+followed the system or departed from it. Now flattened, so this correction
+records **board 10% against the rule's recommended 20%**, which is precisely the
+case the audit exists for.
+
+**Waiting on Shaun: approve this exact correction and I will apply it**, then
+re-read, verify replay-to-self and diagnostics, and confirm Tom and Fatch's final
+figures.
+
+**Item 7 (repository truth) after the write, checked and scoped.** The
+superseded anchors are encoded in two places that describe the LIVE record and
+will need updating: `REASSESSMENT_RELIABILITY.md`'s table of the three decisions,
+and the matching constants in `tests/reassessmentReliability.test.js`. The move
+sizes become +296.6 (Tom) and +263.6 (Fatch), which widens the modelled bound on
+the full-reopen distance from ≤222 to ≤263 — `D = 150` stays comfortably inside
+it, so **the approved rule is unaffected**. Everything else that mentions the old
+figures is a dated artifact of what was decided at the time
+(`HISTORICAL_REVIEW_DRYRUN.md`, the Ledger's own history) or a synthetic/experiment
+fixture (`tests/ui.test.js`'s audit trail, `tests/historicalReplay.test.js`'s
+Experiment 12) and is correct as it stands.
 
 ### CGPT — 20 Sep 2026 (Tom/Fatch historical anchor correction)
 Shaun corrected a prior historical board instruction.
