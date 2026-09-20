@@ -33,9 +33,9 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `31ca6c1` |
-| Tests | **382 / 382 passing** (71 of them drive a real browser) |
-| Firestore (live, re-read 20 Sep) | 155 matches · 662 journey events · 34 players — replays to itself |
+| Last verified implementation commit | `4bbda90` |
+| Tests | **383 / 383 passing** (71 of them drive a real browser) |
+| Firestore (live, re-read 20 Sep) | 155 matches · 666 journey events · 34 players — replays to itself, diagnostics 8/8 |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -244,7 +244,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 | No statistical recommendation ≠ keep-current | The dry run found Tom/Fatch had too few established C players for the T2 method to recommend a target. That does **not** mean the historical club decision was keep-current; it means the board must choose keep-current or a club override, exactly as it would prospectively. |
 | Historical override anchors — **SUPERSEDED for Tom/Fatch on 20 Sep** | **Shaun, 1 Jul:** remains 1400. **Tom, 1 Jul:** previous Jords-based anchor is superseded; correct historical club decision is **B-tier baseline 1400**. **Fatch, 1 Aug:** previous Tom-based anchor is superseded; correct historical club decision is **B-tier baseline 1400**. Rationale from Shaun: anchoring to an individual B with a genuinely poor record distorted how far promoted players sat from the wider B population. Apply as audited superseding historical adjustments and replay forward; do not silently mutate old events. |
 | Historical reassessment reliability = 10% | Shaun, Tom and Fatch all reset/reopen to **10% reliability** at their historical adjustment date so the model can move them quickly in the newly assessed tier/state. This is an explicit board decision, not a statistical recommendation. |
-| Tom and Fatch historical anchors corrected to B baseline | Shaun corrected the prior board instruction. **Tom on 1 Jul 2026** and **Fatch on 1 Aug 2026** should each be re-anchored to the standard **Tier B baseline of 1400**, not to Jords/Tom as comparator anchors. Their previously approved historical **10% Reliability remains unchanged** unless Shaun separately changes it. Because Sequential-v1 is chronological, replay forward from each superseding adjustment and accept downstream rating changes produced by the model. |
+| Tom and Fatch historical anchors corrected to B baseline | Shaun corrected the prior board instruction. **Tom on 1 Jul 2026** and **Fatch on 1 Aug 2026** are each re-anchored to the standard **Tier B baseline of 1400**, not to Jords/Tom as comparator anchors. Because Sequential-v1 is chronological, replay forward from each superseding adjustment and accept downstream rating changes produced by the model. **APPLIED `4bbda90`.** |
+| Tom and Fatch historical Reliability changed to 20% | Shaun, 20 Sep, superseding the earlier 10% for these two decisions only: both reopen at **20%**. A re-anchor of this size is past the full-reopen distance, so this is also exactly what the approved move-scaled rule recommends — the record shows board and system in agreement rather than an override. **Shaun's own 1 Jul 10% is unchanged** and remains a recorded board decision that predates the 20% floor. **APPLIED `4bbda90`.** |
 | Future reassessment reliability is system-recommended but club-editable | For normal future promotions/reassessments, the club should primarily decide the **new playing-level anchor / comparable player**. The system should then present a **Recommended Reliability** using an explainable rule. Admins may accept it or manually override the percentage. Any override must be clearly labelled as a club override and stored with attribution/reason in the audited reassessment event. Do not force the board to invent a reliability percentage from scratch. |
 | Move-scaled reassessment Reliability approved | Shaun chose **move-scaled** rather than a flat reset. Small rating re-anchors retain more of the player's prior Reliability; larger re-anchors reduce Reliability more aggressively. **D = 150 points** is the full-reopen threshold, and the system-generated minimum/floor at or beyond that threshold is **20% Reliability**. Manual override remains available and audited. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
@@ -791,6 +792,54 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (Tom/Fatch re-anchor APPLIED at 20%)
+
+`4bbda90`. Shaun approved the correction and changed the Reliability from the
+previously decided 10% to **20%**. Applied to the live beta and verified from a
+fresh re-read.
+
+| | Anchor | Reliability | Now |
+|---|---|---|---|
+| Tom, 1 Jul | 1103.4 → **1400.0** | **20%** | **1387.8** |
+| Fatch, 1 Aug | 1137.1 → **1400.0** | **20%** | **1377.9** |
+
+**796 documents written, none removed.** Nothing was deleted: each correction
+supersedes the decision it replaces, and all **7 superseded decisions remain** in
+the record. Verified independently: **replay-to-self 0 differences, diagnostics
+8/8**, 155 matches · 666 journey events · 34 players.
+
+31 of 34 players moved; everyone other than Tom and Fatch by between +3.1 and
+−1.1. Nine changed rank — Tom #25→#22 and Fatch #26→#23 past Shaun, Chloe and
+Tarique, with Del/KC and Stormzy/Carla swapping.
+
+**Board and system agree.** A re-anchor this size is past the full-reopen
+distance, so 20% is exactly what the move-scaled rule recommends. The events
+record **board 20% against recommendation 20%, by `move-scaled-v1`** — agreement
+rather than an override, which is only visible at all because the historical
+path started flattening the recommendation onto the event in `31ca6c1`.
+
+**The correction invalidated the modelling the rule was chosen on, and the
+script went on asserting the old conclusions.** Hard-coded prose still claimed
+the three decisions were *"answered with the same reliability"*, and printed a
+bound on `D` derived from the smallest observed move without checking it
+actually fits. Both are now **derived from the data**, and the fourth instance
+of the standing lesson that copy describing the record must be treated as code.
+
+**What the record now says.** The three decisions remain one *situation* — all
+near-whole-tier moves — but no longer one *answer*: Shaun 10%, Tom and Fatch
+20%. **No single-floor rule reproduces all three**, and the script now searches
+for a fitting distance and reports that none exists. The rule in use reproduces
+**Tom and Fatch exactly** and differs only on **Shaun**, whose 10% predates the
+20% floor and was already recorded as a deliberate divergence. **`D = 150` is
+unaffected** — it rested on the half-a-tier argument, not on that fit.
+
+`REASSESSMENT_RELIABILITY.md` and `tests/reassessmentReliability.test.js` are
+re-derived, with the superseded figures kept and marked rather than rewritten.
+Screenshots regenerated from the corrected record.
+
+**Baton → CGPT / Shaun.** NEXT is clear. Still open and unanswered: the
+card-orientation reading from the canonical-tier work.
 
 ### CCode — 20 Sep 2026 (Tom/Fatch re-anchor: preview ready, awaiting Shaun)
 
@@ -3069,17 +3118,12 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-1. **URGENT historical correction — Tom/Fatch B baseline.**
-2. Build a dry-run Historical Club Adjustment preview that supersedes:
-   - Tom, effective 1 Jul 2026: old Jords-based anchor → **1400**;
-   - Fatch, effective 1 Aug 2026: old Tom-based anchor → **1400**.
-3. Keep both historical Reliability values at **10%**.
-4. Preserve the prior events as superseded audit history; no silent mutation/deletion.
-5. Replay forward chronologically and report the blast radius before any live write:
-   affected players, current-rating changes, event/doc counts, and any material
-   ranking changes.
-6. After Shaun sees the preview, apply the exact approved correction to beta,
-   then verify replay-to-self = 0 differences and diagnostics pass.
-7. Update `RATING_MODEL.md` / tests / fixtures where they encode the superseded
-   Jords/Tom anchors, so repository truth matches the corrected board decision.
-8. Update Ledger with implementation commit, preview/applied results, and baton back.
+**All items are DONE (`4bbda90`).** The Tom/Fatch re-anchor is applied at the
+Tier B baseline of 1400 with 20% Reliability, verified, and the repository has
+been brought back into line with the corrected record.
+
+Nothing is queued for CCode. The rating-model backlog and match sharing in
+Section 5 remain parked and unauthorised. One question is still open for Shaun:
+whether "stronger partnership first" should also reorder the two sides of a
+match card (see the canonical-tier handoff — it currently does not, because on a
+card the side order carries the result and the scoreline).
