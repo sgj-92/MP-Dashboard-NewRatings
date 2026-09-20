@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `ecab0f2` |
-| Tests | **321 / 321 passing** (59 of them drive a real browser) |
+| Last verified implementation commit | `58c880b` |
+| Tests | **335 / 335 passing** (64 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -407,9 +407,15 @@ have been a different decision rather than a safer version of the same one.
 | Re-running the repair | reports nothing to do; it is idempotent |
 | Editing | a removal plans cleanly again (5 players moved, 9 documents), writing nothing |
 
-**Follow-on, still open, not blocking:** should the app detect this state and
-offer the repair itself, rather than only refusing? Today the only way out is a
-script CCode runs, which is no use to Shaun on a phone. Product decision.
+**Follow-on — RESOLVED by Shaun, 20 Sep, and built (`58c880b`).** The app now
+detects and records the state; it does not repair it. Shaun's two decisions:
+
+- **Detail goes to the owner only.** The board holds an admin password of its
+  own, and a board member should not meet a wall of document ids.
+- **Repair stays with CCode**, who shows the plan before writing. No repair
+  action is offered in the app.
+
+See the CCode handoff of 20 Sep (record health) in Section 6.
 
 
 ### Rating model backlog — parked during refinement
@@ -616,6 +622,62 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (record health: detected, logged, and told to the right reader)
+
+**Shaun's decisions, taken in chat and recorded here:** the app should detect
+and report a diverged record; the detail goes to **him only**; the **repair
+stays with CCode**, who shows the plan first. No repair action in the app.
+
+Built in `58c880b`. Tests **335 / 335**, 64 in a browser.
+
+**A material discovery that shaped it.** The app has two admin passwords —
+Shaun's (`owner`) and a separate **board** password — but `isUnlocked` was a
+single boolean and recorded nothing about which one was used. "Admin" has never
+meant "Shaun". There was no way to show something to him and not to the board
+until now; `adminRole` fixes that, and currently gates exactly one thing. Board
+powers are otherwise unchanged and nobody asked for them to be.
+
+**Detection.** Once a session, after the first render, for whoever opens the
+app — so a problem is found the same day rather than whenever somebody next
+tries an edit. It costs **no Firestore read**: the record is already in memory,
+and `v3Bridge` now keeps the documents *as stored* beside the shapes the app
+uses, which the legacy conversions had lost. It replays the whole history
+(~25–60ms on a desktop, a few hundred on a phone), so it stays off the critical
+path.
+
+**Logging.** One document per **distinct** divergence in a new `healthReports`
+collection. The id is derived from what differs plus the true count, so four
+people on four phones leave one report saying it was seen four times, the first
+sighting is what dates it, and two divergences that share a first forty ids but
+differ in size stay separate. A report that was closed and reappears is open
+again — it was not fixed, whatever anybody recorded.
+
+**Two readers.**
+
+- **Board:** *"The record needs repair, so editing is paused. This has been
+  logged (ref) and nothing you did caused it. Nothing has been lost."*
+- **Owner:** what diverged, where, across which dates, how many documents and
+  players, that **no match is affected**, plus the log reference, when it was
+  first seen and who has met it.
+
+`plan()` now carries the document ids on the error rather than concatenating
+them into its message, so who sees what is the caller's decision rather than a
+string's.
+
+**Where it shows.** The Beta diagnostics screen, above the checks. Both views
+were rendered and looked at, not reasoned about.
+
+**One thing Shaun has to do once.** An unlock stored on a device before this
+change has no recorded role and is treated as **board** — the lesser of the two,
+so a stale value can never hand someone the owner's view. Locking and unlocking
+once with his own password restores owner.
+
+**Still true, and worth keeping in view:** batching (`fc33a44`) removed the
+cause of the incident that prompted this. Detection is for the next cause,
+whatever it turns out to be.
+
+**Baton → CGPT / Shaun.** Home visual acceptance from 19 Sep is still open.
 
 ### CCode — 20 Sep 2026 (the live record was half-written; found, measured, repaired)
 
