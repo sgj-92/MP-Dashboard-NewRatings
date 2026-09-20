@@ -10,9 +10,9 @@ The shared coordination layer between **Shaun** (product owner / final decision 
 
 ## 1. CURRENT STATE
 
-Baseline before the currently queued work: implementation commit `49af41b`, 395/395 tests (75 browser). Split-month League Table is complete: each match is allocated to the tier held on its match date; All together remains one whole-month row and shows transitions.
+Baseline: implementation commit `43401f8`, **403/403 tests (81 browser)**. Split-month League Table is complete: each match is allocated to the tier held on its match date; All together remains one whole-month row and shows transitions.
 
-The current beta Players Directory remains visually older than the rest of the refreshed application: a large filter card followed by plain alphabetical rows with letter dividers, serif names, ACTIVE/INACTIVE pills and right-aligned `Tier · Rating` text. Shaun has requested that this now be brought into the current premium Money Padel visual language without losing the Directory's useful filtering/sorting.
+**The Players Directory refresh is done (`43401f8`).** The filter card no longer takes half a phone before a player appears; Tier and Status fold behind a line that says what is on, sort stays out, tier chips wrap instead of clipping at 375px, and Active has stopped shouting on every row. Presentation only — every filter, sort, Compare and navigation behaviour is unchanged. Captured in `docs/screenshots/16-players-directory.png` and `16b-players-directory-filters.png`.
 
 **Ledger history — preserved.** The rewrite on 20 Sep took this document from
 3320 lines to 122, removing the Decisions Log, every Handoff, the Open Questions
@@ -130,6 +130,43 @@ Baton for this investigation is with CCode and it is approved/unblocked.
 
 ## 6. HANDOFFS
 
+### CCode — 20 Sep 2026 (NEXT #2 Players Directory refresh complete)
+
+`43401f8`. **403 / 403 tests (81 browser).** Every point in Section 4's
+direction is implemented; nothing in the engine, the tier semantics or
+Reliability was touched.
+
+What the screen does now: secondary filters fold behind
+*"Filters · All tiers, all players"*, so the first player sits near the top of
+an iPhone SE instead of below 411px of controls. Sort stays visible — it is the
+primary control, not a secondary one. Tier chips wrap; **Tier C was previously
+clipped off the right edge at 375px and is reachable again.** A row leads with
+the name in the public serif, with `Tier B · 1460` as quiet sans-serif metadata
+beneath it and a chevron; Inactive is badged, active is not. Letter headings
+appear only when sorted A–Z.
+
+**One real defect found and fixed while testing, worth recording:** a player
+name is free text and was being written into the page unescaped. A name
+containing `<b>` rendered as `ac` — two characters of somebody's identity
+silently lost, and an injection surface. `escapeAttr` is now `escapeHtml` and
+covers the rendered text as well as the data attribute. No live player name is
+affected today; this was caught by a test, not by a report.
+
+**Method note for CGPT/CChat:** all six new browser tests were verified to fail
+against the pre-change Directory before being accepted. Three of them failed on
+their first run — two were my own bugs (the profile sheet's heading is
+`#sheetName`, not `#sheetTitle`) and one was the escaping defect above. The
+geometry test also had to learn that `goToSection` hides the shared Rankings
+chrome on a `setTimeout(0)`, so measuring in the same synchronous turn measures
+a screen no user ever sees.
+
+**Next for CCode: NEXT #3, the League Table refinement** — approved and
+unblocked, not started.
+
+**Still waiting on Shaun/CGPT:** what, if anything, from
+`LEDGER_ARCHIVE_2026-09-20.md` should be folded back into this Ledger
+(Section 1). Nothing in it is revoked; it has only stopped being written down.
+
 ### CCode — 20 Sep 2026 (Tom/Fatch audit complete; NEXT 2 and 3 not started)
 
 `838ca66`. **397 / 397 tests.** Full findings in Section 5 — the short version:
@@ -172,6 +209,8 @@ Commit `49af41b`; 395/395 tests (75 browser).
 
 | Commit | Work |
 |---|---|
+| `43401f8` | Players Directory refresh: folded secondary filters with a state summary, wrapping tier chips, identity-first rows with a chevron, Inactive-only badging, A–Z-only letter headings; player names HTML-escaped where rendered |
+| `838ca66`, `14d5a67` | Tom/Fatch integrity audit: record verified correct, stale source (`HISTORICAL_REVIEW_DRYRUN.md`) corrected, `apply-historical-decisions.js` made unable to undo it; Ledger history preserved in `LEDGER_ARCHIVE_2026-09-20.md` |
 | `49af41b` | Split-month League Table: match-date tier allocation, isolated tier-segment points/results, whole-month All together transition row |
 
 ---
@@ -179,7 +218,7 @@ Commit `49af41b`; 395/395 tests (75 browser).
 ## 8. NEXT
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
-2. **Players Directory visual refresh — approved/unblocked.** Modernise the supplied Directory screen using established Money Padel components/tokens; compact filters; improve player-row hierarchy/tappability; reduce repetitive Active badges; preserve all behaviour.
-3. **League Table mobile refinement — already approved/unblocked.** Collapsible explanation + collapsible tier breakdown + Last 10 form league table.
+2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters with a state summary, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. All behaviour preserved; six browser regression tests, each verified to fail against the old screen. Player names are now HTML-escaped where they render.
+3. **League Table mobile refinement — approved/unblocked, and the next CCode task.** Collapsible explanation + collapsible tier breakdown + Last 10 form league table (P/W/L/D/GD/Pts, 3 pts a win / 1 a draw, real sample shown for players with fewer than 10 rated games). No rating-engine changes.
 4. Add targeted browser/module regression tests for changed behaviours and update this Ledger with commit/test totals and findings.
 5. No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules except a separately authorised repair if the Tom/Fatch audit proves persisted numerical state is wrong.
