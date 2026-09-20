@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `58c880b` |
-| Tests | **335 / 335 passing** (64 of them drive a real browser) |
+| Last verified implementation commit | `9ac4285` |
+| Tests | **345 / 345 passing** (64 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -376,18 +376,64 @@ Required future reassessment UX:
 - event stores both the system recommendation and the final chosen reliability
   so the audit trail shows whether the board accepted or overrode it.
 
-Still to model before implementation:
+**The modelling is done (`9ac4285`), and it needs one decision from Shaun.**
+Full analysis in [`REASSESSMENT_RELIABILITY.md`](./REASSESSMENT_RELIABILITY.md);
+reproduce read-only with `node scripts/model-reassessment-reliability.js`.
+Nothing is implemented and no engine behaviour changed.
 
-1. What explainable rule should generate the recommendation?
-2. Should a normal genuine promotion use a fixed reopened reliability (e.g.
-   around Developing), or discount the player's prior reliability/evidence?
-3. Should initial-classification corrections recommend materially lower
-   reliability than normal promotions?
-4. Validate candidate rules against historical Shaun/Tom/Fatch decisions and
-   hypothetical future promotions before changing engine behavior.
+**A framing correction the record forced.** The tier move (`PROMOTION` /
+`DEMOTION`) changes tier and nothing else — not rating, not reliability. Only the
+**anchor decision** (`CLUB_RATING_REASSESSMENT` /
+`INITIAL_CLASSIFICATION_CORRECTION`) reopens reliability. So the recommendation
+does not belong to "a promotion"; it belongs to the board **replacing a rating**,
+and it answers how much confidence attaches to the number the board chose. This
+supersedes the framing of questions 2 and 3 below.
 
-Until that modelling is done, do **not** silently make 10% or 25% the universal
-default. The existing manual reliability control remains valid.
+**What the three decisions establish.**
+
+| Player | Anchor move | Prior evidence | Prior reliability | Chose |
+|---|---|---|---|---|
+| Shaun | +263.2 (88% of a tier) | 5 | 33.3% | 10% |
+| Tom | +249.1 (83%) | 4 | 28.6% | 10% |
+| Fatch | +222.3 (74%) | 14 | 58.3% | 10% |
+
+They are **one situation sampled three times**. Prior evidence varied more than
+threefold and changed nothing, so the record fixes **one point** of any rule and
+says nothing about a small correction — the case not yet met.
+
+**Answers to the questions as asked:**
+
+1. *What explainable rule?* Two survive: flat 10%, and **move-scaled** — retain
+   prior reliability in proportion to how much of the old rating survived,
+   reopening fully once the move reaches `D`. Both fit the record exactly.
+2. *Fixed reopen, or discount prior evidence?* **Discounting prior evidence is
+   ruled out, and Fatch is why**: 14 matches, three and a half times Tom's, and
+   the same 10%. Any proportional rule must give him materially more.
+3. *Should corrections differ from promotions?* **The record gives no reason to
+   separate them.** Shaun's correction and Tom's promotion were the same size of
+   move and got the same answer. What varies is the size of the move, not the
+   label on it.
+4. *Validation.* Done, with a bound rather than a value: a move-scaled rule
+   fits exactly for any `D` **at or below 222 points**, and degrades above it.
+
+**Recommendation: move-scaled with `D = 150` (half a tier).** It changes nothing
+already decided, and stops a 30-point correction to a twenty-match player
+discarding their whole record and setting K to 37 — currently the flat rule
+would make a small board correction leave that player *more* volatile than a
+newcomer.
+
+**DECISION NEEDED FROM SHAUN — flat, or move-scaled?** If move-scaled, is
+`D = 150` right, or must a move be larger before the record is discarded? This
+is rating methodology, so it is his, not CGPT's or mine.
+
+**Worth doing either way, and not blocked on the above:** record **both** the
+system recommendation and the board's final choice on every future decision, so
+the next validation has more than three points. The recommendation can be
+computed and stored silently while the board goes on deciding by hand.
+
+Until one is chosen, the existing manual reliability control remains the only
+mechanism and 10% remains what the board has always used. Do **not** silently
+make 10% or 25% a universal default.
 
 ### RESOLVED 20 Sep — the live record was half-written; repaired with Shaun's approval
 
@@ -659,6 +705,45 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (reassessment reliability: modelled; one decision needed)
+
+`Ledger CCode`. Home is delivered and its baton sits with CGPT/Shaun, so I took
+the next unblocked item: the modelling NEXT #11 and CGPT's 20 Sep handoff both
+name as the gate before implementation. **Analysis only — nothing implemented,
+no engine behaviour touched.** `9ac4285`, tests **345 / 345**.
+
+Full detail in Section 5 and `REASSESSMENT_RELIABILITY.md`. Three things worth
+pulling out:
+
+**The question was framed around promotions; the record says otherwise.** A
+`PROMOTION` event changes the tier and nothing else — not the rating, not the
+reliability. Only the anchor decision reopens it. The recommendation belongs to
+the board **replacing a rating**, not to a tier move, and it is about confidence
+in the number the board chose rather than the player's experience. That reframing
+dissolves Ledger question 3: corrections and promotions do not need different
+treatment, because what varies between them is the size of the move.
+
+**The data settles less than three observations sounds like.** All three are the
+same situation — a 74–88% of a tier move — answered with 10% every time. They
+fix one point of any rule. What they *do* settle, decisively, is that
+**proportional discounting is wrong**: Fatch carried three and a half times
+Tom's evidence into his reassessment and got the identical answer.
+
+**The surviving rules are indistinguishable on everything decided so far and
+differ sharply on what comes next.** A 30-point correction to a twenty-match
+player: flat says 10% (K 37), move-scaled says 55%. Under the flat rule a small
+board correction leaves an established player *more* volatile than a newcomer.
+That is the case to decide on, and it is a judgement about what the club means
+by a correction — Shaun's call, not one the data makes.
+
+**A bug found in my own candidate while testing it:** the unclamped move-scaled
+form *raises* reliability for anyone already below 10%. Reassessing a rating can
+only add doubt. Clamped, and pinned by a property test sweeping evidence and
+move size, so whichever rule ships cannot lose it.
+
+**Baton → Shaun** for the flat-vs-move-scaled decision, and CGPT for the
+still-open Home visual acceptance from 19 Sep.
 
 ### CGPT — 20 Sep 2026 (reassessment reliability recommendation)
 Shaun clarified the desired future reassessment flow: the club is comfortable
@@ -2603,3 +2688,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 11. **Backlog after Home refinement:** model and implement system-recommended
     reassessment Reliability with manual audited override. Do not choose the
     recommendation formula until historical/hypothetical validation is reviewed.
+    — **Modelling DONE (`9ac4285`).** Implementation is blocked on one decision
+    from Shaun (flat vs move-scaled), in Section 5. Nothing else in this item
+    can proceed until he answers.
+12. **Unblocked whenever Shaun decides:** implement the chosen rule in
+    `reassessment.js` (which today returns `recommendationReliability: null`),
+    plus the Use-recommendation / Override UX with attribution and reason, and
+    store both the recommendation and the final choice on the event.
