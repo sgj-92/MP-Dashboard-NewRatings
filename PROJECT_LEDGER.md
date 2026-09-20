@@ -270,6 +270,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Games cards show historical tier beside each player | On collapsed and expanded Games cards, show each player's **tier at match date** beside their name (e.g. `Eli (A) & Len (A) def Osh (A) & Rishi (B)`). Use the same temporal-tier source for visible labels and game-type classification so the UI can never display one tier while filtering the match as another. |
 | Games tab supports historical tier-composition filtering | Add a Games filter based on the **tiers that applied when each match was played**, not current tiers. Support broad tier environments (all-A/all-B/all-C, mixed) and specific canonical matchup types such as `AA vs AA`, `AB vs BB`, `AA vs AB`, `AB vs AB`. The filter must combine with Month and Player; e.g. Player=Len + Game type=`AB vs BB` shows only Len's matches of that historical composition. Team orientation must not create separate categories. |
 | Matchup filter ordering follows canonical tier strength, not frequency | Sort matchup options by partnership strength, then opponent strength, using `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Example sequence: `SS vs SS`, `SS vs SA`, …, `SA vs SA`, `SA vs SB`, …, `AA vs AA`, `AA vs AB`, `AA vs BB`, `AA vs BC`, `AB vs AB`, `AB vs AC`, etc. Counts remain visible but never determine order. Only combinations present in the current filter scope need be listed. |
+| Winners are always on the left of a match card | Shaun, 20 Sep, asked directly: the winning side is shown first on every decided card, **regardless of tier strength**. Canonical partnership strength orders the players *within* a partnership and orders the *matchup label*; it never decides which side of `def` a team appears on. A draw has no winner, so it keeps the orientation it was stored in — which is also the side the scoreline is written from, and the card names it. |
 | Canonical tier ordering governs matchup labels and historical partnership display | Use tier strength `S > A > B > C`. Within each partnership, always display the higher-tier player first; preserve original order only when both players share the same tier. Between partnerships, display the stronger canonical partnership first; preserve original team orientation only when both partnerships have the same composition. Therefore never show `BA`, `BS`, etc.; canonical forms are `AB`, `SB`, etc. This is presentation/filter normalisation only: **do not rewrite stored match/team/player order**. |
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
@@ -792,6 +793,27 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (card orientation settled: winners always on the left)
+
+Shaun answered the open question from the canonical-tier work: **the winners are
+always on the left, whatever the tiers say.** That is what the app already does —
+the interpretation I flagged when narrowing the instruction was the right one, so
+**no behaviour changed**.
+
+What did change is the guard. The existing test only checked that winners sat
+before `def`. It now pins the whole rule, on every card in the feed:
+
+- every winner on the left, every loser on the right, nobody on both sides;
+- **draws keep the orientation they were stored in** — they have no winner, so
+  the "winners first" rule says nothing about them;
+- and for a draw, the scoreline binding still names the side shown first. That
+  is the part that would have broken silently: the live record's 5 draws include
+  `Max (B) & Jams (C) vs Ant Slice (A) & Jords (B)`, where the side shown first
+  is the *weaker* partnership. Reordering by strength would have left the card
+  saying "Max & Jams first" above a scoreline written from the other side.
+
+Tests **383 / 383**. Section 5 has no open questions left for Shaun.
 
 ### CCode — 20 Sep 2026 (Tom/Fatch re-anchor APPLIED at 20%)
 
@@ -3122,8 +3144,7 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 Tier B baseline of 1400 with 20% Reliability, verified, and the repository has
 been brought back into line with the corrected record.
 
-Nothing is queued for CCode. The rating-model backlog and match sharing in
-Section 5 remain parked and unauthorised. One question is still open for Shaun:
-whether "stronger partnership first" should also reorder the two sides of a
-match card (see the canonical-tier handoff — it currently does not, because on a
-card the side order carries the result and the scoreline).
+Nothing is queued for CCode, and no question is open for Shaun. The card
+orientation is settled — **winners always on the left, regardless of strength**
+— and recorded in the Decisions Log. The rating-model backlog and match sharing
+in Section 5 remain parked and unauthorised.

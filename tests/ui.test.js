@@ -633,7 +633,12 @@ test('Games reads partnerships stronger-first and orders the filter by strength'
 });
 
 // The two SIDES are not reordered: doing so would turn a loss into a win.
-test('canonical ordering never reorders the sides of a decided match', { skip }, async () => {
+// Shaun, 20 Sep, asked directly: the winners are ALWAYS on the left, whatever
+// the tiers say. Canonical strength orders the players within a partnership and
+// the matchup label; it never touches which side of "def" a team is on. A draw
+// has no winner, so it keeps the orientation the match was stored in -- which
+// is also the side the scoreline is written from, and the card says so.
+test('the winners are always on the left, and a draw keeps its stored orientation', { skip }, async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => {
@@ -641,24 +646,49 @@ test('canonical ordering never reorders the sides of a decided match', { skip },
       document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
       gamesMonth = 'all'; gamesType = 'all'; selectedGamesPlayer = 'all';
       renderGamesTab();
-      const rows = [];
+      const decided = [], draws = [];
       document.querySelectorAll('.callout-card').forEach((card) => {
         const title = card.querySelector('.cc-title');
-        if (!title || !/ def /.test(title.innerText)) return;
         const id = card.querySelector('[data-gameid]');
-        if (!id) return;
+        if (!title || !id) return;
         const m = getDisplayMatches().find((x) => x.id === id.dataset.gameid);
-        if (m) rows.push({ id: m.id, shown: title.innerText.split(' def ')[0], winners: m.winners });
+        if (!m) return;
+        const text = title.innerText;
+        if (/ def /.test(text)) {
+          const [left, right] = text.split(' def ');
+          decided.push({ id: m.id, left, right, winners: m.winners, losers: m.losers });
+        } else if (m.isDraw && / vs /.test(text)) {
+          const [left, right] = text.split(' vs ');
+          draws.push({
+            id: m.id, left, right, stored: m.winners, other: m.losers,
+            binding: (card.querySelector('.cc-detail') || {}).innerText || '',
+          });
+        }
       });
-      return { rows };
+      return { decided, draws };
     });
 
-    assert.ok(r.rows.length > 20, `expected decided matches, got ${r.rows.length}`);
-    r.rows.forEach((row) => {
-      row.winners.forEach((w) => {
-        assert.ok(row.shown.includes(w),
-          `${row.id}: "${row.shown}" is before "def" but ${w} won — the sides have been swapped`);
-      });
+    assert.ok(r.decided.length > 20, `expected decided matches, got ${r.decided.length}`);
+    r.decided.forEach((row) => {
+      row.winners.forEach((w) => assert.ok(row.left.includes(w),
+        `${row.id}: ${w} won but is not on the left of "def" — the sides have been swapped`));
+      row.losers.forEach((l) => assert.ok(row.right.includes(l),
+        `${row.id}: ${l} lost but is not on the right of "def"`));
+      // And nobody has crossed over.
+      row.winners.forEach((w) => assert.ok(!row.right.includes(w), `${row.id}: ${w} appears on both sides`));
+    });
+
+    assert.ok(r.draws.length > 0, 'the record contains draws, and they must be covered too');
+    r.draws.forEach((row) => {
+      row.stored.forEach((n) => assert.ok(row.left.includes(n),
+        `${row.id}: a draw must keep the side order it was stored in — ${n} moved`));
+      row.other.forEach((n) => assert.ok(row.right.includes(n), `${row.id}: ${n} moved`));
+      // The scoreline is written from the side shown first, and the card binds
+      // it by name. If the sides were ever reordered, this would be a lie.
+      if (/first\)/.test(row.binding)) {
+        row.stored.forEach((n) => assert.ok(row.binding.includes(n),
+          `${row.id}: the score binding names a side that is not the one shown first`));
+      }
     });
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
