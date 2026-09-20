@@ -185,6 +185,15 @@ separate events. A missing statistical recommendation is **not** itself a club
 decision to keep the current rating; it means the board must explicitly choose
 keep-current or an override.
 
+**Reliability recommendation in reassessment:** the board's intuitive decision is
+the player's new level/ranking anchor, not an arbitrary confidence percentage.
+For future normal reassessments, the system should calculate and show an
+explainable **Recommended Reliability** alongside the proposed rating anchor.
+The board can accept that value or manually override it. A manual reliability
+override remains permitted, but must be explicit, attributed and reasoned in the
+same audited decision event. Historical 10% decisions for Shaun/Tom/Fatch remain
+factual historical decisions and are not automatically the future default.
+
 **Historical Club Adjustment:** Admin-only escape hatch for factual corrections,
 late-entered board decisions and repair of bugs/errors. It is distinct from
 Historical Match Correction. The Admin selects player + effective review date,
@@ -227,6 +236,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | No statistical recommendation ≠ keep-current | The dry run found Tom/Fatch had too few established C players for the T2 method to recommend a target. That does **not** mean the historical club decision was keep-current; it means the board must choose keep-current or a club override, exactly as it would prospectively. |
 | Historical override anchors for Shaun, Tom and Fatch are fixed | **Shaun, 1 Jul:** 1400. **Tom, 1 Jul:** club override to **Jords' Power Rating immediately before the 1 Jul review**. **Fatch, 1 Aug:** club override to **Tom's Power Rating immediately before the 1 Aug review**, after Tom's corrected 1 Jul state and July matches have played out. These are factual club-assessment anchors, not statistical recommendations. |
 | Historical reassessment reliability = 10% | Shaun, Tom and Fatch all reset/reopen to **10% reliability** at their historical adjustment date so the model can move them quickly in the newly assessed tier/state. This is an explicit board decision, not a statistical recommendation. |
+| Future reassessment reliability is system-recommended but club-editable | For normal future promotions/reassessments, the club should primarily decide the **new playing-level anchor / comparable player**. The system should then present a **Recommended Reliability** using an explainable rule. Admins may accept it or manually override the percentage. Any override must be clearly labelled as a club override and stored with attribution/reason in the audited reassessment event. Do not force the board to invent a reliability percentage from scratch. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
 | Same-review recommendations use one shared pre-review snapshot | If multiple players are reviewed on the same effective date, calculate all statistical recommendations from the same pre-review state so one player's accepted decision cannot alter another player's recommendation merely because of processing order. Apply confirmed events afterwards in deterministic order. |
 | Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
@@ -351,6 +361,33 @@ match context such as expected balance. No notification system is required now.
 ---
 
 ## 5. OPEN QUESTIONS / DECISIONS
+
+### Reassessment reliability recommendation — approved product direction, rule still to model
+
+Shaun approved the product behavior but **not yet a final formula** for the
+recommended percentage.
+
+Required future reassessment UX:
+
+- club chooses/accepts the new rating anchor or comparable player;
+- system shows a **Recommended Reliability** with band and short explanation;
+- Admin can choose **Use recommendation** or **Override Reliability**;
+- manual override accepts a percentage and requires attribution/reason;
+- event stores both the system recommendation and the final chosen reliability
+  so the audit trail shows whether the board accepted or overrode it.
+
+Still to model before implementation:
+
+1. What explainable rule should generate the recommendation?
+2. Should a normal genuine promotion use a fixed reopened reliability (e.g.
+   around Developing), or discount the player's prior reliability/evidence?
+3. Should initial-classification corrections recommend materially lower
+   reliability than normal promotions?
+4. Validate candidate rules against historical Shaun/Tom/Fatch decisions and
+   hypothetical future promotions before changing engine behavior.
+
+Until that modelling is done, do **not** silently make 10% or 25% the universal
+default. The existing manual reliability control remains valid.
 
 ### RESOLVED 20 Sep — the live record was half-written; repaired with Shaun's approval
 
@@ -622,6 +659,18 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (reassessment reliability recommendation)
+Shaun clarified the desired future reassessment flow: the club is comfortable
+judging **where a promoted player should sit**, but not inventing a Reliability
+percentage.
+
+Product direction: system-generated Recommended Reliability first, with a
+manual Admin override still available. Overrides must be explicit and audited.
+The exact recommendation formula is intentionally **not frozen yet** and is
+parked for modelling/validation before implementation.
+
+This does not supersede the active Home refinement task.
 
 ### CCode — 20 Sep 2026 (record health: detected, logged, and told to the right reader)
 
@@ -2551,3 +2600,6 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 8. Keep native Share / WhatsApp + Copy message as backlog follow-on work.
 9. Do not change Sequential-v1 or stored ratings/history.
 10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
+11. **Backlog after Home refinement:** model and implement system-recommended
+    reassessment Reliability with manual audited override. Do not choose the
+    recommendation formula until historical/hypothetical validation is reviewed.
