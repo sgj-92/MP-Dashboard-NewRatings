@@ -14,6 +14,17 @@ Baseline before the currently queued work: implementation commit `49af41b`, 395/
 
 The current beta Players Directory remains visually older than the rest of the refreshed application: a large filter card followed by plain alphabetical rows with letter dividers, serif names, ACTIVE/INACTIVE pills and right-aligned `Tier · Rating` text. Shaun has requested that this now be brought into the current premium Money Padel visual language without losing the Directory's useful filtering/sorting.
 
+**Ledger history — preserved.** The rewrite on 20 Sep took this document from
+3320 lines to 122, removing the Decisions Log, every Handoff, the Open Questions
+and Recently Completed. The compact form is the live Ledger and CCode has not
+touched it; but the deleted material included decisions still in force (the
+read-strategy exception and its measurement, the parked rating-model backlog,
+match sharing, the production import and the historical corrections), and it was
+recoverable only from git. It is preserved verbatim in
+[`LEDGER_ARCHIVE_2026-09-20.md`](./LEDGER_ARCHIVE_2026-09-20.md). **Shaun/CGPT:
+say whether anything should be folded back.** Nothing in the archive is revoked
+— it has only stopped being written down.
+
 **Important rating audit:** Shaun reports that Tom and Fatch still have information somewhere in the application describing their historical reassessment as being to **Jords' level**. This is stale/superseded wording or potentially stale derived state and must be investigated, not papered over. The approved historical decision is: **Tom and Fatch each re-anchor to the standard Tier B baseline of 1400, with 20% reliability, not to Jords or another individual comparator.** CCode must verify persisted journey/decision data, current player ratings, rating journey/profile explanatory copy and any historical-reassessment UI before changing presentation. If the numerical replay is already correct and only copy/audit metadata is stale, fix the stale source. If numerical state still derives from the old comparator, stop and report the blast radius before writing a repair.
 
 ---
@@ -69,7 +80,39 @@ The screenshot supplied by Shaun is the current-state reference. Keep functional
 
 ## 5. OPEN QUESTIONS / INVESTIGATION
 
-### Tom + Fatch stale reassessment information — CCode must diagnose
+### RESOLVED 20 Sep — Tom + Fatch stale reassessment information
+
+**Audit complete (`838ca66`). The record is correct; the stale source was a
+document, not the app. No numerical repair was needed, so there is no blast
+radius to report.**
+
+| Asked | Found |
+|---|---|
+| Stored anchor = 1400, Reliability = 20% | **Yes**, on the active event for each: `2026-07-01__Tom__CLUB_RATING_REASSESSMENT__r2` and `2026-08-01__Fatch__CLUB_RATING_REASSESSMENT__r2` |
+| Replay / current state | **Replays to itself, 0 differences.** Tom **1387.8**, Fatch **1377.9** in `players` — what the corrected events produce |
+| Comparator wording in the record | Only on events **marked superseded**, which is what makes the correction auditable |
+| Any UI saying Jords | **None.** Every rendered surface was scanned against the live record |
+
+`journeyView` already excludes superseded events, so their wording cannot reach
+a player's Rating Journey, and the admin audit trail labels rows
+Superseded/Active without showing their notes. Both are now pinned by tests.
+
+**The stale source: [`HISTORICAL_REVIEW_DRYRUN.md`](./HISTORICAL_REVIEW_DRYRUN.md).**
+It was headed *"APPLIED"* and presented *"Jords' rating immediately before the
+review | 1352.5 | 10%"* as fact, with nothing to say it had been superseded two
+days later. Anyone reading it reaches exactly the conclusion Shaun reported. It
+now carries the correction at the top, with the old rows struck through and kept
+as the record of what was decided then.
+
+**A second hazard, found while looking:**
+`scripts/apply-historical-decisions.js` would have **re-applied the superseded
+comparator anchors** if run with `--write` — silently, because it plans against
+whatever is in the record. It now refuses to write and says why. Its dry run
+still works as the record of how the 18 September decisions were applied.
+
+### Original investigation brief (kept)
+
+#### Tom + Fatch stale reassessment information — CCode must diagnose
 
 Shaun reports the app still says they were reassessed to Jords' level despite the superseding baseline decision. Before any repair:
 
@@ -86,6 +129,26 @@ Baton for this investigation is with CCode and it is approved/unblocked.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (Tom/Fatch audit complete; NEXT 2 and 3 not started)
+
+`838ca66`. **397 / 397 tests.** Full findings in Section 5 — the short version:
+**the numbers were never wrong.** Both active events anchor to 1400 at 20%, the
+record replays to itself, and nothing the app renders mentions an individual
+comparator. What Shaun saw is real, but it is in `HISTORICAL_REVIEW_DRYRUN.md`,
+which announced itself as *"APPLIED"* and still showed the Jords anchor as fact.
+Corrected there, with the superseded rows kept and marked.
+
+**Worth knowing:** `scripts/apply-historical-decisions.js` would have undone the
+20 Sep correction if anyone had run it with `--write`. It refuses now.
+
+**Ledger history is preserved** in `LEDGER_ARCHIVE_2026-09-20.md` — see Section
+1. That needs a decision from Shaun/CGPT about what, if anything, returns.
+
+**Not started, both approved and unblocked:** NEXT #2 (Players Directory visual
+refresh) and NEXT #3 (League Table collapsibles + Last 10 form table). The audit
+was flagged highest priority and is a natural stopping point; those two are
+substantial UI pieces and each deserves its own pass.
 
 ### CGPT — 20 Sep 2026 (Players Directory + Tom/Fatch audit)
 
@@ -115,7 +178,7 @@ Commit `49af41b`; 395/395 tests (75 browser).
 
 ## 8. NEXT
 
-1. **Tom/Fatch integrity audit — approved/unblocked and highest priority.** Verify both corrected historical anchors = 1400 and Reliability = 20%; verify replay/current ratings; find why current information still references Jords. Cosmetic stale copy can be fixed directly with tests. Numerical inconsistency must be reported with blast radius before writing.
+1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
 2. **Players Directory visual refresh — approved/unblocked.** Modernise the supplied Directory screen using established Money Padel components/tokens; compact filters; improve player-row hierarchy/tappability; reduce repetitive Active badges; preserve all behaviour.
 3. **League Table mobile refinement — already approved/unblocked.** Collapsible explanation + collapsible tier breakdown + Last 10 form league table.
 4. Add targeted browser/module regression tests for changed behaviours and update this Ledger with commit/test totals and findings.
