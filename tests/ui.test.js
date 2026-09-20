@@ -11,6 +11,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const H = require('./helpers/uiHarness.js');
+// The same module the page loads, for assertions that compare against the rule
+// rather than restating it.
+const GameType = require('../assets/js/gameType.js');
 
 const skip = H.available() ? false : 'Playwright is not available in this environment';
 
@@ -561,6 +564,102 @@ test('an edit refused by a diverged record explains itself at the reader\'s leve
       `the board must not meet a wall of document ids: "${r.board.message}"`);
     assert.match(r.owner.message, /No match is affected/);
     assert.strictEqual(r.reports, 1, 'the refusal records it too, once');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Canonical tier ordering, as it actually reaches the screen. The module tests
+// prove the rule; only this proves the app uses it.
+test('Games reads partnerships stronger-first and orders the filter by strength', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = false;
+      goToSection('play');
+      document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
+      gamesMonth = 'all'; gamesType = 'all'; selectedGamesPlayer = 'all';
+      renderGamesTab();
+
+      // Every card's partnerships, read off the rendered title.
+      const cards = [...document.querySelectorAll('.cc-title')].map((el) => el.innerText.trim());
+      const teams = [];
+      cards.forEach((title) => {
+        title.split(/\s+def\s+|\s+vs\s+/).forEach((side) => {
+          const tiers = [...side.matchAll(/\(([SABC])\)/g)].map((m) => m[1]);
+          if (tiers.length >= 2) teams.push({ side: side.trim(), tiers });
+        });
+      });
+
+      const sel = document.getElementById('gamesTypeSelect');
+      const options = [...sel.options].map((o) => ({ value: o.value, text: o.text }));
+      const matchupOpts = options.filter((o) => o.value.indexOf('match:') === 0);
+
+      return {
+        cardCount: cards.length,
+        teams,
+        matchupLabels: matchupOpts.map((o) => o.value.slice(6)),
+        matchupTexts: matchupOpts.map((o) => o.text),
+        sampleTitle: cards[0] || null,
+      };
+    });
+
+    assert.ok(r.cardCount > 20, `expected a real feed, got ${r.cardCount} cards`);
+    assert.ok(r.teams.length > 40, `expected many partnerships, got ${r.teams.length}`);
+
+    // Every partnership on screen reads stronger tier first.
+    const strength = { S: 0, A: 1, B: 2, C: 3 };
+    r.teams.forEach((t) => {
+      for (let i = 1; i < t.tiers.length; i++) {
+        assert.ok(strength[t.tiers[i - 1]] <= strength[t.tiers[i]],
+          `"${t.side}" reads ${t.tiers.join('')} — weaker partner first`);
+      }
+    });
+
+    // And the filter is in canonical order, with counts still shown.
+    assert.ok(r.matchupLabels.length >= 3, `expected several matchup options, got ${r.matchupLabels.length}`);
+    r.matchupLabels.forEach((label) => {
+      const [a, b] = label.split(' vs ');
+      assert.ok(GameType.compareTeamKeys(a, b) <= 0,
+        `"${label}" names the weaker partnership first`);
+    });
+    const sorted = r.matchupLabels.slice().sort((x, y) => {
+      const [x1, x2] = x.split(' vs '); const [y1, y2] = y.split(' vs ');
+      return GameType.compareTeamKeys(x1, y1) || GameType.compareTeamKeys(x2, y2);
+    });
+    assert.deepStrictEqual(r.matchupLabels, sorted, 'the filter list is not in canonical order');
+    assert.ok(r.matchupTexts.some((t) => /\(\d+\)|\d/.test(t)), 'counts must still be visible');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The two SIDES are not reordered: doing so would turn a loss into a win.
+test('canonical ordering never reorders the sides of a decided match', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      goToSection('play');
+      document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
+      gamesMonth = 'all'; gamesType = 'all'; selectedGamesPlayer = 'all';
+      renderGamesTab();
+      const rows = [];
+      document.querySelectorAll('.callout-card').forEach((card) => {
+        const title = card.querySelector('.cc-title');
+        if (!title || !/ def /.test(title.innerText)) return;
+        const id = card.querySelector('[data-gameid]');
+        if (!id) return;
+        const m = getDisplayMatches().find((x) => x.id === id.dataset.gameid);
+        if (m) rows.push({ id: m.id, shown: title.innerText.split(' def ')[0], winners: m.winners });
+      });
+      return { rows };
+    });
+
+    assert.ok(r.rows.length > 20, `expected decided matches, got ${r.rows.length}`);
+    r.rows.forEach((row) => {
+      row.winners.forEach((w) => {
+        assert.ok(row.shown.includes(w),
+          `${row.id}: "${row.shown}" is before "def" but ${w} won — the sides have been swapped`);
+      });
+    });
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });

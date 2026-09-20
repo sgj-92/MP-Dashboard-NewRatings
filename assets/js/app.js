@@ -570,8 +570,16 @@ function gameTypeOf(m){
 }
 
 // "Eli (A) & Len (A)" -- names with the tier they held that day.
+// Reads a partnership out in canonical order: the stronger tier first, stored
+// order kept when partners share a tier. The two SIDES are never swapped --
+// on a decided card the first side is the side that won, and on a draw it is
+// the side the score is written from, so reordering them would turn a loss
+// into a win or a scoreline inside out.
 function namesWithHistoricalTier(names, date, ratings){
-  return names.map(n => {
+  const ordered = (typeof GameType !== 'undefined' && GameType.orderTeam)
+    ? GameType.orderTeam(names, (n) => historicalTierOf(n, date))
+    : names;
+  return ordered.map(n => {
     const t = historicalTierOf(n, date);
     const tier = t ? ` <span class="hist-tier">(${t})</span>` : '';
     const r = ratings ? ratings(n) : null;

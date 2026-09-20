@@ -38,12 +38,47 @@
     return (tiers || []).map((t) => t || UNKNOWN).sort((a, b) => rank(a) - rank(b)).join('');
   }
 
+  // Which of two partnerships is the stronger, by tier and nothing else:
+  //
+  //   SS > SA > SB > SC > AA > AB > AC > BB > BC > CC
+  //
+  // Compared position by position on tier strength, which is exactly that
+  // order. It must NOT be a string comparison: alphabetically 'S' sorts after
+  // 'A', so "SS vs AA" came out as "AA vs SS" -- the weaker side first, and a
+  // label the club would never write.
+  // A singles match has one player a side, so a key can be shorter. A missing
+  // position ranks below every tier, which puts "A" after "AC" -- a lone player
+  // sorts after every pairing that starts with their tier. Arbitrary but fixed,
+  // so the list never reshuffles.
+  function compareTeamKeys(a, b) {
+    const x = String(a || ''), y = String(b || '');
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = rank(x[i]) - rank(y[i]);
+      if (d) return d;
+    }
+    return 0;
+  }
+
   // The canonical name of this game type. Null when any tier is unknown --
   // guessing would file a match under a composition it may not have had.
   function matchupKey(tiersA, tiersB) {
     const a = teamKey(tiersA), b = teamKey(tiersB);
     if (!a || !b || a.includes(UNKNOWN) || b.includes(UNKNOWN)) return null;
-    return (a <= b ? `${a} vs ${b}` : `${b} vs ${a}`);
+    return (compareTeamKeys(a, b) <= 0 ? `${a} vs ${b}` : `${b} vs ${a}`);
+  }
+
+  // The order a partnership's players are READ in: stronger tier first, and
+  // stored order kept whenever they share a tier. Sorting is stable, so two
+  // B-tier partners stay as the match recorded them.
+  //
+  // Presentation only. Nothing here touches the stored match, and the two
+  // SIDES are never swapped: on a decided card the first side is the side that
+  // won, and on a draw it is the side the score is written from.
+  function orderTeam(names, tierOf) {
+    return (names || [])
+      .map((name, i) => ({ name, i, r: rank(tierOf ? tierOf(name) : null) }))
+      .sort((p, q) => (p.r - q.r) || (p.i - q.i))
+      .map((p) => p.name);
   }
 
   // The broad bucket: every player in one tier, or mixed.
@@ -71,8 +106,15 @@
     const catOpts = Object.keys(categories)
       .sort((a, b) => (a === 'MIXED' ? 1 : b === 'MIXED' ? -1 : rank(a.slice(4)) - rank(b.slice(4))))
       .map((c) => ({ value: 'cat:' + c, label: categoryLabel(c), count: categories[c] }));
+    // By tier strength, never by how many matches happen to be in scope. A
+    // frequency sort reshuffles the list every time a game is played, so the
+    // option someone reached for last week is somewhere else this week.
     const matchOpts = Object.keys(matchups)
-      .sort((a, b) => (matchups[b] - matchups[a]) || a.localeCompare(b))
+      .sort((a, b) => {
+        const [a1, a2] = a.split(' vs ');
+        const [b1, b2] = b.split(' vs ');
+        return compareTeamKeys(a1, b1) || compareTeamKeys(a2, b2);
+      })
       .map((m) => ({ value: 'match:' + m, label: m, count: matchups[m] }));
     return { categories: catOpts, matchups: matchOpts };
   }
@@ -86,5 +128,5 @@
     return true;
   }
 
-  return { TIER_ORDER, teamKey, matchupKey, category, classify, categoryLabel, optionsFrom, matches };
+  return { TIER_ORDER, teamKey, compareTeamKeys, orderTeam, matchupKey, category, classify, categoryLabel, optionsFrom, matches };
 });
