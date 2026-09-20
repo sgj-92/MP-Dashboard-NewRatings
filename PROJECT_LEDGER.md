@@ -248,6 +248,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Tom and Fatch historical Reliability changed to 20% | Shaun, 20 Sep, superseding the earlier 10% for these two decisions only: both reopen at **20%**. A re-anchor of this size is past the full-reopen distance, so this is also exactly what the approved move-scaled rule recommends — the record shows board and system in agreement rather than an override. **Shaun's own 1 Jul 10% is unchanged** and remains a recorded board decision that predates the 20% floor. **APPLIED `4bbda90`.** |
 | Future reassessment reliability is system-recommended but club-editable | For normal future promotions/reassessments, the club should primarily decide the **new playing-level anchor / comparable player**. The system should then present a **Recommended Reliability** using an explainable rule. Admins may accept it or manually override the percentage. Any override must be clearly labelled as a club override and stored with attribution/reason in the audited reassessment event. Do not force the board to invent a reliability percentage from scratch. |
 | Move-scaled reassessment Reliability approved | Shaun chose **move-scaled** rather than a flat reset. Small rating re-anchors retain more of the player's prior Reliability; larger re-anchors reduce Reliability more aggressively. **D = 150 points** is the full-reopen threshold, and the system-generated minimum/floor at or beyond that threshold is **20% Reliability**. Manual override remains available and audited. |
+| Monthly Review Reliability override validation must update live | The current form can remain disabled after the Admin enters a valid Reliability override and reason because validation only ran on render. Any change to the Reliability override percentage or recorded note must immediately refresh the draft, re-run `MonthlyReview.incompleteReasons()`, update warning copy, and enable/disable `Review what will be recorded` without requiring another selection, close/reopen, or unrelated tap. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
 | Same-review recommendations use one shared pre-review snapshot | If multiple players are reviewed on the same effective date, calculate all statistical recommendations from the same pre-review state so one player's accepted decision cannot alter another player's recommendation merely because of processing order. Apply confirmed events afterwards in deterministic order. |
 | Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
@@ -793,6 +794,30 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (live validation bug in reassessment override)
+Shaun found a UI-state defect in Admin Monthly Review:
+
+- Override Reliability is chosen;
+- a valid percentage (e.g. 50) is entered;
+- a reason/note is entered;
+- the form still shows the old missing-value warnings and keeps
+  `Review what will be recorded` disabled.
+
+Root cause from repo inspection: the input parser is correct, but validation
+and disabled-state are computed during render and are not re-run when the
+Reliability override or Note inputs change.
+
+Fix behavior:
+
+- on change/input for `reviewRelOverride` and `reviewNote`, fold values into the
+  review draft and immediately re-run `MonthlyReview.incompleteReasons()`;
+- refresh warning copy and the `Review what will be recorded` disabled state;
+- do not require an extra tap, reselecting Override, or closing/reopening;
+- preserve existing validation and methodology rules.
+
+Regression test exact flow: choose Override Reliability → enter `50` → enter a
+reason → warnings clear and stage button enables automatically.
 
 ### CCode — 20 Sep 2026 (card orientation settled: winners always on the left)
 
@@ -3140,11 +3165,18 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**All items are DONE (`4bbda90`).** The Tom/Fatch re-anchor is applied at the
-Tier B baseline of 1400 with 20% Reliability, verified, and the repository has
-been brought back into line with the corrected record.
+1. **Fix Monthly Review live validation bug — approved and unblocked.**
+2. When `reviewRelOverride` or `reviewNote` changes, immediately refresh the
+   review draft and re-run `MonthlyReview.incompleteReasons()`.
+3. Update the visible warning messages and `Review what will be recorded`
+   enabled/disabled state in place; no extra selection or screen reopen.
+4. Add browser regression coverage for:
+   `Override Reliability → 50 → reason → button enables automatically`.
+5. Preserve all existing rating/reliability methodology and audit semantics.
+6. Update Ledger with commit/tests and baton back.
 
-Nothing is queued for CCode, and no question is open for Shaun. The card
-orientation is settled — **winners always on the left, regardless of strength**
-— and recorded in the Decisions Log. The rating-model backlog and match sharing
-in Section 5 remain parked and unauthorised.
+### Still queued after the UI-state bug
+
+7. **Historical correction — Tom/Fatch B baseline** remains approved:
+   Tom (1 Jul) → 1400; Fatch (1 Aug) → 1400; both historical Reliability 10%;
+   supersede old anchors and replay forward with preview before live write.
