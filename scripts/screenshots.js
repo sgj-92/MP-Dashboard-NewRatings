@@ -74,6 +74,14 @@ const SHOTS = [
     note: 'The list is the screen. Filters are folded behind a line that says what is on ("All tiers, all players"), so the first player sits near the top instead of below half a screen of controls. A row leads with the name in the public serif, with tier and rating as quiet metadata under it; Active is the normal state and no longer shouts on every row.' },
   { file: '16b-players-directory-filters.png', title: 'Players — the filters, opened',
     note: 'One tap. Tier chips wrap rather than running off the right edge of a phone, and choosing one leaves the panel open under the finger. Every filter, sort and navigation behaviour is the one that was already there.' },
+  { file: '17-league-by-tier.png', title: 'League — the table is the screen',
+    note: 'Month and View side by side rather than stacked, and the explanation folded behind one line: 72px of a phone screen given back to the table. The By tier / All together choice and the split-month allocation inside the tables are untouched.' },
+  { file: '17b-league-tiers-collapsed.png', title: 'League — tier tables collapsed',
+    note: 'Four stacked tier tables are the longest thing on the screen. Collapsing them is presentation state only — the By tier selection and every match\'s tier allocation are unchanged underneath.' },
+  { file: '18-league-last-10.png', title: 'Last 10 — form as a league table',
+    note: 'Each player\'s own most recent ten rated games, wherever they fall. Not scoped to the selected month: every row covers the same number of games rather than the same number of days, which is what makes two rows comparable. Same 3/1/0 scoring. A short sample is marked "of 10" beside the P it qualifies and is never padded.' },
+  { file: '18b-league-last-10-explained.png', title: 'Last 10 — what it is measuring',
+    note: 'The disclosure says the thing a reader would otherwise have to assume: that the window is per player, that it ignores the month selector, and that a row with fewer than ten games is a short sample rather than a bad one.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -289,6 +297,39 @@ async function render(players, matches, journey, readAt) {
     () => window.scrollTo(0, 0));
   await shot('16b-players-directory-filters.png',
     () => { const t = document.getElementById('playersFilterToggle'); if (t) t.click(); },
+    () => window.scrollTo(0, 0));
+
+  // The League screen: the table is the screen, so both disclosures start
+  // closed and Month/View sit side by side.
+  //
+  // Each prepare function is written out in full rather than built by a
+  // helper: page.evaluate serialises the function source and sends it to the
+  // browser, so a closure over anything in this file does not survive the trip.
+  await shot('17-league-by-tier.png',
+    () => {
+      const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+      closeSheet();
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]'); if (b) b.click();
+      summaryMode = 'league'; summaryMonth = '2026-08';
+      leagueSortKey = 'points'; leagueSortDesc = true;
+      leagueExplainerOpen = false; leagueTiersOpen = true;
+      leagueLastTen = false; leagueGrouped = true;
+      renderSummary();
+    },
+    () => window.scrollTo(0, 0));
+  await shot('17b-league-tiers-collapsed.png',
+    () => { leagueTiersOpen = false; renderSummaryLeagueTable(); },
+    () => window.scrollTo(0, 0));
+  await shot('18-league-last-10.png',
+    () => {
+      leagueTiersOpen = true; leagueExplainerOpen = false;
+      leagueSortKey = 'points'; leagueSortDesc = true;
+      leagueLastTen = true;
+      renderSummaryLeagueTable();
+    },
+    () => window.scrollTo(0, 0));
+  await shot('18b-league-last-10-explained.png',
+    () => { leagueExplainerOpen = true; renderSummaryLeagueTable(); },
     () => window.scrollTo(0, 0));
 
   const openGuide = () => {

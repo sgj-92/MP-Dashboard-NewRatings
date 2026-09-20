@@ -96,6 +96,30 @@ The list is the screen. Filters are folded behind a line that says what is on ("
 
 One tap. Tier chips wrap rather than running off the right edge of a phone, and choosing one leaves the panel open under the finger. Every filter, sort and navigation behaviour is the one that was already there.
 
+### League — the table is the screen
+
+![League — the table is the screen](17-league-by-tier.png)
+
+Month and View side by side rather than stacked, and the explanation folded behind one line: 72px of a phone screen given back to the table. The By tier / All together choice and the split-month allocation inside the tables are untouched.
+
+### League — tier tables collapsed
+
+![League — tier tables collapsed](17b-league-tiers-collapsed.png)
+
+Four stacked tier tables are the longest thing on the screen. Collapsing them is presentation state only — the By tier selection and every match's tier allocation are unchanged underneath.
+
+### Last 10 — form as a league table
+
+![Last 10 — form as a league table](18-league-last-10.png)
+
+Each player's own most recent ten rated games, wherever they fall. Not scoped to the selected month: every row covers the same number of games rather than the same number of days, which is what makes two rows comparable. Same 3/1/0 scoring. A short sample is marked "of 10" beside the P it qualifies and is never padded.
+
+### Last 10 — what it is measuring
+
+![Last 10 — what it is measuring](18b-league-last-10-explained.png)
+
+The disclosure says the thing a reader would otherwise have to assume: that the window is per player, that it ignores the month selector, and that a row with fewer than ten games is a short sample rather than a bad one.
+
 ### Power Rating Guide — in short
 
 ![Power Rating Guide — in short](12-rating-guide-summary.png)

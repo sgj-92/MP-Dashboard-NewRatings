@@ -3425,3 +3425,311 @@ test('Upcoming is untouched in Play', { skip }, async () => {
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== LEAGUE SCREEN — NEXT #3 =====================
+// Two disclosures and a third table. The screen's job is to show a league
+// table; the explanation and four stacked tier tables were both sitting above
+// one on a phone. Last 10 is a form table over each player's OWN latest ten
+// rated games, which is deliberately not the selected month.
+//
+// Presentation and aggregation only: no rating, expectation, Reliability,
+// tier-history or stored match fact is read or written by any of it.
+
+// Put the League screen in a known state. goToSection settles the shared
+// Rankings chrome a tick later, so callers wait before measuring geometry.
+const openLeague = (app, opts = {}) => app.run((o) => {
+  const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+  if (b) b.click();
+  summaryMode = 'league';
+  summaryMonth = o.month || '2026-08';
+  leagueLastTen = o.view === 'last10';
+  leagueGrouped = o.view !== 'all';
+  leagueExplainerOpen = !!o.explainerOpen;
+  leagueTiersOpen = o.tiersOpen !== false;
+  leagueSortKey = 'points'; leagueSortDesc = true;
+  renderSummary();
+}, opts);
+
+test('the League screen opens on the table, not on an explanation', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });
+    await openLeague(app);
+    await app.page.waitForTimeout(50);
+    const r = await app.run(() => {
+      const c = document.getElementById('summaryContent');
+      return {
+        explainerFolded: !document.getElementById('leagueExplainerToggleBody'),
+        foldLabel: document.getElementById('leagueExplainerToggle').innerText.replace(/\s+/g, ' ').trim(),
+        // Both controls are preserved — this was layout, not removal.
+        hasMonth: !!document.getElementById('summaryMonthSelect'),
+        hasView: !!document.getElementById('summaryModeSelect'),
+        months: document.getElementById('summaryMonthSelect').options.length,
+        // …and they now sit on one row rather than two.
+        controlsOnOneRow: new Set([...document.querySelectorAll('.lg-controls .fg-row')]
+          .map((e) => Math.round(e.getBoundingClientRect().top))).size === 1,
+        tableTop: Math.round(c.querySelector('table').getBoundingClientRect().top),
+        viewport: window.innerHeight,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+    });
+    assert.strictEqual(r.explainerFolded, true, 'the explanation starts folded');
+    assert.match(r.foldLabel, /How this table works/);
+    assert.strictEqual(r.hasMonth, true, 'Month is kept');
+    assert.strictEqual(r.hasView, true, 'View is kept');
+    assert.ok(r.months > 3, 'with all its months');
+    assert.strictEqual(r.controlsOnOneRow, true, 'Month and View share a row');
+    assert.ok(r.tableTop < r.viewport * 0.6,
+      `a league table should be on the first screen, was ${r.tableTop} of ${r.viewport}`);
+    assert.strictEqual(r.overflow, false, 'nothing may run off the side at 375px');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the explanation opens and closes, and says what this table is', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const c = () => document.getElementById('summaryContent');
+      const out = {};
+      document.getElementById('leagueExplainerToggle').click();
+      out.openText = document.getElementById('leagueExplainerToggleBody').innerText.replace(/\s+/g, ' ');
+      out.openedAria = document.getElementById('leagueExplainerToggle').getAttribute('aria-expanded');
+      document.getElementById('leagueExplainerToggle').click();
+      // Named, because the tier-tables fold is open on this view too.
+      out.closed = !document.getElementById('leagueExplainerToggleBody');
+      out.tierFoldUntouched = !!document.getElementById('leagueTiersToggleBody');
+      // Opening the explanation must not disturb the table underneath it.
+      out.rowsAfter = c().querySelectorAll('tbody tr').length;
+      return out;
+    }, {}, await openLeague(app));
+    assert.match(r.openText, /3 points for a win, 1 for a draw/);
+    assert.strictEqual(r.openedAria, 'true');
+    assert.strictEqual(r.closed, true, 'and folds away again');
+    assert.strictEqual(r.tierFoldUntouched, true, 'without disturbing the other fold');
+    assert.ok(r.rowsAfter > 0, 'the table survives the disclosure');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('collapsing the tier tables hides them without changing the split', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openLeague(app, { month: '2026-09' });
+    const r = await app.run(() => {
+      const c = () => document.getElementById('summaryContent');
+      const snapshot = () => [...c().querySelectorAll('tbody tr')]
+        .map((tr) => [...tr.children].map((td) => td.innerText.trim()).join('|'));
+      const before = snapshot();
+      const headings = [...c().querySelectorAll('.section-heading')].map((e) => e.textContent);
+      document.getElementById('leagueTiersToggle').click();
+      const collapsed = { tables: c().querySelectorAll('table').length, label: document.getElementById('leagueTiersToggle').innerText };
+      document.getElementById('leagueTiersToggle').click();
+      return {
+        before, headings, collapsed, after: snapshot(),
+        // The By tier / All together selector is untouched by collapsing.
+        stillByTier: document.getElementById('leagueGroupedBtn').classList.contains('active'),
+      };
+    });
+    assert.ok(r.before.length > 0 && r.headings.some((h) => /^Tier /.test(h)), 'the fixture has tier tables');
+    assert.strictEqual(r.collapsed.tables, 0, 'collapsed means no tier table on screen');
+    assert.match(r.collapsed.label, /hidden/, 'and the control says so');
+    assert.deepStrictEqual(r.after, r.before, 'reopening restores exactly the same rows');
+    assert.strictEqual(r.stillByTier, true, 'By tier is still the selected mode');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Last 10 is each player\'s own ten games, not the selected month', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      // Ground truth, walked straight from the approved record.
+      const truth = (name) => {
+        const ms = getAllApprovedMatches()
+          .filter((m) => m.winners.includes(name) || m.losers.includes(name))
+          .map((m, i) => ({ m, i }))
+          .sort((a, b) => (a.m.date < b.m.date ? 1 : a.m.date > b.m.date ? -1 : b.i - a.i))
+          .slice(0, 10).map((x) => x.m);
+        let w = 0, l = 0, d = 0, gf = 0, ga = 0;
+        ms.forEach((m) => {
+          const t1 = m.sets.reduce((s, [x]) => s + x, 0);
+          const t2 = m.sets.reduce((s, [, y]) => s + y, 0);
+          const onT1 = m.winners.includes(name);
+          gf += onT1 ? t1 : t2; ga += onT1 ? t2 : t1;
+          if (m.isDraw) d++; else if (onT1) w++; else l++;
+        });
+        return { games: ms.length, w, l, d, gd: gf - ga, pts: w * 3 + d };
+      };
+
+      const read = () => [...document.querySelectorAll('#summaryContent tbody tr')].map((tr) => {
+        const td = [...tr.children].map((x) => x.innerText.trim());
+        return { name: td[1], P: parseInt(td[2], 10), W: +td[3], L: +td[4], D: +td[5], GD: parseInt(td[6], 10), Pts: +td[7] };
+      });
+
+      document.getElementById('leagueLastTenBtn').click();
+      const inAugust = read();
+      // The month selector must make no difference to this table at all.
+      summaryMonth = '2026-06'; renderSummary();
+      document.getElementById('leagueLastTenBtn').click();
+      const inJune = read();
+
+      return {
+        heading: document.querySelector('#summaryContent .section-heading').textContent,
+        columns: [...document.querySelectorAll('#summaryContent thead th')].map((e) => e.textContent.replace(/[▾▴]/g, '').trim()),
+        inAugust, inJune,
+        checks: inAugust.slice(0, 6).map((row) => ({ name: row.name, row, truth: truth(row.name) })),
+        maxP: Math.max(...inAugust.map((r) => r.P)),
+      };
+    }, {}, await openLeague(app, { month: '2026-08' }));
+
+    assert.deepStrictEqual(r.columns, ['#', 'Player', 'P', 'W', 'L', 'D', 'GD', 'Pts', 'Last 5']);
+    assert.match(r.heading, /Last 10/);
+    assert.doesNotMatch(r.heading, /August|June/, 'a per-player window is not a month');
+    assert.deepStrictEqual(r.inJune, r.inAugust, 'changing the month must not change Last 10');
+    assert.ok(r.maxP <= 10, 'the window is ten games, never more');
+    r.checks.forEach((c) => {
+      assert.deepStrictEqual(
+        { games: c.row.P, w: c.row.W, l: c.row.L, d: c.row.D, gd: c.row.GD, pts: c.row.Pts },
+        c.truth,
+        `${c.name}'s row must match the record`,
+      );
+      assert.strictEqual(c.row.W + c.row.L + c.row.D, c.row.P, `${c.name}: W+L+D must equal P`);
+      assert.strictEqual(c.row.Pts, c.row.W * 3 + c.row.D, `${c.name}: 3 a win, 1 a draw`);
+    });
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a player with fewer than ten games shows the real sample, marked', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      document.getElementById('leagueLastTenBtn').click();
+      const rows = [...document.querySelectorAll('#summaryContent tbody tr')];
+      const read = rows.map((tr) => {
+        const td = [...tr.children].map((x) => x.innerText.trim());
+        return { name: td[1], pCell: td[2], P: parseInt(td[2], 10), marked: !!tr.querySelector('.l10-short') };
+      });
+      const counts = {};
+      getAllApprovedMatches().forEach((m) => [...m.winners, ...m.losers]
+        .forEach((n) => { counts[n] = (counts[n] || 0) + 1; }));
+      return { read, counts };
+    }, {}, await openLeague(app, { view: 'last10' }));
+
+    const short = r.read.filter((x) => x.P < 10);
+    const full = r.read.filter((x) => x.P === 10);
+    assert.ok(short.length > 0 && full.length > 0, 'the fixture needs both kinds of row');
+
+    short.forEach((x) => {
+      assert.strictEqual(x.marked, true, `${x.name} has ${x.P} games and must be marked short`);
+      assert.match(x.pCell, /of 10/, 'and say what the window would have been');
+      // Never padded: the P shown is the player's real number of games.
+      assert.strictEqual(x.P, r.counts[x.name], `${x.name}: P must be their actual game count`);
+    });
+    full.forEach((x) => {
+      assert.strictEqual(x.marked, false, `${x.name} has a full window and must not be marked`);
+      assert.ok(r.counts[x.name] >= 10);
+    });
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the monthly table keeps Form (10g); Last 10 does not repeat it', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const cols = () => [...document.querySelectorAll('#summaryContent thead th')]
+        .map((e) => e.textContent.replace(/[▾▴]/g, '').trim());
+      const byTier = cols();
+      document.getElementById('leagueAllBtn').click();
+      const allTogether = cols();
+      document.getElementById('leagueLastTenBtn').click();
+      const lastTen = cols();
+      // Returning to the monthly table must not leave it sorted by a column
+      // it does not have.
+      document.getElementById('leagueGroupedBtn').click();
+      // One table per tier, each sorted within itself — the tiers are separate
+      // competitions, so rows from two of them are not one ranking.
+      const perTable = [...document.querySelectorAll('#summaryContent table')]
+        .map((t) => [...t.querySelectorAll('tbody tr')].map((tr) => Number(tr.children[7].innerText.trim())));
+      return { byTier, allTogether, lastTen, perTable, sortKey: leagueSortKey };
+    }, {}, await openLeague(app));
+
+    assert.ok(r.byTier.includes('Form (10g)'), 'the monthly table keeps its compact Form column');
+    assert.ok(r.allTogether.includes('Form (10g)'));
+    assert.ok(r.allTogether.includes('Tier'), 'All together still names the tier spell');
+    assert.ok(!r.lastTen.includes('Form (10g)'), 'Last 10 would be telling the same fact twice');
+    assert.ok(!r.lastTen.includes('Avg Opp'));
+    assert.ok(!r.lastTen.includes('Tier'), 'a form table is club-wide by nature');
+    assert.strictEqual(r.sortKey, 'points', 'leaving Last 10 restores a sort the monthly table has');
+    assert.ok(r.perTable.length > 1, 'By tier renders a table per tier');
+    r.perTable.forEach((pts, i) => assert.deepStrictEqual(pts, pts.slice().sort((a, b) => b - a),
+      `tier table ${i} must come back sorted by points`));
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Last 10 sorts on every column it offers', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      document.getElementById('leagueLastTenBtn').click();
+      const col = (i) => [...document.querySelectorAll('#summaryContent tbody tr')]
+        .map((tr) => parseInt(tr.children[i].innerText.trim(), 10));
+      const click = (key) => document.querySelector(`#summaryContent .league-sort-th[data-key="${key}"]`).click();
+      const out = {};
+      click('gd'); out.gdDesc = col(6);
+      click('gd'); out.gdAsc = col(6);
+      click('games'); out.games = col(2);
+      document.querySelector('#summaryContent .league-sort-th[data-key="name"]').click();
+      out.names = [...document.querySelectorAll('#summaryContent tbody tr')].map((tr) => tr.children[1].innerText.trim());
+      return out;
+    }, {}, await openLeague(app, { view: 'last10' }));
+
+    assert.deepStrictEqual(r.gdDesc, r.gdDesc.slice().sort((a, b) => b - a), 'GD descending');
+    assert.deepStrictEqual(r.gdAsc, r.gdAsc.slice().sort((a, b) => a - b), 'and a second tap reverses it');
+    assert.deepStrictEqual(r.games, r.games.slice().sort((a, b) => b - a), 'P sorts too');
+    assert.deepStrictEqual(r.names, r.names.slice().sort((a, b) => b.localeCompare(a)), 'and so does Player');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the League view shows one explanation, not two', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const legacy = () => {
+        const w = document.getElementById('explainerWrapper');
+        return w ? getComputedStyle(w).display !== 'none' : false;
+      };
+      const out = { onLeague: legacy() };
+      // Collapsing the tier tables is what exposed the duplicate.
+      leagueTiersOpen = false; renderSummaryLeagueTable();
+      out.onLeagueCollapsed = legacy();
+      out.leagueControls = [...document.querySelectorAll('#summaryContent .lg-fold-btn')]
+        .map((b) => b.innerText.replace(/\s+/g, ' ').trim());
+      // Information still explains Doughnuts and Player of the Month, so it
+      // keeps the legacy block.
+      summaryMode = 'information'; renderSummary();
+      out.onInformation = legacy();
+      out.informationText = document.getElementById('explainer').innerText;
+      // And every other tab gets it back.
+      document.querySelector('#tabrow .tab-btn[data-tab="power"]').click();
+      out.onPower = legacy();
+      return out;
+    }, {}, await openLeague(app));
+
+    assert.strictEqual(r.onLeague, false, 'the League view has its own explanation');
+    assert.strictEqual(r.onLeagueCollapsed, false, 'collapsing the tables must not reveal a second one');
+    assert.ok(r.leagueControls.some((t) => /How this table works/.test(t)));
+    assert.strictEqual(r.leagueControls.filter((t) => /how this/i.test(t)).length, 1,
+      `exactly one explanation control, got ${JSON.stringify(r.leagueControls)}`);
+    assert.match(r.leagueControls.find((t) => /Tier tables/.test(t)), /\d+ hidden/,
+      'a collapsed section says how much it is hiding');
+    assert.strictEqual(r.onInformation, true, 'Information keeps the block it needs');
+    assert.match(r.informationText, /Doughnuts/);
+    assert.strictEqual(r.onPower, true, 'and Power Rankings is unaffected');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

@@ -1649,6 +1649,10 @@ document.querySelectorAll('#tabrow .tab-btn').forEach(b=>{
       players: '',
     };
     document.getElementById('explainer').innerHTML = EXPLAINER_BY_TAB[activeTab] || '';
+    // The League view hides this wrapper (it duplicates that screen's own
+    // explanation); every other tab gets it back.
+    const explainerWrap = document.getElementById('explainerWrapper');
+    if(explainerWrap) explainerWrap.style.display = '';
 
     renderActiveTab();
   };
@@ -6318,7 +6322,10 @@ function renderSummary(){
     summaryMonth = getDefaultRankingsMonth();
   }
 
-  let html = `<div class="fg-controls">
+  // Month and View stay, both of them -- but side by side rather than stacked,
+  // which is 85px of the screen back. On a phone they were pushing the table
+  // itself below the fold, and the table is what the screen is for.
+  let html = `<div class="fg-controls lg-controls">
     <div class="fg-row"><label class="fg-label">Month</label>
       <select id="summaryMonthSelect" class="fg-select"></select>
     </div>
@@ -6337,6 +6344,9 @@ function renderSummary(){
   modeSel.value = summaryMode;
   modeSel.onchange = (e)=>{ summaryMode = e.target.value; renderSummary(); };
 
+  const legacyExplainer = document.getElementById('explainerWrapper');
+  if(legacyExplainer) legacyExplainer.style.display = (summaryMode === 'league') ? 'none' : '';
+
   if(summaryMode === 'league') renderSummaryLeagueTable();
   else renderSummaryInformation();
 }
@@ -6344,6 +6354,53 @@ function renderSummary(){
 let leagueGrouped = true;
 let leagueSortKey = 'points';
 let leagueSortDesc = true;
+
+// Two disclosures on the League screen. Both start closed: the point of the
+// screen is the table, and on a phone the explanation plus four tier tables
+// put it below the fold. Not persisted -- the screen should open the same way
+// every time.
+let leagueExplainerOpen = false;
+let leagueTiersOpen = true;
+
+// Last 10 is a third table alongside By tier / All together, not a mode of
+// either: it is not scoped to the selected month at all, so it cannot share
+// their month-based aggregation.
+//
+// Deliberately a SEPARATE flag from `leagueGrouped` rather than one
+// three-valued variable. `leagueGrouped` already means "by tier or all
+// together" and is written directly by tests and the capture script; a second
+// variable that also encoded that fact let a caller set one and leave the
+// screen contradicting itself. These two never overlap.
+let leagueLastTen = false;
+
+// Every appearance in the record, as LastTen wants them: one entry per player
+// per match. Built from the same two sources the monthly aggregation uses --
+// ALL_MATCHES/MATCHES for rated results and getAllApprovedMatches() for draws
+// -- so the two tables can never disagree about what a game was.
+function leagueAppearances(){
+  const out = [];
+  let seq = 0;
+  ALL_MATCHES.forEach((raw, idx)=>{
+    const enriched = MATCHES[idx];
+    if(!enriched) return;
+    const n = ++seq;
+    raw.winners.forEach(name => out.push({ name, date: raw.date, result: 'W',
+      gamesFor: enriched.games_winner, gamesAgainst: enriched.games_loser, seq: n }));
+    raw.losers.forEach(name => out.push({ name, date: raw.date, result: 'L',
+      gamesFor: enriched.games_loser, gamesAgainst: enriched.games_winner, seq: n }));
+  });
+  // Draws sit outside the rating engine, so they are read from the approved
+  // matches directly -- but they are still games, and the League Table has
+  // always counted them for a point.
+  getAllApprovedMatches().filter(m => m.isDraw).forEach(m=>{
+    const n = ++seq;
+    const t1 = m.sets.reduce((a,[x])=>a+x,0);
+    const t2 = m.sets.reduce((a,[,y])=>a+y,0);
+    m.winners.forEach(name => out.push({ name, date: m.date, result: 'D', gamesFor: t1, gamesAgainst: t2, seq: n }));
+    m.losers.forEach(name => out.push({ name, date: m.date, result: 'D', gamesFor: t2, gamesAgainst: t1, seq: n }));
+  });
+  return out;
+}
 
 // Order matters here: the league-calculation fields (P/W/L/D/GD/Pts) come
 // first so they're what's visible in an iPhone-width viewport without
@@ -6422,6 +6479,89 @@ function buildLeagueTableHtml(rows, showTierColumn){
   return html;
 }
 
+// The Last 10 table. Deliberately a different table from the monthly one:
+// no Tier column (a form table is club-wide by nature), no Avg Opp, and a
+// Last 10 column in place of Form (10g) -- showing that percentage beside a
+// table built from the same ten games would be the same fact told twice.
+const LAST10_SORT_FALLBACK = (a,b)=> b.points - a.points || b.gd - a.gd || b.games - a.games || a.name.localeCompare(b.name);
+
+function sortLastTenRows(rows){
+  const key = leagueSortKey;
+  const dir = leagueSortDesc ? -1 : 1;
+  return rows.slice().sort((a,b)=>{
+    if(key === 'name') return dir * a.name.localeCompare(b.name);
+    let av = a[key], bv = b[key];
+    // This table has no avg_opp or recent_form column, so a sort key carried
+    // over from the monthly table would compare undefined against undefined
+    // and leave the rows in hash order. Fall back to the league's own order.
+    if(av === undefined || bv === undefined) return LAST10_SORT_FALLBACK(a,b);
+    if(av === null) av = -Infinity;
+    if(bv === null) bv = -Infinity;
+    if(av !== bv) return dir * (av - bv);
+    return LAST10_SORT_FALLBACK(a,b);
+  });
+}
+
+// The run, newest first. Points say how the ten went; this says which way
+// they are going, which is the whole reason to look at form rather than a
+// season table.
+function lastTenRunHtml(run){
+  const colour = { W: 'var(--green)', L: 'var(--red)', D: 'var(--text-dim)' };
+  return run.slice(0, 5).map(r =>
+    `<span style="display:inline-block; width:13px; text-align:center; color:${colour[r]}; font-weight:700;">${r}</span>`
+  ).join('');
+}
+
+function buildLastTenTableHtml(rows){
+  const sorted = sortLastTenRows(rows);
+  const cols = [
+    { key: 'games', label: 'P' }, { key: 'wins', label: 'W' },
+    { key: 'losses', label: 'L' }, { key: 'draws', label: 'D' },
+    { key: 'gd', label: 'GD' }, { key: 'points', label: 'Pts' },
+  ];
+  let html = `<div class="callout-card" style="padding:0; overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-size:11px; white-space:nowrap;">
+      <thead><tr style="background:var(--bg2); text-align:left;">
+      <th style="padding:7px 4px 7px 8px;">#</th>
+      <th class="league-sort-th" data-key="name" style="padding:7px 4px; cursor:pointer;">Player${leagueSortKey==='name'?(leagueSortDesc?' ▾':' ▴'):''}</th>`;
+  cols.forEach(c=>{
+    const arrow = leagueSortKey===c.key ? (leagueSortDesc?' ▾':' ▴') : '';
+    const align = c.key==='points' ? 'right' : 'center';
+    html += `<th class="league-sort-th" data-key="${c.key}" style="padding:7px 4px; text-align:${align}; cursor:pointer;">${c.label}${arrow}</th>`;
+  });
+  html += `<th class="league-context-col" style="padding:7px 8px 7px 4px; text-align:center;">Last 5</th>`;
+  html += `</tr></thead><tbody>`;
+  sorted.forEach((r,i)=>{
+    // A short sample is marked ON the row, beside the P it applies to. A
+    // 4-game row can top this table on points and that is not wrong -- but
+    // the reader is told it is four games, not left to infer it.
+    const shortMark = r.short
+      ? ` <span class="l10-short" title="Fewer than ${r.window} rated games in the record">of ${r.window}</span>`
+      : '';
+    html += `<tr style="border-top:1px solid var(--line);">
+      <td style="padding:7px 4px 7px 8px; color:var(--text-dim);">${i+1}</td>
+      <td style="padding:7px 4px;"><span class="request-player-link" data-player="${escapeHtml(r.name)}" style="text-decoration:underline; cursor:pointer; font-weight:700;">${escapeHtml(r.name)}</span></td>
+      <td style="padding:7px 4px; text-align:center;">${r.games}${shortMark}</td>
+      <td style="padding:7px 4px; text-align:center; color:var(--green);">${r.wins}</td>
+      <td style="padding:7px 4px; text-align:center; color:var(--red);">${r.losses}</td>
+      <td style="padding:7px 4px; text-align:center; color:var(--text-dim);">${r.draws}</td>
+      <td style="padding:7px 4px; text-align:center;">${r.gd>=0?'+':''}${r.gd}</td>
+      <td style="padding:7px 4px; text-align:right; font-weight:700; color:var(--gold-bright);">${r.points}</td>
+      <td class="league-context-col" style="padding:7px 8px 7px 4px; text-align:center;">${lastTenRunHtml(r.run)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+// A collapsible block. Closed by default where it is used, because the League
+// screen's job is to show a table and everything here sits above one.
+function leagueFold(id, label, open, body){
+  return `<button type="button" class="lg-fold-btn" id="${id}" aria-expanded="${open}" aria-controls="${id}Body">
+      <span>${label}</span><span class="lg-fold-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
+    </button>` + (open ? `<div class="lg-fold-body" id="${id}Body">${body}</div>` : '');
+}
+
 // The tiers a player occupied across a month, as `B` or `B → A`. Built from
 // the recorded tier changes rather than from the dates they happened to play,
 // because occupying a tier and playing in one are different things.
@@ -6476,26 +6616,50 @@ function renderSummaryLeagueTable(){
     return withForm(s, label || (p ? p.tier : '?'));
   });
 
-  let html = `<div class="section-heading" style="margin-top:6px;">🏆 ${label} League Table</div>`;
-  html += `<div class="section-sub">Updates live as the month's games are added — 3 points for a win, 1 for a draw, tiebreak on game difference. Tap a column header to sort by it. "Form" is each player's last 10 games overall, not scoped to this month. Tier S isn't shown — one player can't have a table.</div>`;
+  const isLastTen = leagueLastTen;
+
+  // Last 10 is club-wide and spans whatever months each player's own games
+  // fall in, so the month in the heading would be a lie on that view.
+  let html = `<div class="section-heading" style="margin-top:6px;">🏆 ${isLastTen ? 'Last 10' : label + ' League Table'}</div>`;
+
+  html += leagueFold('leagueExplainerToggle', 'How this table works', leagueExplainerOpen,
+    isLastTen
+      ? `<div class="section-sub" style="margin:0;">Each player's own most recent ${LastTen.WINDOW} rated games, wherever they fall — this table is not scoped to the selected month, so two rows cover the same number of games rather than the same number of days. Same league scoring as everywhere else: 3 points for a win, 1 for a draw, tiebreak on game difference. Anyone with fewer than ${LastTen.WINDOW} games in the record shows the games they actually have, marked <span class="l10-short">of ${LastTen.WINDOW}</span> — the sample is never padded. "Last 5" is the run, newest first. Tap a column header to sort by it.</div>`
+      : `<div class="section-sub" style="margin:0;">Updates live as the month's games are added — 3 points for a win, 1 for a draw, tiebreak on game difference. Tap a column header to sort by it. "Form" is each player's last 10 games overall, not scoped to this month. Tier S isn't shown — one player can't have a table.${leagueGrouped ? ' A player who changed tier mid-month appears in both tier tables, holding only the points they earned in each.' : ''}</div>`);
 
   html += `<div class="fg-toggle" style="margin:8px 0 14px;">
-    <button class="fg-toggle-btn ${leagueGrouped?'active':''}" id="leagueGroupedBtn">By tier</button>
-    <button class="fg-toggle-btn ${!leagueGrouped?'active':''}" id="leagueAllBtn">All together</button>
+    <button class="fg-toggle-btn ${!isLastTen && leagueGrouped?'active':''}" id="leagueGroupedBtn">By tier</button>
+    <button class="fg-toggle-btn ${!isLastTen && !leagueGrouped?'active':''}" id="leagueAllBtn">All together</button>
+    <button class="fg-toggle-btn ${isLastTen?'active':''}" id="leagueLastTenBtn">Last 10</button>
   </div>`;
 
-  if(leagueGrouped){
+  if(isLastTen){
+    const rows = LastTen.build(leagueAppearances()).filter(r => r.games > 0);
+    if(rows.length === 0) html += `<div class="section-sub">No rated games in the record yet.</div>`;
+    else html += buildLastTenTableHtml(rows);
+  } else if(leagueGrouped){
     // Every tier the club actually uses, so a Tier S player is not silently
     // dropped from the grouped table.
+    let body = '';
     let anyTierShown = false;
     TIER_ORDER_LIST.forEach(tier=>{
       const rows = splitRows.filter(s => s.tier === tier && s.games > 0);
       if(rows.length === 0) return;
       anyTierShown = true;
-      html += `<div class="section-heading">Tier ${tier}</div>`;
-      html += buildLeagueTableHtml(rows, false);
+      body += `<div class="section-heading">Tier ${tier}</div>`;
+      body += buildLeagueTableHtml(rows, false);
     });
     if(!anyTierShown) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
+    // Four stacked tier tables is the longest thing on the screen. Collapsing
+    // them is presentation only: the By tier / All together choice above is
+    // untouched, and so is the split-month allocation inside them.
+    else {
+      const tiersShown = (body.match(/class="section-heading">Tier /g) || []).length;
+      const label = leagueTiersOpen
+        ? 'Tier tables'
+        : `Tier tables — ${tiersShown} hidden`;
+      html += leagueFold('leagueTiersToggle', label, leagueTiersOpen, body);
+    }
   } else {
     const rows = wholeRows.filter(s => s.tier !== 'S' && s.games > 0);
     if(rows.length === 0) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
@@ -6505,8 +6669,26 @@ function renderSummaryLeagueTable(){
   content.innerHTML = html;
   wireRequestPlayerLinks(content);
 
-  document.getElementById('leagueGroupedBtn').onclick = ()=>{ leagueGrouped = true; renderSummaryLeagueTable(); };
-  document.getElementById('leagueAllBtn').onclick = ()=>{ leagueGrouped = false; renderSummaryLeagueTable(); };
+  const setView = (lastTen, grouped)=>{
+    // The two tables do not have the same columns, so a sort key picked on one
+    // must not survive onto the other -- it would leave the arriving table
+    // sorted by a column it does not contain, which is to say not sorted.
+    if(lastTen !== isLastTen) { leagueSortKey = 'points'; leagueSortDesc = true; }
+    leagueLastTen = lastTen;
+    if(grouped !== undefined) leagueGrouped = grouped;
+    renderSummaryLeagueTable();
+  };
+  document.getElementById('leagueGroupedBtn').onclick = ()=> setView(false, true);
+  document.getElementById('leagueAllBtn').onclick = ()=> setView(false, false);
+  // Last 10 leaves the By tier / All together choice alone, so returning from
+  // it lands on whichever the reader was on.
+  document.getElementById('leagueLastTenBtn').onclick = ()=> setView(true);
+
+  const explainerBtn = document.getElementById('leagueExplainerToggle');
+  if(explainerBtn) explainerBtn.onclick = ()=>{ leagueExplainerOpen = !leagueExplainerOpen; renderSummaryLeagueTable(); };
+  const tiersBtn = document.getElementById('leagueTiersToggle');
+  if(tiersBtn) tiersBtn.onclick = ()=>{ leagueTiersOpen = !leagueTiersOpen; renderSummaryLeagueTable(); };
+
   content.querySelectorAll('.league-sort-th').forEach(th=>{
     th.onclick = ()=>{
       const key = th.dataset.key;
