@@ -222,3 +222,52 @@ test('a correction is drawn and described by what it did, not by what it is call
   assert.strictEqual(JV.tierEventsAreRatingNeutral(promoted), false,
     'a promotion carrying points must still be caught');
 });
+
+// ---------------------------------------------------------------------------
+// A superseded decision stays in the record -- that is what makes a correction
+// auditable rather than a rewrite. It must never become the player's current
+// explanation. Shaun reported seeing Tom and Fatch described as reassessed "to
+// Jords' level" after the board had re-anchored them to the Tier B baseline;
+// this is the guard that the old wording cannot reach a player's journey.
+
+const supersededPair = () => ([
+  { id: 'init', playerId: 'P', eventType: 'PLAYER_INITIALISED', effectiveDate: '2026-06-01',
+    newPowerRating: 1100, newReliability: 0 },
+  // What the board decided first, and later replaced.
+  { id: 'v1', playerId: 'P', eventType: 'CLUB_RATING_REASSESSMENT', effectiveDate: '2026-07-01',
+    previousPowerRating: 1100, newPowerRating: 1352.5,
+    previousReliability: 0.28, newReliability: 0.10,
+    notes: "Club override anchored to Jords' Power Rating immediately before this review (1352.5)." },
+  // And what replaced it.
+  { id: 'v2', playerId: 'P', eventType: 'CLUB_RATING_REASSESSMENT', effectiveDate: '2026-07-01',
+    supersedes: 'v1', revision: 2,
+    previousPowerRating: 1100, newPowerRating: 1400,
+    previousReliability: 0.28, newReliability: 0.20,
+    notes: 'Board correction: re-anchored to the standard Tier B baseline of 1400.' },
+]);
+
+test('a superseded decision never becomes the current explanation', () => {
+  const j = JV.forPlayer(supersededPair(), 'P');
+  assert.ok(j, 'the player must have a journey');
+
+  const decisions = j.entries.filter((e) => e.eventType === 'CLUB_RATING_REASSESSMENT');
+  assert.strictEqual(decisions.length, 1, 'only the decision in force is part of the story');
+  assert.strictEqual(decisions[0].rating, 1400);
+  assert.ok(Math.abs(decisions[0].reliability - 0.20) < 1e-9);
+
+  // The replaced wording must not surface anywhere in what a player is shown.
+  const everything = JSON.stringify(j);
+  assert.doesNotMatch(everything, /Jords/,
+    'the superseded comparator wording must not reach the journey');
+  assert.doesNotMatch(everything, /1352\.5/,
+    'nor the anchor it was replaced by');
+  assert.match(decisions[0].notes, /Tier B baseline of 1400/);
+});
+
+test('the journey still joins up once a decision has been superseded', () => {
+  const j = JV.forPlayer(supersededPair(), 'P');
+  // Showing both would tell the player their rating moved twice and the chain
+  // would visibly fail to meet.
+  const ratings = j.entries.map((e) => e.rating).filter((r) => typeof r === 'number');
+  assert.deepStrictEqual(ratings, [1100, 1400]);
+});

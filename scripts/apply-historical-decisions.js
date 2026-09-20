@@ -57,11 +57,33 @@ function planFor(stored, adjustment, provenance) {
   return HA.plan({ stored, adjustment, provenance });
 }
 
+// SUPERSEDED, 20 Sep 2026. Tom's and Fatch's anchors here were replaced by the
+// Tier B baseline of 1400 at 20% (`4bbda90`, via
+// scripts/correct-tom-fatch-anchors.js). Running this with --write would
+// re-apply the comparator anchors the board has since rejected, and because it
+// plans against whatever is in the record it would do so without complaint.
+//
+// Kept because it is the record of how the 18 September decisions were applied,
+// and because its two-pass anchor resolution is the worked example of the
+// shared-snapshot rule. It refuses to write.
+const SUPERSEDED_NOTE =
+  'This script applies the 18 Sep 2026 anchors, two of which the board has since superseded:\n'
+  + '  Tom   1 Jul — was Jords\' rating (1352.5) @ 10%, now the Tier B baseline 1400 @ 20%\n'
+  + '  Fatch 1 Aug — was Tom\'s rating (1358.6) @ 10%, now the Tier B baseline 1400 @ 20%\n'
+  + 'Applying it would undo that correction. Use scripts/correct-tom-fatch-anchors.js instead.\n'
+  + 'Dry run still works, as a record of what was done.';
+
 async function main() {
   const write = process.argv.includes('--write');
+  if (write) {
+    console.error('REFUSING TO WRITE.\n\n' + SUPERSEDED_NOTE);
+    process.exitCode = 1;
+    return;
+  }
   const backend = Store.firestoreCompatBackend
     ? Store.firestoreRestBackend({ projectId: PROJECT_ID })
     : null;
+  console.log('SUPERSEDED — for reference only.\n' + SUPERSEDED_NOTE + '\n');
   console.log(`Historical club decisions — ${write ? 'WRITE' : 'DRY RUN (nothing will change)'}`);
   console.log('  project: ' + PROJECT_ID);
   console.log('  reliability for all three: ' + Math.round(RELIABILITY * 100) + '% (board decision)');
