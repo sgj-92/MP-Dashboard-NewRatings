@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `aef42a7` |
-| Tests | **369 / 369 passing** (66 of them drive a real browser) |
+| Last verified implementation commit | `2767782` |
+| Tests | **377 / 377 passing** (67 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -751,6 +751,57 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (NEXT 13 done — Reliability is asked for and answered)
+
+`Ledger CCode`. **377 / 377 tests**, 67 in a browser. Commit `2767782`.
+Screenshots regenerated. **NEXT 11, 12 and 13 are now all delivered.**
+
+**No stored field was added.** The journey event already carried
+`recommendationRating`, `recommendationReliability` and
+`recommendationMethodVersion` — they were simply never filled for Reliability,
+because nothing recommended one. The audit trail the decision asked for was
+already plumbed; what was missing was the question.
+
+**What the board now sees.** Step 3 of the monthly review: the Recommended
+Reliability with its band, the reason in plain English, and what it means in
+practice (the K it implies and roughly how many matches back to 50%). Then
+`Use the recommendation` or `Override Reliability`.
+
+**Priced against the board's own anchor.** The recommendation follows the rating
+the board actually chose, not the one the app suggested — so a club override
+gets an honest answer rather than a number computed for a different rating.
+
+**An override needs a percentage and a reason.** A percentage with no reason is
+indistinguishable from a slip of the finger, and this is the permanent record.
+The confirmation, before anything is written, reads either `(as recommended)` or
+`(club override — the recommendation was 33%)`.
+
+**A rating that moves must be answered for.** Unanswered, Reliability stays
+where it was — after a large re-anchor that is stale confidence attached to a
+number the board has just replaced, which is the quiet version of the mistake
+this step exists to prevent. A rating that does not move needs no answer.
+
+**Two things worth recording, both found rather than designed:**
+
+- **Scope.** Requiring an answer broke Historical Club Adjustment outright: that
+  screen has no step 3 and carries its own Reliability field, so it was being
+  asked a question it never puts. The requirement is now scoped to the screen
+  that asks it. Seven tests caught this immediately.
+- **A duplicate input.** Looking at the rendered screen showed step 2's
+  club-override block still had a Reliability field of its own, sitting above
+  step 3 — the board could set it twice, differently, and only one would win.
+  Step 3 owns it now. A blank rating under a club override is a move of zero,
+  so the question stays available rather than vanishing with the field, which
+  is how a confidence-only override is still made.
+
+**Open, and Shaun's:** the card-orientation reading from the previous handoff
+(stronger-partnership-first applied to the matchup label, not to the sides of a
+card). Nothing is blocked on it.
+
+**Baton → CGPT / Shaun.** Home visual acceptance from 19 Sep is still open. NEXT
+is empty of implementation items; the rating-model backlog and match sharing in
+Section 5 both remain parked and unauthorised.
 
 ### CCode — 20 Sep 2026 (NEXT 11 and 12 done; one instruction narrowed, deliberately)
 
@@ -2854,7 +2905,7 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 12. **DONE (`aef42a7`).** Reassessment Reliability: MOVE-SCALED approved with
     **D = 150 points** and a **20% minimum/floor**. Modelling `9ac4285`, rule
     implemented as `Reassessment.recommendReliability` (`move-scaled-v1`).
-13. **NEXT, unblocked — the remaining half of item 12.** The rule is done; the
-    UX is not. Build Use-recommendation / Override with attribution and reason,
-    and store **both** the system recommendation and the board's final choice on
-    the reassessment event. Touches the event schema, so it needs its own pass.
+13. **DONE (`2767782`).** Use-recommendation / Override with attribution and
+    reason, storing both the system recommendation and the board's final choice.
+    The event schema already carried `recommendationReliability`, so no stored
+    field was added.
