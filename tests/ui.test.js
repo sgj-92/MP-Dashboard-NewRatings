@@ -1086,6 +1086,140 @@ test('live validation does not steal focus or lose what is being typed', { skip 
   } finally { await app.close(); }
 });
 
+// ===================== SPLIT-MONTH LEAGUE TABLE (20 Sep 2026) =============
+// A mid-month tier change used to put the whole month's points in whichever
+// tier the player is in NOW. Points must stay in the tier where they were
+// earned, so a player who moved appears in both tables with only that stretch.
+//
+// The tier boundary itself is covered in tests/leagueSplit.test.js; this drives
+// the real aggregation and the rendered table with a controlled change date.
+test('a mid-month tier change splits the League Table and never moves points', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      // Pick a player with September matches either side of a chosen date.
+      const CUT = '2026-09-10';
+      // The same two sources the aggregation uses: rated matches AND draws,
+      // which are pulled separately. Counting only the rated ones here made
+      // this test disagree with the code by exactly the number of draws.
+      const septMatches = ALL_MATCHES.concat(getAllApprovedMatches().filter((m) => m.isDraw))
+        .filter((m) => m.date.slice(0, 7) === '2026-09');
+      const septOf = (name) => septMatches
+        .filter((m) => m.winners.includes(name) || m.losers.includes(name))
+        .map((m) => m.date).sort();
+      const subject = [...new Set(septMatches.flatMap((m) => [...m.winners, ...m.losers]))]
+        .find((n) => {
+          const d = septOf(n);
+          return d.some((x) => x < CUT) && d.some((x) => x >= CUT);
+        });
+      if (!subject) return { subject: null };
+
+      // Move them B -> A on the cut date, leaving everyone else alone.
+      const realTier = V3_TIER_AS_OF;
+      V3_TIER_AS_OF = (name, date) => (name === subject ? (date >= CUT ? 'A' : 'B') : realTier(name, date));
+      const realHistory = V3_TIER_HISTORY;
+      V3_TIER_HISTORY = {
+        ...realHistory,
+        changesFor: (name) => (name === subject
+          ? [{ playerId: name, effectiveDate: CUT, fromTier: 'B', toTier: 'A' }]
+          : realHistory.changesFor(name)),
+      };
+
+      const dates = septOf(subject);
+      const out = { subject, cut: CUT, before: dates.filter((d) => d < CUT).length, after: dates.filter((d) => d >= CUT).length };
+
+      const split = computeMonthlySummaryStats('2026-09', { splitByTier: true });
+      out.segments = Object.values(split).filter((x) => x.name === subject)
+        .map((x) => ({ tier: x.segmentTier, games: x.games, points: x.points, gd: x.gd,
+                       earliest: x.segmentDates.slice().sort()[0], latest: x.segmentDates.slice().sort().pop() }))
+        .sort((a, b) => (a.earliest < b.earliest ? -1 : 1));
+
+      const whole = Object.values(computeMonthlySummaryStats('2026-09')).find((x) => x.name === subject);
+      out.whole = { games: whole.games, points: whole.points, gd: whole.gd };
+      out.label = tierSpellLabel(subject, '2026-09');
+
+      // And as it actually renders.
+      summaryMonth = '2026-09'; summaryMode = 'league'; activeTab = 'summary';
+      const view = document.getElementById('summaryView');
+      if (view) view.style.display = 'block';
+      leagueGrouped = true; renderSummary();
+      const sectionsFor = () => {
+        const text = document.getElementById('summaryContent').innerText;
+        const lines = text.split('\n');
+        const found = [];
+        let tier = null;
+        lines.forEach((l) => {
+          const m = l.match(/^Tier ([SABC])$/);
+          if (m) { tier = m[1]; return; }
+          if (tier && l.includes(subject)) found.push(tier);
+        });
+        return found;
+      };
+      out.renderedTiers = sectionsFor();
+
+      leagueGrouped = false; renderSummary();
+      const allText = document.getElementById('summaryContent').innerText;
+      out.allRows = allText.split('\n').filter((l) => l.includes(subject));
+
+      V3_TIER_AS_OF = realTier; V3_TIER_HISTORY = realHistory;
+      return out;
+    });
+
+    assert.ok(r.subject, 'the fixture needs a player with September matches either side of the cut');
+    assert.ok(r.before > 0 && r.after > 0, `${r.subject} must play either side of ${r.cut}`);
+
+    // Two segments, in the tiers they were played in.
+    assert.strictEqual(r.segments.length, 2, `expected two segments, got ${JSON.stringify(r.segments)}`);
+    assert.deepStrictEqual(r.segments.map((x) => x.tier), ['B', 'A'], 'old tier first, then new');
+    assert.ok(r.segments[0].latest < r.cut, 'the first segment ends before the change');
+    assert.ok(r.segments[1].earliest >= r.cut, 'the second starts on or after it');
+
+    // Points and games stay where they were earned, and nothing is lost.
+    assert.strictEqual(r.segments[0].games + r.segments[1].games, r.whole.games);
+    assert.strictEqual(r.segments[0].points + r.segments[1].points, r.whole.points);
+    assert.strictEqual(r.segments[0].gd + r.segments[1].gd, r.whole.gd);
+    assert.strictEqual(r.segments[0].games, r.before);
+    assert.strictEqual(r.segments[1].games, r.after);
+
+    // Both rows reach the screen, one per tier.
+    assert.deepStrictEqual(r.renderedTiers.sort(), ['A', 'B'],
+      `${r.subject} must appear in both tier tables, got ${JSON.stringify(r.renderedTiers)}`);
+
+    // All together is not a tier table: one row, saying what changed.
+    assert.strictEqual(r.allRows.length, 1, `All together must not duplicate the player, got ${r.allRows.length} rows`);
+    assert.strictEqual(r.label, 'B → A');
+    assert.ok(r.allRows[0].includes('B → A'), `the row must show the transition: ${r.allRows[0]}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// The ordinary case must not have changed: one tier all month, one row.
+test('a player who does not change tier still gets exactly one League row', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const split = computeMonthlySummaryStats('2026-09', { splitByTier: true });
+      const byName = {};
+      Object.values(split).forEach((x) => { byName[x.name] = (byName[x.name] || 0) + 1; });
+      const whole = computeMonthlySummaryStats('2026-09');
+      return {
+        duplicated: Object.entries(byName).filter(([, n]) => n > 1).map(([n]) => n),
+        // Every segment must carry the tier it was played in.
+        untiered: Object.values(split).filter((x) => !x.segmentTier).map((x) => x.name),
+        // And the split must account for exactly the same games as the whole.
+        gamesMatch: Object.keys(whole).every((n) => {
+          const parts = Object.values(split).filter((x) => x.name === n);
+          return parts.reduce((s, x) => s + x.games, 0) === whole[n].games;
+        }),
+      };
+    });
+    assert.deepStrictEqual(r.duplicated, [], 'nobody changed tier in the fixture, so nobody may be split');
+    assert.deepStrictEqual(r.untiered, [], 'every segment must know its tier');
+    assert.strictEqual(r.gamesMatch, true, 'splitting must not lose or invent a game');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
 test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
   const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
   assert.match(msg, /identifier is built from its date/);

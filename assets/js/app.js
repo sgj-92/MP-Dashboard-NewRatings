@@ -962,6 +962,7 @@ let V3_MATCH_FACTS = {}; // matchId -> what the engine did in that match, read b
 // the same source as the monthly views -- a label and a classification that
 // disagreed would be worse than either alone.
 let V3_TIER_AS_OF = null;
+let V3_TIER_HISTORY = null;
 // The record as stored, kept for one purpose: checking that replaying it still
 // reproduces it. Assembled from documents the load already read.
 let V3_RECORD = null;
@@ -1000,10 +1001,15 @@ async function loadV3State(){
         // With the list, the first real promotion the club records makes the
         // current tier disagree with the history and the consistency guard
         // refuses to load the app at all.
-        V3_TIER_AS_OF = TierHistory.create({
+        // The whole history, not just the lookup: the League Table needs to
+        // know WHEN a player changed tier, not only what they were on a given
+        // day. Sampling dates to find that out would miss a second change in
+        // the same month.
+        V3_TIER_HISTORY = TierHistory.create({
           currentTiers: V3Bridge.tierMap(V3_STATE),
           changes: TierHistory.changesFromJourney(V3_JOURNEY),
-        }).tierAsOf;
+        });
+        V3_TIER_AS_OF = V3_TIER_HISTORY.tierAsOf;
         MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF });
         // The record in its stored form, which is what a replay is verified
         // against. Assembled from documents already read; it costs nothing.
@@ -1011,7 +1017,7 @@ async function loadV3State(){
       }
       catch(e){
         V3_MATCHES = []; V3_JOURNEY = []; MONTHLY_VIEWS = null;
-        V3_MATCH_FACTS = {}; V3_TIER_AS_OF = null; V3_RECORD = null;
+        V3_MATCH_FACTS = {}; V3_TIER_AS_OF = null; V3_TIER_HISTORY = null; V3_RECORD = null;
         V3_STATE = {...V3_STATE, loaded:false, error:'Could not read v3 history: ' + e.message};
       }
     }
@@ -1421,11 +1427,25 @@ function monthEndRatings(month){
 // unit used everywhere else in the app -- into a friendlier small number).
 // Skip filtering by date when 'all' is chosen, so the same summary format also works as a
 // whole-season recap, not just a single month.
-function computeMonthlySummaryStats(month){
+// `splitByTier` files each match under the tier the player was in ON THAT
+// DATE, so a mid-month tier change produces two rows rather than moving a
+// month's points into whichever tier they ended in. Off by default: every
+// other caller wants one row per player for the whole month.
+function computeMonthlySummaryStats(month, { splitByTier } = {}){
   const agg = {};
-  function A(name){
-    if(!agg[name]) agg[name] = {wins:0, losses:0, draws:0, doughnuts:0, strengths:[], games_w:0, games_l:0};
-    return agg[name];
+  const identity = {};   // aggregation key -> { name, tier, dates }
+  function A(name, date){
+    const tier = splitByTier ? historicalTierOf(name, date) : null;
+    // A match whose tier cannot be established is still the player's match.
+    // It is aggregated under them without a tier rather than dropped, and the
+    // grouped view simply has no tier section to put it in.
+    const key = splitByTier ? LeagueSplit.keyFor(name, tier || '') : name;
+    if(!agg[key]){
+      agg[key] = {wins:0, losses:0, draws:0, doughnuts:0, strengths:[], games_w:0, games_l:0};
+      identity[key] = { name, tier: splitByTier ? tier : null, dates: [] };
+    }
+    if(date) identity[key].dates.push(date);
+    return agg[key];
   }
 
   // Rated (non-draw) matches: ALL_MATCHES carries the raw set scores; MATCHES (same index, same
@@ -1436,12 +1456,12 @@ function computeMonthlySummaryStats(month){
     const enriched = MATCHES[idx];
     if(!enriched) return;
     const allNames = [...new Set([...raw.winners, ...raw.losers])];
-    allNames.forEach(n => A(n).strengths.push(enriched.match_strength));
-    raw.winners.forEach(n=>{ A(n).wins++; A(n).games_w += enriched.games_winner; A(n).games_l += enriched.games_loser; });
-    raw.losers.forEach(n=>{ A(n).losses++; A(n).games_w += enriched.games_loser; A(n).games_l += enriched.games_winner; });
+    allNames.forEach(n => A(n, raw.date).strengths.push(enriched.match_strength));
+    raw.winners.forEach(n=>{ const a = A(n, raw.date); a.wins++; a.games_w += enriched.games_winner; a.games_l += enriched.games_loser; });
+    raw.losers.forEach(n=>{ const a = A(n, raw.date); a.losses++; a.games_w += enriched.games_loser; a.games_l += enriched.games_winner; });
     raw.sets.forEach(([x,y])=>{
-      if(y === 0) raw.losers.forEach(n=>A(n).doughnuts++);
-      if(x === 0) raw.winners.forEach(n=>A(n).doughnuts++);
+      if(y === 0) raw.losers.forEach(n=>A(n, raw.date).doughnuts++);
+      if(x === 0) raw.winners.forEach(n=>A(n, raw.date).doughnuts++);
     });
   });
 
@@ -1453,24 +1473,29 @@ function computeMonthlySummaryStats(month){
       const p = PLAYERS.find(x=>x.name===n);
       return s + (p ? p.rating : 1400);
     }, 0) / (allNames.length || 1);
-    allNames.forEach(n => A(n).strengths.push(strengthEstimate));
+    allNames.forEach(n => A(n, m.date).strengths.push(strengthEstimate));
     const team1Games = m.sets.reduce((s,[x,y])=>s+x,0);
     const team2Games = m.sets.reduce((s,[x,y])=>s+y,0);
-    m.winners.forEach(n=>{ A(n).draws++; A(n).games_w += team1Games; A(n).games_l += team2Games; });
-    m.losers.forEach(n=>{ A(n).draws++; A(n).games_w += team2Games; A(n).games_l += team1Games; });
+    m.winners.forEach(n=>{ const a = A(n, m.date); a.draws++; a.games_w += team1Games; a.games_l += team2Games; });
+    m.losers.forEach(n=>{ const a = A(n, m.date); a.draws++; a.games_w += team2Games; a.games_l += team1Games; });
     m.sets.forEach(([x,y])=>{
-      if(y === 0) m.losers.forEach(n=>A(n).doughnuts++);
-      if(x === 0) m.winners.forEach(n=>A(n).doughnuts++);
+      if(y === 0) m.losers.forEach(n=>A(n, m.date).doughnuts++);
+      if(x === 0) m.winners.forEach(n=>A(n, m.date).doughnuts++);
     });
   });
 
   const out = {};
-  Object.keys(agg).forEach(name=>{
-    const a = agg[name];
+  Object.keys(agg).forEach(key=>{
+    const a = agg[key];
+    const who = identity[key];
+    const name = who.name;
     const games = a.wins + a.losses + a.draws;
     const avgStrength = a.strengths.length ? a.strengths.reduce((s,x)=>s+x,0)/a.strengths.length : 0;
-    out[name] = {
+    out[key] = {
       name, games, wins: a.wins, losses: a.losses, draws: a.draws,
+      // Present only when splitting; the tier this stretch of the month was
+      // played in, and the dates it covers.
+      segmentTier: who.tier, segmentDates: who.dates.slice(),
       points: a.wins*3 + a.draws*1,
       winpct: games ? Math.round(1000*a.wins/games)/10 : 0,
       losspct: games ? Math.round(1000*a.losses/games)/10 : 0,
@@ -6348,24 +6373,58 @@ function buildLeagueTableHtml(rows, showTierColumn){
   return html;
 }
 
+// The tiers a player occupied across a month, as `B` or `B → A`. Built from
+// the recorded tier changes rather than from the dates they happened to play,
+// because occupying a tier and playing in one are different things.
+//
+// All Time is not a month and a whole career of moves is not a table column,
+// so it falls back to where they are now.
+function tierSpellLabel(name, month){
+  if(!month || month === 'all' || !V3_TIER_HISTORY) return null;
+  const start = month + '-01';
+  const end = month + '-31';
+  const dates = [start].concat(
+    (V3_TIER_HISTORY.changesFor(name) || [])
+      .map(c => c.effectiveDate)
+      .filter(d => d >= start && d <= end));
+  return LeagueSplit.transitionLabel(LeagueSplit.tiersOver(dates, (d) => historicalTierOf(name, d)));
+}
+
 function renderSummaryLeagueTable(){
   const content = document.getElementById('summaryContent');
-  const stats = computeMonthlySummaryStats(summaryMonth);
   const label = summaryMonth === 'all' ? 'All Time' : monthLabel(summaryMonth);
 
-  // Recent Form is always the last-10-games figure (not scoped to the selected month) --
-  // the same established meaning it has everywhere else in the app.
-  const rowsByName = {};
-  Object.values(stats).forEach(s=>{
-    const p = PLAYERS.find(x=>x.name===s.name);
+  // Two different questions, so two aggregations.
+  //
+  //   By tier      — each match filed under the tier in force on its own date,
+  //                  so a player who moved mid-month appears in both tables
+  //                  with only what they earned while in each.
+  //   All together — not a tier table, so one row for the whole month, with
+  //                  the tier column saying what changed.
+  //
+  // Recent Form is always the last-10-games figure (not scoped to the selected
+  // month) -- the same established meaning it has everywhere else in the app.
+  const withForm = (s, tier) => {
     const form = computeRecentForm(s.name, 10);
-    rowsByName[s.name] = {
-      ...s, tier: p ? p.tier : '?',
+    return {
+      ...s, tier,
       recent_form: form ? form.avgPct : null,
       recent_form_wins: form ? form.wins : 0,
       recent_form_losses: form ? form.losses : 0,
       recent_form_stale: form ? form.daysSinceLastGame > RECENT_FORM_STALE_DAYS : false,
     };
+  };
+
+  const splitRows = Object.values(computeMonthlySummaryStats(summaryMonth, { splitByTier: true }))
+    .map(s => withForm(s, s.segmentTier || '?'));
+
+  const wholeRows = Object.values(computeMonthlySummaryStats(summaryMonth)).map(s => {
+    // The tier column shows the month as it was LIVED, not as it was played:
+    // a player promoted on the 20th occupied two tiers in September whether or
+    // not they got on court again, and the row should say so.
+    const p = PLAYERS.find(x=>x.name===s.name);
+    const label = tierSpellLabel(s.name, summaryMonth);
+    return withForm(s, label || (p ? p.tier : '?'));
   });
 
   let html = `<div class="section-heading" style="margin-top:6px;">🏆 ${label} League Table</div>`;
@@ -6379,10 +6438,9 @@ function renderSummaryLeagueTable(){
   if(leagueGrouped){
     // Every tier the club actually uses, so a Tier S player is not silently
     // dropped from the grouped table.
-    const tiers = TIER_ORDER_LIST;
     let anyTierShown = false;
-    tiers.forEach(tier=>{
-      const rows = Object.values(rowsByName).filter(s => s.tier === tier && s.games > 0);
+    TIER_ORDER_LIST.forEach(tier=>{
+      const rows = splitRows.filter(s => s.tier === tier && s.games > 0);
       if(rows.length === 0) return;
       anyTierShown = true;
       html += `<div class="section-heading">Tier ${tier}</div>`;
@@ -6390,7 +6448,7 @@ function renderSummaryLeagueTable(){
     });
     if(!anyTierShown) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
   } else {
-    const rows = Object.values(rowsByName).filter(s => s.tier !== 'S' && s.games > 0);
+    const rows = wholeRows.filter(s => s.tier !== 'S' && s.games > 0);
     if(rows.length === 0) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
     else html += buildLeagueTableHtml(rows, true);
   }
