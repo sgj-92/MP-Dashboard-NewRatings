@@ -237,6 +237,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Historical override anchors for Shaun, Tom and Fatch are fixed | **Shaun, 1 Jul:** 1400. **Tom, 1 Jul:** club override to **Jords' Power Rating immediately before the 1 Jul review**. **Fatch, 1 Aug:** club override to **Tom's Power Rating immediately before the 1 Aug review**, after Tom's corrected 1 Jul state and July matches have played out. These are factual club-assessment anchors, not statistical recommendations. |
 | Historical reassessment reliability = 10% | Shaun, Tom and Fatch all reset/reopen to **10% reliability** at their historical adjustment date so the model can move them quickly in the newly assessed tier/state. This is an explicit board decision, not a statistical recommendation. |
 | Future reassessment reliability is system-recommended but club-editable | For normal future promotions/reassessments, the club should primarily decide the **new playing-level anchor / comparable player**. The system should then present a **Recommended Reliability** using an explainable rule. Admins may accept it or manually override the percentage. Any override must be clearly labelled as a club override and stored with attribution/reason in the audited reassessment event. Do not force the board to invent a reliability percentage from scratch. |
+| Move-scaled reassessment Reliability approved | Shaun chose **move-scaled** rather than a flat 10% reset. Small rating re-anchors should retain more of the player's prior Reliability; larger re-anchors should reduce Reliability more aggressively, with sufficiently large moves reopening toward the minimum. Manual override remains available and audited. The remaining implementation parameter is the scale threshold `D`; CCode modelled/recommended `D = 150` points, but Shaun has not explicitly approved that number yet. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
 | Same-review recommendations use one shared pre-review snapshot | If multiple players are reviewed on the same effective date, calculate all statistical recommendations from the same pre-review state so one player's accepted decision cannot alter another player's recommendation merely because of processing order. Apply confirmed events afterwards in deterministic order. |
 | Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
@@ -458,9 +459,11 @@ discarding their whole record and setting K to 37 — currently the flat rule
 would make a small board correction leave that player *more* volatile than a
 newcomer.
 
-**DECISION NEEDED FROM SHAUN — flat, or move-scaled?** If move-scaled, is
-`D = 150` right, or must a move be larger before the record is discarded? This
-is rating methodology, so it is his, not CGPT's or mine.
+**DECISION 20 Sep — Shaun chose MOVE-SCALED.** The flat 10% rule is rejected.
+The only remaining parameter is the move scale `D`: CCode recommends
+`D = 150` points (half a tier). Shaun has **not yet explicitly approved the
+150-point threshold**, so implementation should not silently hard-code that
+number until confirmed.
 
 For promotion/demotion reviews specifically: the tier-change event itself should
 still leave Reliability untouched. If the board also **re-anchors the player's
@@ -748,6 +751,15 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (move-scaled Reliability chosen)
+Shaun chose **move-scaled** Reliability for rating re-anchors. Flat 10% is no
+longer an option for future reassessment recommendations.
+
+The remaining parameter is the scale threshold `D`. CCode's modelling recommends
+`D = 150` points, but Shaun has not explicitly confirmed that exact threshold.
+Until he does, keep the existing manual Reliability control and do not hard-code
+150 silently.
 
 ### CGPT — 20 Sep 2026 (canonical matchup ordering + reliability question surfaced)
 Shaun approved a single canonical tier-order rule for both Games display and
@@ -2747,13 +2759,9 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
     `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Higher-tier partner
     first; stronger partnership first; equal-tier/equal-composition ties preserve
     stored order/orientation; counts do not control filter order.
-12. **Backlog after Home refinement:** model and implement system-recommended
-    reassessment Reliability with manual audited override. Do not choose the
-    recommendation formula until historical/hypothetical validation is reviewed.
-    — **Modelling DONE (`9ac4285`).** Implementation is blocked on one decision
-    from Shaun (flat vs move-scaled), in Section 5. Nothing else in this item
-    can proceed until he answers.
-13. **Unblocked whenever Shaun decides:** implement the chosen rule in
-    `reassessment.js` (which today returns `recommendationReliability: null`),
-    plus the Use-recommendation / Override UX with attribution and reason, and
-    store both the recommendation and the final choice on the event.
+12. **Reassessment Reliability:** MOVE-SCALED approved by Shaun. Modelling is
+    done (`9ac4285`). One parameter remains: confirm the scale threshold `D`
+    (CCode recommends `150` points).
+13. **After D is confirmed:** implement the move-scaled rule in
+    `reassessment.js`, plus Use-recommendation / Override UX with attribution
+    and reason, storing both the system recommendation and final choice.
