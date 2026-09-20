@@ -237,7 +237,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Historical override anchors for Shaun, Tom and Fatch are fixed | **Shaun, 1 Jul:** 1400. **Tom, 1 Jul:** club override to **Jords' Power Rating immediately before the 1 Jul review**. **Fatch, 1 Aug:** club override to **Tom's Power Rating immediately before the 1 Aug review**, after Tom's corrected 1 Jul state and July matches have played out. These are factual club-assessment anchors, not statistical recommendations. |
 | Historical reassessment reliability = 10% | Shaun, Tom and Fatch all reset/reopen to **10% reliability** at their historical adjustment date so the model can move them quickly in the newly assessed tier/state. This is an explicit board decision, not a statistical recommendation. |
 | Future reassessment reliability is system-recommended but club-editable | For normal future promotions/reassessments, the club should primarily decide the **new playing-level anchor / comparable player**. The system should then present a **Recommended Reliability** using an explainable rule. Admins may accept it or manually override the percentage. Any override must be clearly labelled as a club override and stored with attribution/reason in the audited reassessment event. Do not force the board to invent a reliability percentage from scratch. |
-| Move-scaled reassessment Reliability approved | Shaun chose **move-scaled** rather than a flat 10% reset. Small rating re-anchors should retain more of the player's prior Reliability; larger re-anchors should reduce Reliability more aggressively, with sufficiently large moves reopening toward the minimum. Manual override remains available and audited. The remaining implementation parameter is the scale threshold `D`; CCode modelled/recommended `D = 150` points, but Shaun has not explicitly approved that number yet. |
+| Move-scaled reassessment Reliability approved | Shaun chose **move-scaled** rather than a flat reset. Small rating re-anchors retain more of the player's prior Reliability; larger re-anchors reduce Reliability more aggressively. **D = 150 points** is the full-reopen threshold, and the system-generated minimum/floor at or beyond that threshold is **20% Reliability**. Manual override remains available and audited. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
 | Same-review recommendations use one shared pre-review snapshot | If multiple players are reviewed on the same effective date, calculate all statistical recommendations from the same pre-review state so one player's accepted decision cannot alter another player's recommendation merely because of processing order. Apply confirmed events afterwards in deterministic order. |
 | Historical monthly reads use filtered `ratingJourney` queries where sufficient | The `players`-first rule applies to current-state rendering, not to historical data that `players` cannot contain. Bounded month/player queries remain the default, subject only to the Ranking Movement exception below. No monthly snapshot collection for now. |
@@ -459,11 +459,11 @@ discarding their whole record and setting K to 37 — currently the flat rule
 would make a small board correction leave that player *more* volatile than a
 newcomer.
 
-**DECISION 20 Sep — Shaun chose MOVE-SCALED.** The flat 10% rule is rejected.
-The only remaining parameter is the move scale `D`: CCode recommends
-`D = 150` points (half a tier). Shaun has **not yet explicitly approved the
-150-point threshold**, so implementation should not silently hard-code that
-number until confirmed.
+**DECISION 20 Sep — Shaun chose MOVE-SCALED with D = 150 and a 20% floor.**
+The flat rule is rejected. For a rating re-anchor smaller than 150 points,
+Reliability is reduced proportionally; at 150 points or more, the
+system-generated recommendation bottoms out at **20% Reliability**. Admin may
+still override the recommendation, with attribution/reason recorded.
 
 For promotion/demotion reviews specifically: the tier-change event itself should
 still leave Reliability untouched. If the board also **re-anchors the player's
@@ -752,14 +752,22 @@ ideas only, or any matchup card) before it is scheduled.
 
 ## 6. HANDOFFS
 
+### CGPT — 20 Sep 2026 (20% reassessment floor approved)
+Shaun fixed the remaining move-scaled parameters: **D = 150 points** and
+**20% as the system-generated minimum Reliability**. A reassessment move of
+150 points or more therefore recommends 20%, not 10%. Smaller moves retain more
+Reliability proportionally. Manual override remains available and audited.
+
+This unblocks implementation of the reassessment Reliability recommendation.
+
 ### CGPT — 20 Sep 2026 (move-scaled Reliability chosen)
 Shaun chose **move-scaled** Reliability for rating re-anchors. Flat 10% is no
 longer an option for future reassessment recommendations.
 
-The remaining parameter is the scale threshold `D`. CCode's modelling recommends
-`D = 150` points, but Shaun has not explicitly confirmed that exact threshold.
-Until he does, keep the existing manual Reliability control and do not hard-code
-150 silently.
+Shaun has now fixed the remaining parameters: **D = 150 points** and a
+**20% minimum/floor** for the system recommendation. At or above a 150-point
+re-anchor, recommend 20%; below it, scale the Reliability reduction with move
+size. Manual override remains available and audited.
 
 ### CGPT — 20 Sep 2026 (canonical matchup ordering + reliability question surfaced)
 Shaun approved a single canonical tier-order rule for both Games display and
@@ -2759,9 +2767,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
     `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Higher-tier partner
     first; stronger partnership first; equal-tier/equal-composition ties preserve
     stored order/orientation; counts do not control filter order.
-12. **Reassessment Reliability:** MOVE-SCALED approved by Shaun. Modelling is
-    done (`9ac4285`). One parameter remains: confirm the scale threshold `D`
-    (CCode recommends `150` points).
-13. **After D is confirmed:** implement the move-scaled rule in
-    `reassessment.js`, plus Use-recommendation / Override UX with attribution
-    and reason, storing both the system recommendation and final choice.
+12. **Reassessment Reliability:** MOVE-SCALED approved with **D = 150 points**
+    and a **20% minimum/floor**. Modelling is complete (`9ac4285`).
+13. **Unblocked:** implement the move-scaled rule in `reassessment.js`, plus
+    Use-recommendation / Override UX with attribution and reason, storing both
+    the system recommendation and final choice.
