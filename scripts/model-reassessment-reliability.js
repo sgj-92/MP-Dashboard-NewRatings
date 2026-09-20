@@ -135,11 +135,25 @@ function report(record) {
   console.log(`  Anchor moves: ${moves.map((m) => m.toFixed(0)).join(', ')} points`
     + `  (${(Math.min(...moves) / TIER_WIDTH * 100).toFixed(0)}–${(Math.max(...moves) / TIER_WIDTH * 100).toFixed(0)}% of a tier)`);
   console.log(`  Prior reliabilities: ${decisions.map((d) => pct(d.reliabilityBefore)).join(', ')}`);
+  // Derived, never asserted. This narrative was hard-coded when all three
+  // decisions happened to agree; the board then corrected two of them and the
+  // prose went on claiming they agreed. Copy that describes the record has to
+  // be computed from it.
   console.log('');
-  console.log('  Every decision is the same situation: a near-whole-tier anchor move,');
-  console.log('  answered with the same reliability. Prior evidence ranged 4 to 14 and');
-  console.log('  changed nothing. So the record fixes ONE point of any rule and says');
-  console.log('  nothing about a small correction, which is the case not yet met.');
+  const spread = Math.max(...moves) - Math.min(...moves);
+  const sameSituation = spread / TIER_WIDTH < 0.25;
+  const sameAnswer = chosen.length === 1;
+  const evidences = decisions.map((d) => d.evidenceBefore);
+  console.log(sameSituation
+    ? '  Every decision is the same situation: a near-whole-tier anchor move.'
+    : `  The moves vary by ${spread.toFixed(0)} points, so these are not all the same situation.`);
+  console.log(sameAnswer
+    ? '  All of them were answered with the same reliability, and prior evidence'
+      + `\n  ranged ${Math.min(...evidences)} to ${Math.max(...evidences)} without changing it. The record therefore`
+      + '\n  fixes ONE point of any rule and says nothing about a small correction.'
+    : `  They were NOT answered the same way (${chosen.map((c) => pct(Number(c))).join(', ')}), so no single rule`
+      + '\n  reproduces all of them unless it can produce each of those answers.'
+      + '\n  Where they differ is a board decision, not a property of the data.');
   console.log('');
 
   // ---- Fit ----------------------------------------------------------------
@@ -165,11 +179,42 @@ function report(record) {
   });
   console.log('');
 
-  // The boundary the data actually implies for a move-scaled rule.
-  const smallest = Math.min(...moves);
-  console.log(`  A move-scaled rule reproduces all three exactly for any full-reopen`);
-  console.log(`  distance of ${smallest.toFixed(0)} points or less, and misses above it. That bound --`);
-  console.log(`  not a single value -- is what the club's decisions establish.`);
+  // The boundary the data implies, SEARCHED rather than assumed. This used to
+  // print the smallest observed move as though it were the bound, which was
+  // only true while every decision shared one answer.
+  const fitting = [];
+  for (let d = 50; d <= 900; d += 1) {
+    const rule = RULES.moveScaled(d);
+    if (decisions.every((x) => Math.abs(rule.apply(x) - x.reliabilityChosen) < 0.005)) fitting.push(d);
+  }
+  if (fitting.length) {
+    console.log(`  A move-scaled rule reproduces all of them for a full-reopen distance`);
+    console.log(`  between ${fitting[0]} and ${fitting[fitting.length - 1]} points. That range -- not a single value --`);
+    console.log(`  is what the club's decisions establish.`);
+  } else {
+    console.log(`  NO move-scaled distance reproduces all of them, because they were not`);
+    console.log(`  all answered the same way and this rule has one floor. Each decision`);
+    console.log(`  that sits at a different floor needs its own, which is a board choice`);
+    console.log(`  rather than something the data can settle.`);
+    decisions.forEach((d) => {
+      console.log(`    ${d.playerId}: moved ${Math.abs(d.ratingMove).toFixed(0)} and was answered ${pct(d.reliabilityChosen)}`);
+    });
+  }
+  console.log('');
+
+  // And how the rule actually in use fares, which is the question that matters
+  // now that one has been chosen.
+  console.log('THE RULE NOW IN USE');
+  console.log('');
+  const Reassessment = require('../assets/js/reassessment.js');
+  decisions.forEach((d) => {
+    const got = Reassessment.recommendReliability({
+      currentReliability: d.reliabilityBefore, ratingMove: d.ratingMove,
+    });
+    const agrees = Math.abs(got.reliability - d.reliabilityChosen) < 0.005;
+    console.log(`  ${d.playerId.padEnd(7)} board ${pct(d.reliabilityChosen).padStart(6)}`
+      + `   rule ${pct(got.reliability).padStart(6)}   ${agrees ? 'agrees' : 'differs — recorded as a board override'}`);
+  });
   console.log('');
 
   // ---- Where the rules disagree ------------------------------------------

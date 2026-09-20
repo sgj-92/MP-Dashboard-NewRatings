@@ -14,12 +14,17 @@ const M = require('../scripts/model-reassessment-reliability.js');
 const rel = (e) => Engine.reliability(e);
 
 // The three decisions the club has actually made, read out of the live record
-// on 20 Sep 2026 with `scripts/model-reassessment-reliability.js`. Reproduce
-// with: node scripts/model-reassessment-reliability.js
+// with `scripts/model-reassessment-reliability.js`.
+//
+// Updated 20 Sep 2026: Shaun corrected Tom's and Fatch's anchors from their
+// comparator values to the Tier B baseline of 1400 and reopened both at 20%,
+// superseding the earlier 10%. Shaun's own 1 Jul decision is unchanged, so the
+// three no longer share one answer -- which is the point of several of the
+// tests below.
 const HISTORY = [
-  { playerId: 'Shaun', evidenceBefore: 5, reliabilityBefore: 5 / 15, ratingMove: 263.1972512972129, chose: 0.10 },
-  { playerId: 'Tom', evidenceBefore: 4, reliabilityBefore: 4 / 14, ratingMove: 249.08709925125277, chose: 0.10 },
-  { playerId: 'Fatch', evidenceBefore: 14, reliabilityBefore: 14 / 24, ratingMove: 222.2700480982246, chose: 0.10 },
+  { playerId: 'Shaun', evidenceBefore: 5, reliabilityBefore: 5 / 15, ratingMove: 263.2, chose: 0.10 },
+  { playerId: 'Tom', evidenceBefore: 4, reliabilityBefore: 4 / 14, ratingMove: 296.6, chose: 0.20 },
+  { playerId: 'Fatch', evidenceBefore: 14, reliabilityBefore: 14 / 24, ratingMove: 262.9, chose: 0.20 },
 ];
 
 // The constants above must stay derivable from the engine, not drift into
@@ -33,25 +38,49 @@ test('the recorded decisions are self-consistent with the engine', () => {
 
 const fits = (rule) => HISTORY.every((h) => Math.abs(rule.apply(h) - h.chose) < 0.005);
 
-test('the club has answered one situation three times, not three situations', () => {
-  const chosen = [...new Set(HISTORY.map((h) => h.chose))];
-  assert.strictEqual(chosen.length, 1, 'every decision chose the same reliability');
-  // Prior evidence varied by more than 3x and changed nothing.
-  assert.ok(Math.max(...HISTORY.map((h) => h.evidenceBefore))
-    >= 3 * Math.min(...HISTORY.map((h) => h.evidenceBefore)));
-  // And every move was most of a tier.
+test('every decision is the same situation, and no longer the same answer', () => {
+  // Every move was most of a tier: one situation.
   HISTORY.forEach((h) => {
     const share = Math.abs(h.ratingMove) / M.TIER_WIDTH;
-    assert.ok(share > 0.7 && share < 1.0, `${h.playerId} moved ${(share * 100).toFixed(0)}% of a tier`);
+    assert.ok(share > 0.7 && share <= 1.0, `${h.playerId} moved ${(share * 100).toFixed(0)}% of a tier`);
   });
+  // Prior evidence varied by more than 3x and changed nothing either way.
+  assert.ok(Math.max(...HISTORY.map((h) => h.evidenceBefore))
+    >= 3 * Math.min(...HISTORY.map((h) => h.evidenceBefore)));
+  // But two answers, not one — Shaun's 10% predates the 20% floor.
+  const chosen = [...new Set(HISTORY.map((h) => h.chose))].sort();
+  assert.deepStrictEqual(chosen, [0.10, 0.20]);
 });
 
-test('a flat reopen fits the record exactly', () => {
-  assert.ok(fits(M.RULES.flat));
+// While all three shared one answer, a flat reopen and a move-scaled rule at a
+// 10% floor both reproduced them exactly. Neither can now, because a rule with
+// one floor cannot produce two floors.
+test('no single-floor rule reproduces all three any more', () => {
+  assert.ok(!fits(M.RULES.flat), 'a flat 10% misses Tom and Fatch by 10 points');
+  for (let d = 50; d <= 900; d += 10) {
+    assert.ok(!fits(M.RULES.moveScaled(d)),
+      `a move-scaled rule at ${d} points should not fit all three`);
+  }
+});
+
+// Where they differ is a board decision, not something the data settles.
+test('the rule in use reproduces the two decisions taken under it', () => {
+  const R = require('../assets/js/reassessment.js');
+  const under = HISTORY.filter((h) => h.playerId !== 'Shaun');
+  under.forEach((h) => {
+    const got = R.recommendReliability({ currentReliability: h.reliabilityBefore, ratingMove: h.ratingMove });
+    assert.ok(Math.abs(got.reliability - h.chose) < 0.005,
+      `${h.playerId}: board ${h.chose}, rule ${got.reliability}`);
+  });
+  // And differs on the one that predates it, which is recorded as deliberate.
+  const shaun = HISTORY.find((h) => h.playerId === 'Shaun');
+  const got = R.recommendReliability({ currentReliability: shaun.reliabilityBefore, ratingMove: shaun.ratingMove });
+  assert.ok(Math.abs(got.reliability - 0.20) < 1e-9);
+  assert.notStrictEqual(shaun.chose, 0.20);
 });
 
 // This is the one candidate the evidence actually rules out. Fatch had 14
-// matches behind him and was reopened to the same 10% as Tom, who had 4.
+// matches behind him and was reopened to the same figure as Tom, who had 4.
 test('scaling the prior evidence cannot fit the record, and Fatch is why', () => {
   [0.25, 0.5, 0.75].forEach((f) => {
     const rule = M.RULES.proportional(f);
@@ -63,14 +92,22 @@ test('scaling the prior evidence cannot fit the record, and Fatch is why', () =>
   });
 });
 
-// What the record establishes is a BOUND, not a value.
-test('a move-scaled rule fits for any full-reopen distance at or below the smallest observed move', () => {
-  const smallest = Math.min(...HISTORY.map((h) => Math.abs(h.ratingMove)));
-  [100, 150, 200, Math.floor(smallest)].forEach((d) => {
-    assert.ok(fits(M.RULES.moveScaled(d)), `${d} points should reproduce all three`);
-  });
-  [Math.ceil(smallest) + 30, 300, 450].forEach((d) => {
-    assert.ok(!fits(M.RULES.moveScaled(d)), `${d} points should not reproduce all three`);
+// While all three shared one answer this established a BOUND on D. It no
+// longer establishes anything, and the script now searches for a fitting
+// distance rather than assuming the smallest move is one.
+test('the two decisions taken at the same floor still bound a move-scaled rule', () => {
+  const pair = HISTORY.filter((h) => h.chose === 0.20);
+  const fitsPair = (rule) => pair.every((h) => Math.abs(rule.apply(h) - h.chose) < 0.005);
+  // The shipped rule's floor IS 20%, so any distance at or below the smaller of
+  // the two moves reproduces both.
+  const smaller = Math.min(...pair.map((h) => Math.abs(h.ratingMove)));
+  assert.ok(smaller > 200, `expected near-tier moves, got ${smaller}`);
+  const R = require('../assets/js/reassessment.js');
+  [100, 150, 200, Math.floor(smaller)].forEach((d) => {
+    const rule = { apply: (h) => R.recommendReliability({
+      currentReliability: h.reliabilityBefore, ratingMove: h.ratingMove, params: { fullReopenPoints: d },
+    }).reliability };
+    assert.ok(fitsPair(rule), `${d} points should reproduce both`);
   });
 });
 

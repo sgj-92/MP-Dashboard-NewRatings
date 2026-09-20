@@ -29,12 +29,17 @@ const Engine = require('../assets/js/ratingEngine.js');
 const { PROJECT_ID } = require('./seed-beta.js');
 
 const BASELINE = 1400;            // standard Tier B baseline
-const RELIABILITY = 0.10;         // unchanged board decision
+// Shaun, 20 Sep 2026, changing the previously decided 10%: both reopen at 20%.
+// A re-anchor of this size is past the full-reopen distance, so this is also
+// exactly what the move-scaled rule recommends -- the board and the system now
+// agree, and the record shows that rather than an override.
+const RELIABILITY = 0.20;
 const BOARD = 'Shaun (board decision, 20 Sep 2026)';
 const REASON = 'Board correction: re-anchored to the standard Tier B baseline of 1400. '
   + 'The previous comparator anchor rested on one individual B with a genuinely poor record, '
   + 'which distorted how far the promoted player sat from the rest of the tier. '
-  + 'Reliability unchanged at 10%.';
+  + 'Reliability reopened at 20%, superseding the earlier 10% decision and matching '
+  + 'the move-scaled recommendation for a re-anchor of this size.';
 
 const CORRECTIONS = [
   { playerId: 'Tom', effectiveDate: '2026-07-01' },
@@ -96,7 +101,7 @@ async function main() {
   console.log(`Tom / Fatch anchor correction — ${write ? 'WRITE' : 'PREVIEW (nothing will change)'}`);
   console.log(`  project: ${PROJECT_ID}`);
   console.log(`  new anchor for both: ${BASELINE} (standard Tier B baseline)`);
-  console.log(`  reliability: ${pc(RELIABILITY)}, unchanged`);
+  console.log(`  reliability: ${pc(RELIABILITY)} (Shaun, 20 Sep — supersedes the earlier 10%)`);
 
   const before = await read(backend);
   console.log(`  record: ${before.matches.length} matches · ${before.journey.length} journey events · ${before.players.length} players`);

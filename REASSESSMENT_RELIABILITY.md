@@ -32,41 +32,56 @@ substituted. How much of it carries across depends on how far the number moved.
 
 Three decisions, all of them in the record:
 
+> **Superseded 20 Sep 2026.** The analysis below was performed against the
+> record as it stood that morning, when Tom was anchored to Jords (1352.5) and
+> Fatch to Tom (1358.6), all three at 10%. Shaun then corrected both anchors to
+> the Tier B baseline of 1400 and reopened them at 20%. **The table and the
+> conclusions that follow have been re-derived against the corrected record.**
+> Reproduce with `node scripts/model-reassessment-reliability.js`.
+
 | Player | Date | Anchor move | Prior evidence | Prior reliability | Chose | Afterwards |
 |---|---|---|---|---|---|---|
-| Shaun | 2026-07-01 | 1136.8 → 1400.0 (**+263.2**, 88% of a tier) | 5 | 33.3% | **10%** | 16 matches, −25.8 |
-| Tom | 2026-07-01 | 1103.4 → 1352.5 (**+249.1**, 83% of a tier) | 4 | 28.6% | **10%** | 18 matches, −1.5 |
-| Fatch | 2026-08-01 | 1136.3 → 1358.6 (**+222.3**, 74% of a tier) | 14 | 58.3% | **10%** | 11 matches, −16.5 |
+| Shaun | 2026-07-01 | 1136.8 → 1400.0 (**+263.2**, 88% of a tier) | 5 | 33.3% | **10%** | 16 matches, −27.0 |
+| Tom | 2026-07-01 | 1103.4 → 1400.0 (**+296.6**, 99% of a tier) | 4 | 28.6% | **20%** | 18 matches, −12.2 |
+| Fatch | 2026-08-01 | 1137.1 → 1400.0 (**+262.9**, 88% of a tier) | 14 | 58.3% | **20%** | 11 matches, −22.1 |
 
 **Every anchor proved slightly too high**, and the record pulled each of them
 back down. That is the reopening working as intended: it is not a statement
 about the player's experience, it is how fast a board-chosen number is allowed
-to be corrected by results. At 10% reliability K is 37, near the maximum of 40.
+to be corrected by results. At 10% reliability K is 37 and at 20% it is 34,
+against a maximum of 40.
 
 ## What these three decisions can and cannot settle
 
-They are **one situation sampled three times**: a near-whole-tier anchor move,
-answered identically. Prior evidence ranged from 4 to 14 — more than threefold —
-and made no difference to the answer.
+They are all the same **situation** — a near-whole-tier anchor move — but they
+are no longer all the same **answer**: Shaun at 10%, Tom and Fatch at 20%.
+Prior evidence ranged from 4 to 14, more than threefold, and made no difference
+to either answer.
 
-So the record fixes **one point** of any candidate rule. It says nothing about
-the case the club has not yet met and certainly will: a settled player whose
-rating the board nudges by 30 points.
+That difference is a board decision, not a property of the data. It means **no
+single rule with one floor reproduces all three**, and the fit table below says
+so. What the record still cannot speak to is the case the club has not yet met
+and certainly will: a settled player whose rating the board nudges by 30 points.
 
 ## Candidate rules
 
-| Rule | Shaun | Tom | Fatch | Fit |
+| Rule | Shaun | Tom | Fatch | Worst miss |
 |---|---|---|---|---|
-| Flat reopen — always 10% | 10.0% | 10.0% | 10.0% | **exact** |
-| Keep 25% of prior evidence | 11.1% | 9.1% | 25.9% | misses by 15.9 pts |
-| Keep 50% of prior evidence | 20.0% | 16.7% | 41.2% | misses by 31.2 pts |
-| Move-scaled, full reopen at ≤222 points | 10.0% | 10.0% | 10.0% | **exact** |
-| Move-scaled, full reopen at 300 points | 12.9% | 13.2% | 22.5% | misses by 12.5 pts |
+| Flat reopen — always 10% | 10.0% | 10.0% | 10.0% | 10.0 pts |
+| Keep 25% of prior evidence | 11.1% | 9.1% | 25.9% | 10.9 pts |
+| Keep 50% of prior evidence | 20.0% | 16.7% | 41.2% | 21.2 pts |
+| Move-scaled (10% floor), ≤222 points | 10.0% | 10.0% | 10.0% | 10.0 pts |
+| Move-scaled (10% floor), 300 points | 12.9% | 10.2% | 16.0% | 9.8 pts |
+| **The rule in use** — move-scaled, D = 150, **20% floor** | 20.0% | **20.0%** | **20.0%** | Shaun only |
 
 **Proportional discounting is ruled out, and Fatch is why.** He carried 14
 matches into his reassessment — three and a half times Tom's 4 — and the board
-gave him exactly the same 10%. Any rule that scales prior evidence must give him
-materially more than Tom. The board did not.
+gave him exactly the same answer. Any rule that scales prior evidence must give
+him materially more than Tom. The board did not.
+
+**The rule now in use reproduces Tom and Fatch exactly** and differs only on
+Shaun, whose 10% predates the 20% floor and is recorded as a board decision.
+That divergence was already deliberate and is unchanged by this correction.
 
 **Move-scaled rule.** Retain prior reliability in proportion to how much of the
 old rating survived:
@@ -80,9 +95,11 @@ The `min` matters: reassessing a rating can only ever add doubt, so it must
 never raise a player's reliability — which the unclamped form does for anyone
 already below 10%.
 
-**The record bounds `D` at 222 points or less. It does not choose a value.**
-Any D at or below the smallest observed move reproduces all three decisions
-exactly; above it, the fit degrades.
+**The record no longer bounds `D` at all.** While all three decisions shared one
+answer, any D at or below the smallest observed move reproduced them exactly.
+Now that two sit at a different floor from the third, no single-floor
+move-scaled distance fits all three — the script searches for one and reports
+that none exists. `D = 150` was chosen on the reasoning below, not on a fit.
 
 ## Where the two surviving rules disagree
 
@@ -128,12 +145,14 @@ Implemented as `Reassessment.recommendReliability` (`move-scaled-v1`). The
 `min` is load-bearing: without it a player already below 20% would be *raised*
 to the floor by a decision that only added doubt.
 
-**The floor is deliberately less aggressive than the club's own history.** Shaun,
-Tom and Fatch were each reopened to **10%** by board decision; all three were
-re-anchors past the full-reopen distance, so the rule now recommends **20%** for
-those same inputs. Those remain recorded board decisions and are not restated.
-The board can still override to 10% — that is what override is for. Anyone
-re-running this validation will see the mismatch; it is intended.
+**How it sits against the club's own history, as corrected on 20 Sep.** Tom and
+Fatch were re-anchored to 1400 and reopened at **20%** — which is exactly what
+this rule recommends for a move that size, so the board and the system now
+agree and the record shows agreement rather than an override. Shaun's **10%**
+predates the floor and stands as a recorded board decision; the rule would
+recommend 20% for the same inputs. The board can still override downward — that
+is what override is for. Anyone re-running the validation will see that one
+divergence; it is intended.
 
 What it produces:
 
@@ -154,15 +173,21 @@ no reliability recommendation to make.
 
 ## Recommendation as originally put to Shaun
 
-**Adopt the move-scaled rule with D = 150 points (half a tier).** It reproduces
-all three decisions exactly, so it changes nothing the board has already done;
-it keeps a settled player's record when the board merely corrects their number;
-and it reopens fully — to the same 10% the club has always used — once a move is
-large enough that the old rating genuinely no longer supports the new one.
+*As put on 20 Sep, before the anchor correction — it read "reproduces all three
+decisions exactly", which was true of the record as it then stood.*
 
-`D = 150` sits inside the bound the record establishes (≤222) and is
-explainable in one sentence: *a move of half a tier or more is a different
-player, not a corrected number.*
+**Adopt the move-scaled rule with D = 150 points (half a tier).** It reproduced
+all three decisions as they then stood, so it changed nothing the board had
+already done;
+it keeps a settled player's record when the board merely corrects their number;
+and it reopens fully once a move is large enough that the old rating genuinely
+no longer supports the new one.
+
+`D = 150` is explainable in one sentence — *a move of half a tier or more is a
+different player, not a corrected number* — and it was chosen on that reasoning.
+It sat inside the bound the record established at the time; that bound has since
+dissolved, for the reason given above, and the choice rests on the argument
+rather than on a fit.
 
 Two things this recommendation is **not**: it is not a validated prediction —
 Brier score did not improve at any alpha in the earlier reassessment work, and
