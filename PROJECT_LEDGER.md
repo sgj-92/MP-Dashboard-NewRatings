@@ -275,6 +275,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Canonical tier ordering governs matchup labels and historical partnership display | Use tier strength `S > A > B > C`. Within each partnership, always display the higher-tier player first; preserve original order only when both players share the same tier. Between partnerships, display the stronger canonical partnership first; preserve original team orientation only when both partnerships have the same composition. Therefore never show `BA`, `BS`, etc.; canonical forms are `AB`, `SB`, etc. This is presentation/filter normalisation only: **do not rewrite stored match/team/player order**. |
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 
+| Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 ---
 
 ## 4. CURRENT TASK
@@ -794,6 +795,21 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (split-month League Table treatment)
+Shaun has now made the three emergency mid-month tier changes and approved the League Table treatment for any player who occupies two tiers within one month.
+
+Required behaviour:
+- classify each match by `tierAsOf(player, matchDate)`;
+- `matchDate < effectiveDate` = old tier; `matchDate >= effectiveDate` = new tier;
+- points/results stay in the tier where earned and never transfer;
+- a player may appear in two tier tables in one month, each with only that segment's P/W/L/D/GD/points;
+- `All together` stays one whole-month row and shows the transition such as `B → A`;
+- implement generically, not by hardcoding Rishi B→A, Ant Slice A→B or Jams C→B.
+
+Add regression coverage for transition directions, the effective-date boundary, isolated points, split rows and the single All-together transition row. No rating-engine changes.
+
+**Baton → CCode. This is approved and unblocked.**
 
 ### CCode — 20 Sep 2026 (reconciliation: the validation fix is confirmed in live use)
 
@@ -3250,19 +3266,13 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**All items are DONE (`352cd72`).** Monthly Review validation now updates as the
-board types: warnings and the `Review what will be recorded` button refresh on
-every keystroke, in place, without stealing focus.
-
-### Corrected — the previously queued item 7 was already complete
-
-The Tom/Fatch B-baseline correction is **not outstanding**. It was applied at
-**`4bbda90`** with anchors of **1400** and Reliability of **20%** — Shaun changed
-it from the earlier 10% — verified by replay-to-self (0 differences) and
-diagnostics (8/8). The queued text asking for it to be re-applied at 10% was
-leftover from the earlier list and contradicted the Decisions Log in the same
-commit. Re-running it would have overwritten a verified correction with a
-superseded figure.
-
-Nothing is queued for CCode and no question is open for Shaun. The rating-model
-backlog and match sharing in Section 5 remain parked and unauthorised.
+1. **Split-month League Table treatment — approved and unblocked.**
+2. Refactor tier-scoped monthly league aggregation to group by player + `tierAsOf(player, matchDate)`, not current/end-of-month tier.
+3. Before the effective date allocate to old tier; on/after it allocate to new tier.
+4. Keep each segment's P/W/L/D/GD/points isolated; do not transfer historical points/results.
+5. Permit one player row in each tier actually represented during that month.
+6. `All together` remains one whole-month row and shows the tier transition (`B → A`, etc.).
+7. Use Rishi B→A, Ant Slice A→B and Jams C→B as acceptance cases, not hardcoded exceptions.
+8. Add module/browser coverage for boundary-date allocation, split rows, isolated points and All-together display.
+9. Preserve Sequential-v1, rating history and stored match facts unchanged.
+10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
