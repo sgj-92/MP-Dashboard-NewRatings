@@ -115,7 +115,44 @@ Evidence rises by exactly one per match, so this is arithmetic:
 | 40% | 28.0 | 4 |
 | 55% | 23.5 | 0 |
 
-## Recommendation
+## DECIDED — Shaun, 20 Sep 2026
+
+**Move-scaled, `D = 150` points, with a `20%` floor.** Flat reset is rejected.
+
+```
+reliability = min( reliability_before,
+                   0.20 + (reliability_before − 0.20) × max(0, 1 − |Δrating| / 150) )
+```
+
+Implemented as `Reassessment.recommendReliability` (`move-scaled-v1`). The
+`min` is load-bearing: without it a player already below 20% would be *raised*
+to the floor by a decision that only added doubt.
+
+**The floor is deliberately less aggressive than the club's own history.** Shaun,
+Tom and Fatch were each reopened to **10%** by board decision; all three were
+re-anchors past the full-reopen distance, so the rule now recommends **20%** for
+those same inputs. Those remain recorded board decisions and are not restated.
+The board can still override to 10% — that is what override is for. Anyone
+re-running this validation will see the mismatch; it is intended.
+
+What it produces:
+
+| Prior evidence | Prior reliability | Re-anchor | Recommends | K |
+|---|---|---|---|---|
+| 20 matches | 66.7% | 30 pts | **57.3%** | 22.8 |
+| 20 matches | 66.7% | 90 pts | **38.7%** | 28.4 |
+| 20 matches | 66.7% | ≥150 pts | **20.0%** | 34.0 |
+| 4 matches | 28.6% | 30 pts | **26.9%** | 31.9 |
+| 1 match | 9.1% | 300 pts | **9.1%** (unchanged) | 37.3 |
+
+**A tier change alone still changes nothing.** `PROMOTION` / `DEMOTION` do not
+touch rating or reliability. The recommendation applies only when the board also
+re-anchors the rating; if they change tier and keep the current rating, there is
+no reliability recommendation to make.
+
+---
+
+## Recommendation as originally put to Shaun
 
 **Adopt the move-scaled rule with D = 150 points (half a tier).** It reproduces
 all three decisions exactly, so it changes nothing the board has already done;
@@ -132,16 +169,10 @@ Brier score did not improve at any alpha in the earlier reassessment work, and
 this rests on three decisions — and it is not a decision. The board's authority
 to override, with attribution and reason, stays exactly as it is.
 
-## What to decide, and what to do next
+## What is left
 
-1. **Shaun/CGPT:** flat or move-scaled? If move-scaled, is `D = 150`
-   acceptable, or should a move have to be larger before the record is
-   discarded?
-2. Whichever is chosen, **record both numbers** on the event — the system
-   recommendation and the board's final choice — so the next validation has
-   more than three points to work from. That is worth doing even before a rule
-   ships: a recommendation can be computed and stored silently while the board
-   goes on deciding by hand.
-
-Until one is chosen, the existing manual reliability control remains the only
-mechanism, and 10% remains what the board has always used.
+1. **Done:** the rule, as decided above.
+2. **Still to build:** the Use-recommendation / Override UX, with attribution
+   and reason, storing **both** the system recommendation and the board's final
+   choice on the event. Until that lands, the next validation still has only
+   three points to work from.

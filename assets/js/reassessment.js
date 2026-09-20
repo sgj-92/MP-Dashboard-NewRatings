@@ -21,6 +21,69 @@
 
   const RECOMMENDATION_METHOD_VERSION = 't2-quartile-v1';
 
+  // ---------- Recommended Reliability ----------
+  // Approved by Shaun, 20 Sep 2026, after the modelling in
+  // REASSESSMENT_RELIABILITY.md. Move-scaled, not a flat reset:
+  //
+  //   reliability = max( floor, prior scaled by how much of the old rating
+  //                             survived the board's new anchor )
+  //
+  // The reasoning it encodes: a player's matches are evidence for the rating
+  // they produced, not for a different number the board substituted. How much
+  // of that evidence carries across depends on how far the number moved. A
+  // 30-point correction leaves the record largely intact; a re-anchor of half a
+  // tier or more does not.
+  //
+  // NOT a fit to the club's own past decisions, deliberately. Shaun, Tom and
+  // Fatch were each reopened to 10% by board decision; this floor is 20%, so
+  // the same three inputs would now be RECOMMENDED 20%. Those remain recorded
+  // board decisions and are not restated by this rule -- and the board can
+  // still override to 10%, which is what override is for.
+  const RELIABILITY_RULE = {
+    version: 'move-scaled-v1',
+    // At or beyond this much rating movement, the recommendation bottoms out.
+    fullReopenPoints: 150,
+    // The lowest reliability the SYSTEM will recommend. The board may go lower.
+    floor: 0.20,
+  };
+
+  // `ratingMove` is the anchor the board is actually considering minus the
+  // player's current rating -- so the answer follows whatever is on the table,
+  // not only the rating this module recommends.
+  function recommendReliability({ currentReliability, ratingMove, params }) {
+    const cfg = { ...RELIABILITY_RULE, ...(params || {}) };
+    if (typeof currentReliability !== 'number' || typeof ratingMove !== 'number') return null;
+
+    const move = Math.abs(ratingMove);
+    const survived = Math.max(0, 1 - move / cfg.fullReopenPoints);
+    const scaled = cfg.floor + (currentReliability - cfg.floor) * survived;
+
+    // Reassessing a rating can only ever add doubt. A player already below the
+    // floor keeps their own reliability rather than being handed the floor as
+    // an increase by a decision that told us less, not more.
+    const reliability = Math.min(scaled, currentReliability);
+
+    return {
+      rule: cfg.version,
+      fullReopenPoints: cfg.fullReopenPoints,
+      floor: cfg.floor,
+      ratingMove,
+      retainedFraction: survived,
+      reliability,
+      atFloor: survived === 0 && currentReliability > cfg.floor,
+      reason: survived === 0
+        ? (currentReliability <= cfg.floor
+          ? `The rating moves ${move.toFixed(0)} points, but ${pctText(currentReliability)} is already at or below the `
+            + `${pctText(cfg.floor)} floor, so it is left where it is.`
+          : `The rating moves ${move.toFixed(0)} points, at or beyond the ${cfg.fullReopenPoints} that reopens it `
+            + `fully, so the previous record no longer supports it. Reopened to the ${pctText(cfg.floor)} floor.`)
+        : `The rating moves ${move.toFixed(0)} points of the ${cfg.fullReopenPoints} that would reopen it fully, `
+          + `so ${(survived * 100).toFixed(0)}% of the previous ${pctText(currentReliability)} is kept.`,
+    };
+  }
+
+  function pctText(r) { return (r * 100).toFixed(0) + '%'; }
+
   const DEFAULTS = {
     // "Established" is a PARAMETER, not a constant. Experiment 13 used 8;
     // Experiments 13B and 13C used 5. 5 is the one the historical validation
@@ -112,12 +175,17 @@
       establishedTo: b.toPoolSize,
       alpha: cfg.alpha,
       bestPerformingAlpha: BEST_PERFORMING_ALPHA[eventType] ?? null,
-      // No validated method exists for recommending a Reliability change on a
-      // tier move, so none is offered. An override remains available to the board.
+      // Filled in below once the recommended rating -- and therefore the size
+      // of the move -- is known. A tier move on its own never touches
+      // reliability; only re-anchoring the rating does.
       recommendationReliability: null,
     };
 
     if (b.fromPoolSize < cfg.minPoolSize || b.toPoolSize < cfg.minPoolSize) {
+      // No recommended rating means no recommended move, and a reliability
+      // recommendation with no move behind it would be a number with nothing
+      // holding it up. The board's own anchor can still be priced, by calling
+      // recommendReliability with it.
       return {
         ...base,
         recommended: false,
@@ -133,6 +201,12 @@
     const raw = cfg.alpha * (b.t2 - current.rating);
     const delta = direction === 'promotion' ? Math.max(0, raw) : Math.min(0, raw);
 
+    const reliability = recommendReliability({
+      currentReliability: base.currentReliability,
+      ratingMove: delta,
+      params: params && params.reliability,
+    });
+
     return {
       ...base,
       recommended: true,
@@ -141,6 +215,8 @@
       toQuartile: b.toQuartile,
       recommendationRating: current.rating + delta,
       ratingDelta: delta,
+      recommendationReliability: reliability ? reliability.reliability : null,
+      reliabilityRecommendation: reliability,
       reason: delta === 0
         ? `Already beyond the ${fromTier}/${toTier} boundary (${b.t2.toFixed(1)}). No rating change recommended.`
         : `Moves ${(cfg.alpha * 100).toFixed(0)}% of the way toward the ${fromTier}/${toTier} boundary of ${b.t2.toFixed(1)}.`,
@@ -154,6 +230,7 @@
 
   return {
     RECOMMENDATION_METHOD_VERSION, DEFAULTS, BEST_PERFORMING_ALPHA,
+    RELIABILITY_RULE, recommendReliability,
     quantile, tierBoundaryT2, getRecommendation, directionFor,
   };
 });
