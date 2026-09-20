@@ -1,6 +1,6 @@
 # Review screenshots
 
-Captured from the **live beta record** as it stood on 2026-09-19, by `scripts/screenshots.js`.
+Captured from the **live beta record** as it stood on 2026-09-20, by `scripts/screenshots.js`.
 Review aids for CGPT and Shaun, not release documentation. Regenerate rather than edit.
 
 Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,
