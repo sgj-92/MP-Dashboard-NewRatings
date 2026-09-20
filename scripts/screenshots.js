@@ -216,6 +216,9 @@ async function render(players, matches, journey, readAt) {
       // More sheet is closed by its own handler rather than left over the shot.
       const admin = document.querySelector('#shellMoreSheet .admin-item');
       if (admin) admin.click();
+      // Admin/Manage opens with every section collapsed, so open the one this
+      // shot is about -- the same tap a reviewer makes.
+      adminOpenSections.review = true;
       if (typeof renderManage === 'function') renderManage();
       // Open a real review and choose a tier move, which is what arms the
       // required rating question. Nothing is staged for writing: the confirm
@@ -229,14 +232,16 @@ async function render(players, matches, journey, readAt) {
     () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Rating — required/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
   await shot('08-admin-historical.png',
     () => {
-      reviewSubject = null; renderManage();
+      reviewSubject = null;
+      adminOpenSections = { historical: true };
+      renderManage();
       const p = document.getElementById('histPlayer'), d = document.getElementById('histDate');
       if (p && d) { p.value = 'Tom'; d.value = '2026-07-01'; histLoadContext(); }
     },
-    () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Historical club adjustment/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+    () => { const el = document.querySelector('[data-acc="historical"]'); if (el) el.scrollIntoView({ block: 'start' }); });
   await shot('09-admin-diagnostics.png',
-    () => { histReset(); renderManage(); return runBetaDiagnostics(); },
-    () => { const el = [...document.querySelectorAll('.section-heading')].find((e) => /Beta diagnostics/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+    () => { histReset(); adminOpenSections = { diagnostics: true }; renderManage(); return runBetaDiagnostics(); },
+    () => { const el = document.querySelector('[data-acc="diagnostics"]'); if (el) el.scrollIntoView({ block: 'start' }); });
   // Games is a tab inside the Play section, not a section of its own, so it is
   // reached through its legacy tab button. Staging a removal PLANS the replay
   // and shows the consequence; it is never confirmed, and the stubbed

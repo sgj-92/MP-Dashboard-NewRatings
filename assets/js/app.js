@@ -1631,7 +1631,15 @@ document.querySelectorAll('#tabrow .tab-btn').forEach(b=>{
 
 // Re-render whichever tab is currently on screen. Power Rankings and Win/Loss
 // share render(); everything else has its own render function.
+//
+// Arriving at Admin/Manage collapses every section. That is on ENTERING the
+// screen, not on every render: renderManage() runs again on each toggle, each
+// staged decision and each saved setting, and resetting there would slam a
+// section shut the moment it was opened.
+let lastRenderedTab = null;
 function renderActiveTab(){
+  if(activeTab === 'manage' && lastRenderedTab !== 'manage') resetAdminSections();
+  lastRenderedTab = activeTab;
   if(activeTab === 'callouts') renderCallouts();
   else if(activeTab === 'players') renderPlayersTab();
   else if(activeTab === 'findgame') renderFindGame();
@@ -3969,7 +3977,8 @@ async function histCommit(){
 }
 
 function buildHistoricalAdjustmentHtml(){
-  let html = `<div class="section-heading">🕰️ Historical club adjustment</div>`;
+  // The accordion header names this section; repeating it here said it twice.
+  let html = '';
   if(!V3_STATE.loaded){
     return html + `<div class="section-sub" style="color:var(--red);">Unavailable — the record could not be read.</div>`;
   }
@@ -4186,7 +4195,7 @@ function buildRecordHealthHtml(){
 }
 
 function buildDiagnosticsSectionHtml(){
-  let html = `<div class="section-heading">🩺 Beta diagnostics</div>`;
+  let html = '';
   html += buildRecordHealthHtml();
   html += `<div class="section-sub">Reads the three collections straight from the database and checks whether the record still hangs together — every rating is the end of a recorded chain, and nothing else in the app would notice if one had a gap. Read-only, and run on demand rather than at page load, because it reads everything.</div>`;
   html += `<div class="fg-controls"><div class="fg-row">
@@ -4394,7 +4403,7 @@ function reviewRecommendation(subject, fromTier, toTier, eventType){
 }
 
 function buildReviewSectionHtml(){
-  let html = `<div class="section-heading">⚖️ Admin monthly review</div>`;
+  let html = '';
   if(!V3_STATE.loaded){
     return html + `<div class="section-sub" style="color:var(--red);">Unavailable — ${String(V3_STATE.error || 'v3 state is not loaded.')} Nothing can be recorded until the record can be read.</div>`;
   }
@@ -4487,7 +4496,7 @@ function buildReviewPanelHtml(name){
   const provisional = s.classificationStatus === 'PROVISIONAL';
   html += opt('ACCEPT_RECOMMENDATION', 'Accept the statistical recommendation', canAccept,
     canAccept ? `Moves to ${(Math.round(rec.recommendationRating*10)/10).toFixed(1)}` : 'No recommendation is available');
-  html += opt('CLUB_OVERRIDE', 'Club override', true, 'The board sets the rating and/or reliability itself');
+  html += opt('CLUB_OVERRIDE', 'Club override', true, 'The board sets the rating itself');
   html += opt('KEEP_CURRENT_RATING', 'Keep the current rating', true, `Recorded as a decision, not an omission — stays at ${(Math.round(s.rating*10)/10).toFixed(1)}`);
   html += opt('CORRECT_INITIAL_CLASSIFICATION', 'Correct the initial classification', provisional,
     provisional ? 'The initial estimate was wrong — not a reward for development'
@@ -4738,6 +4747,26 @@ async function commitReviewDecision(){
   renderManage();
 }
 
+// Which admin sections are open right now. Deliberately NOT persisted: Shaun's
+// rule is that the screen opens collapsed every time, so arriving at
+// Admin/Manage always shows the same short list of what is available rather
+// than wherever the last session happened to leave it.
+let adminOpenSections = {};
+function resetAdminSections(){ adminOpenSections = {}; }
+
+// One component for every admin section. The whole header row is the tap
+// target -- a chevron-sized hit area on a phone is a miss waiting to happen.
+function adminSection(key, title, bodyHtml){
+  const open = !!adminOpenSections[key];
+  return `<div class="admin-acc${open ? ' is-open' : ''}" data-acc="${key}">
+    <button type="button" class="admin-acc-head" data-acc-toggle="${key}" aria-expanded="${open}">
+      <span class="admin-acc-title">${title}</span>
+      <span class="admin-acc-chev" aria-hidden="true">▾</span>
+    </button>
+    ${open ? `<div class="admin-acc-body">${bodyHtml}</div>` : ''}
+  </div>`;
+}
+
 function renderManage(){
   const box = document.getElementById('manageView');
   if(!isUnlocked){
@@ -4747,9 +4776,9 @@ function renderManage(){
   }
   let html = '';
 
-  html += `<div class="section-heading">🔮 Predict a matchup</div>`;
-  html += `<div class="section-sub">Pick up to two names per side and see what the current ratings expect — no game needs to exist yet. Leave a second name blank for singles.</div>`;
-  html += `<div class="fg-controls">
+  html += adminSection('predict', 'Predict a matchup',
+    `<div class="section-sub">Pick up to two names per side and see what the current ratings expect — no game needs to exist yet. Leave a second name blank for singles.</div>`
+    + `<div class="fg-controls">
     <div class="fg-row"><label class="fg-label">Team A</label>
       <input id="predA1" list="playerNamesList" class="fg-select" placeholder="Player name" style="margin-bottom:6px;" />
       <input id="predA2" list="playerNamesList" class="fg-select" placeholder="Partner (optional)" />
@@ -4759,12 +4788,13 @@ function renderManage(){
       <input id="predB2" list="playerNamesList" class="fg-select" placeholder="Partner (optional)" />
     </div>
     <div id="predResult"></div>
-  </div>`;
+  </div>`);
 
-  html += `<div class="section-heading">🏷️ Player tags</div>`;
-  html += `<div class="section-sub">Toggle who's currently active — inactive players are skipped by every suggestion engine but keep their full history. You can also add someone who hasn't played yet.</div>`;
-  html += `<div class="fg-controls">
-    <div class="fg-row"><label class="fg-label">Add a new player</label>
+  html += adminSection('players', 'Player tags',
+    `<div class="section-sub">Toggle who's currently active — inactive players are skipped by every suggestion engine but keep their full history. You can also add someone who hasn't played yet.</div>`
+    + `<div class="section-heading" style="margin-top:0;">Add a new player</div>`
+    + `<div class="fg-controls">
+    <div class="fg-row">
       <input id="npName" class="fg-select" placeholder="Name" style="margin-bottom:6px;" />
       <select id="npTier" class="fg-select">
         <option value="S">Tier S</option><option value="A">Tier A</option>
@@ -4773,54 +4803,71 @@ function renderManage(){
     </div>
     <div class="fg-row"><button class="preset-btn" id="npAdd">+ Add player</button></div>
     <div id="npMessage" class="section-sub"></div>
-  </div>`;
+  </div>`
+    + `<div class="section-heading">Existing players</div>`
+    + `<div class="section-sub" style="font-size:10.5px;">Tap a player to change their tier, the tier they started at, or whether they are active.</div>`
+    + `<div class="fg-controls" style="padding-top:2px; padding-bottom:2px;"><div id="playerTagsList"></div></div>`);
 
-  html += `<div id="playerTagsList"></div>`;
-
-  html += `<div class="section-heading">👁️ Visible to everyone</div>`;
-  html += `<div class="section-sub">Switch off anything you'd rather keep admin-only. You always see everything; these toggles only affect people who haven't unlocked. Matchmaking suggestions are hidden by default since they'd otherwise show everyone's ideal opponents to the whole group.</div>`;
-  html += `<div class="fg-controls">` + Object.keys(VISIBILITY_DEFAULTS).map(key=>`
+  html += adminSection('visibility', 'Visible to everyone',
+    `<div class="section-sub">Switch off anything you'd rather keep admin-only. You always see everything; these toggles only affect people who haven't unlocked. Matchmaking suggestions are hidden by default since they'd otherwise show everyone's ideal opponents to the whole group.</div>`
+    + `<div class="fg-controls">` + Object.keys(VISIBILITY_DEFAULTS).map(key=>`
     <div class="alpha-row">
       <div class="alpha-name" style="font-size:13px;">${VISIBILITY_LABELS[key]}</div>
       <button class="preset-btn vis-toggle ${visibilityState[key]!==false?'active':''}" data-vis="${key}" style="width:100px;">${visibilityState[key]!==false?'Visible':'Admin only'}</button>
-    </div>`).join('') + `<div id="visMessage" class="section-sub"></div></div>`;
+    </div>`).join('') + `<div id="visMessage" class="section-sub"></div></div>`);
 
-  html += buildReviewSectionHtml();
-  html += buildHistoricalAdjustmentHtml();
-  html += buildDiagnosticsSectionHtml();
+  html += adminSection('review', 'Admin monthly review', buildReviewSectionHtml());
+  html += adminSection('historical', 'Historical club adjustment', buildHistoricalAdjustmentHtml());
+  html += adminSection('diagnostics', 'Beta diagnostics', buildDiagnosticsSectionHtml());
 
-  html += `<div class="section-heading">🔑 Admin lock</div>`;
-  html += `<div class="fg-controls">
-    <div class="fg-row"><button class="preset-btn" id="lockNowBtn" style="width:100%;">🔒 Lock admin area</button></div>
-  </div>`;
+  html += adminSection('lock', 'Admin lock',
+    `<div class="fg-controls">
+    <div class="fg-row"><button class="preset-btn" id="lockNowBtn" style="width:100%;">Lock admin area</button></div>
+  </div>`);
 
-  html += `<div class="section-heading">🔑 Your password</div>`;
-  html += `<div class="section-sub">${ownerPasswordHash ? 'Change your own password. This never touches the board password.' : 'Not set yet — this shouldn\'t normally happen once one exists, but you can set it here if needed.'}</div>`;
-  html += `<div class="fg-controls">
+  html += adminSection('ownerpw', 'Your password',
+    `<div class="section-sub">${ownerPasswordHash ? 'Change your own password. This never touches the board password.' : 'Not set yet — this shouldn\'t normally happen once one exists, but you can set it here if needed.'}</div>`
+    + `<div class="fg-controls">
     <div class="fg-row"><input id="cpOwnerCurrent" type="password" class="fg-select" placeholder="${ownerPasswordHash ? 'Current password' : '(leave blank — not set yet)'}" style="margin-bottom:6px;" /></div>
     <div class="fg-row"><input id="cpOwnerNew" type="password" class="fg-select" placeholder="New password" /></div>
     <div class="fg-row"><button class="preset-btn" id="cpOwnerSubmit">Update your password</button></div>
     <div id="cpOwnerMessage" class="section-sub"></div>
-  </div>`;
+  </div>`);
 
-  html += `<div class="section-heading">🔑 Board password</div>`;
-  html += `<div class="section-sub">${boardPasswordHash ? 'A second, independent password — whoever knows it can change it themselves without touching yours.' : 'Not set up yet. Set one here to give the board their own password, separate from yours.'}</div>`;
-  html += `<div class="fg-controls">
+  html += adminSection('boardpw', 'Board password',
+    `<div class="section-sub">${boardPasswordHash ? 'A second, independent password — whoever knows it can change it themselves without touching yours.' : 'Not set up yet. Set one here to give the board their own password, separate from yours.'}</div>`
+    + `<div class="fg-controls">
     <div class="fg-row"><input id="cpBoardCurrent" type="password" class="fg-select" placeholder="${boardPasswordHash ? 'Current board password' : '(leave blank — not set yet)'}" style="margin-bottom:6px;" /></div>
     <div class="fg-row"><input id="cpBoardNew" type="password" class="fg-select" placeholder="New board password" /></div>
     <div class="fg-row"><button class="preset-btn" id="cpBoardSubmit">${boardPasswordHash ? 'Update board password' : 'Set board password'}</button></div>
     <div id="cpBoardMessage" class="section-sub"></div>
-  </div>`;
+  </div>`);
 
-  html += `<div class="section-heading">📤 Export data</div>`;
-  html += `<div class="section-sub">Downloads a .csv file to your device — opens straight in Excel, Google Sheets, or Numbers.</div>`;
-  html += `<div class="fg-controls">
+  html += adminSection('export', 'Export data',
+    `<div class="section-sub">Downloads a .csv file to your device — opens straight in Excel, Google Sheets, or Numbers.</div>`
+    + `<div class="fg-controls">
     <div class="fg-row"><button class="preset-btn" id="exportMatchesBtn" style="width:100%;">Export all matches</button></div>
     <div class="fg-row"><button class="preset-btn" id="exportPlayersBtn" style="width:100%;">Export player stats</button></div>
     <div id="exportMessage" class="section-sub"></div>
-  </div>`;
+  </div>`);
 
   box.innerHTML = html;
+
+  // The whole header row toggles. Re-rendering rather than toggling a class
+  // keeps one source of truth for what is open, and the sections that build
+  // their own DOM (the review, the player list) are rebuilt with it.
+  box.querySelectorAll('[data-acc-toggle]').forEach(el=>{
+    el.onclick = ()=>{
+      const key = el.dataset.accToggle;
+      adminOpenSections[key] = !adminOpenSections[key];
+      renderManage();
+      // Keep the section the finger is on in view: collapsing something above
+      // it otherwise leaves the reader somewhere else entirely.
+      const head = box.querySelector(`[data-acc-toggle="${key}"]`);
+      if(head && adminOpenSections[key]) head.scrollIntoView({ block:'nearest' });
+    };
+  });
+
   wireReviewSection();
   wireHistoricalAdjustment();
 
@@ -4874,11 +4921,17 @@ function renderManage(){
       <div style="margin-top:6px; font-size:10.5px; color:var(--text-dim);">The score the engine would expect each side to reach: 0.80 × share of games won + 0.20 × the result. Based on today's ratings, because this game hasn't been played — nothing here is recorded.</div>
     </div>`;
   }
+  // Every wiring below has to tolerate its section being collapsed: the
+  // markup for a closed accordion is not in the DOM at all. Before the
+  // accordion every one of these elements always existed, so none of them
+  // checked.
+  const on = (id, fn) => { const el = document.getElementById(id); if(el) fn(el); };
+
   ['predA1','predA2','predB1','predB2'].forEach(id=>{
-    document.getElementById(id).addEventListener('input', renderPrediction);
+    on(id, (el)=> el.addEventListener('input', renderPrediction));
   });
 
-  document.getElementById('npAdd').onclick = async ()=>{
+  on('npAdd', (btn)=>{ btn.onclick = async ()=>{
     const name = document.getElementById('npName').value.trim();
     const tier = document.getElementById('npTier').value;
     const msg = document.getElementById('npMessage');
@@ -4891,7 +4944,7 @@ function renderManage(){
     if(!ok){ msg.textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage. Open the actual published/shared claude.ai link, not a downloaded file.`;; return; }
     msg.textContent = `${name} added to Tier ${tier}. They'll appear once they've played a game.`;
     document.getElementById('npName').value = '';
-  };
+  }; });
 
   document.querySelectorAll('.vis-toggle').forEach(btn=>{
     btn.onclick = async ()=>{
@@ -4910,15 +4963,15 @@ function renderManage(){
     };
   });
 
-  document.getElementById('lockNowBtn').onclick = async ()=>{
+  on('lockNowBtn', (btn)=>{ btn.onclick = async ()=>{
     isUnlocked = false;
     adminRole = null;
     await saveMyUnlocked(false);
     applyTabVisibility();
     renderManage();
-  };
+  }; });
 
-  document.getElementById('cpOwnerSubmit').onclick = async ()=>{
+  on('cpOwnerSubmit', (btn)=>{ btn.onclick = async ()=>{
     const cur = document.getElementById('cpOwnerCurrent').value;
     const next = document.getElementById('cpOwnerNew').value;
     const msg = document.getElementById('cpOwnerMessage');
@@ -4929,9 +4982,9 @@ function renderManage(){
     ownerPasswordHash = simpleHash(next);
     msg.textContent = 'Your password has been updated.';
     document.getElementById('cpOwnerCurrent').value=''; document.getElementById('cpOwnerNew').value='';
-  };
+  }; });
 
-  document.getElementById('cpBoardSubmit').onclick = async ()=>{
+  on('cpBoardSubmit', (btn)=>{ btn.onclick = async ()=>{
     const cur = document.getElementById('cpBoardCurrent').value;
     const next = document.getElementById('cpBoardNew').value;
     const msg = document.getElementById('cpBoardMessage');
@@ -4942,18 +4995,20 @@ function renderManage(){
     boardPasswordHash = simpleHash(next);
     msg.textContent = 'Board password has been updated.';
     document.getElementById('cpBoardCurrent').value=''; document.getElementById('cpBoardNew').value='';
-  };
+  }; });
 
-  document.getElementById('exportMatchesBtn').onclick = ()=>{
+  on('exportMatchesBtn', (btn)=>{ btn.onclick = ()=>{
     try { exportMatchesCsv(); document.getElementById('exportMessage').textContent = 'Downloaded.'; }
     catch(e){ document.getElementById('exportMessage').textContent = 'Export failed: ' + (e.message||e); }
-  };
-  document.getElementById('exportPlayersBtn').onclick = ()=>{
+  }; });
+  on('exportPlayersBtn', (btn)=>{ btn.onclick = ()=>{
     try { exportPlayersCsv(); document.getElementById('exportMessage').textContent = 'Downloaded.'; }
     catch(e){ document.getElementById('exportMessage').textContent = 'Export failed: ' + (e.message||e); }
-  };
+  }; });
 
-  renderPlayerTagsList();
+  // Only built when its section is open; everything else in Admin/Manage is
+  // plain markup, but the player list builds its own DOM.
+  if(document.getElementById('playerTagsList')) renderPlayerTagsList();
 }
 
 function csvEscape(val){
@@ -5204,24 +5259,54 @@ async function submitNewGame(){
   document.getElementById('agNewPlayerRow').style.display='none';
 }
 
+// Which player rows are expanded. Like the admin sections, this is not
+// persisted -- the list is meant to read as a roster, and it should look the
+// same every time it is opened.
+let openPlayerTags = {};
+
 function renderPlayerTagsList(){
   const box = document.getElementById('playerTagsList');
+  if(!box) return;
   const rows = [...PLAYERS].sort((a,b)=>a.name.localeCompare(b.name));
   box.innerHTML = rows.map(p=>{
     const startingTier = STARTING_TIER_MAP[p.name] || '';
+    const open = !!openPlayerTags[p.name];
+    // What the row says without being opened: what they are now, and where
+    // they started if that differs. Enough to find the one you came for.
+    const summary = `Tier ${p.tier}`
+      + (startingTier && startingTier !== p.tier ? ` · started at ${startingTier}` : '');
     return `
-    <div class="alpha-row" style="flex-wrap:wrap; row-gap:6px;">
-      <div class="alpha-name" style="flex-basis:100%;">${p.name}</div>
-      <select class="fg-select ptag-tier" data-name="${p.name}" style="width:80px;">
-        ${['S','A','B','C'].map(t=>`<option value="${t}" ${t===p.tier?'selected':''}>${t}</option>`).join('')}
-      </select>
-      <select class="fg-select ptag-starting" data-name="${p.name}" style="width:150px;" title="Only affects how their rating was seeded at their first match">
-        <option value="" ${startingTier===''?'selected':''}>Started: same as now</option>
-        ${['S','A','B','C'].map(t=>`<option value="${t}" ${t===startingTier?'selected':''}>Started at Tier ${t}</option>`).join('')}
-      </select>
-      <button class="preset-btn ptag-active ${p.active?'active':''}" data-name="${p.name}" style="width:80px;">${p.active?'Active':'Inactive'}</button>
+    <div class="ptag-row${open ? ' is-open' : ''}" data-row="${p.name}">
+      <button type="button" class="ptag-summary" data-ptag-toggle="${p.name}" aria-expanded="${open}">
+        <span style="min-width:0;">
+          <span class="ptag-name">${p.name}</span>
+          <span class="ptag-meta">${summary}</span>
+        </span>
+        <span class="ptag-right">
+          <span class="ptag-state${p.active ? ' is-active' : ''}">${p.active ? 'Active' : 'Inactive'}</span>
+          <span class="ptag-chev" aria-hidden="true">▾</span>
+        </span>
+      </button>
+      ${open ? `<div class="ptag-controls">
+        <select class="fg-select ptag-tier" data-name="${p.name}" aria-label="Current tier for ${p.name}">
+          ${['S','A','B','C'].map(t=>`<option value="${t}" ${t===p.tier?'selected':''}>Tier ${t}</option>`).join('')}
+        </select>
+        <button class="preset-btn ptag-active ${p.active?'active':''}" data-name="${p.name}">${p.active?'Active':'Inactive'}</button>
+        <select class="fg-select ptag-starting" data-name="${p.name}" title="Only affects how their rating was seeded at their first match" aria-label="Starting tier for ${p.name}">
+          <option value="" ${startingTier===''?'selected':''}>Started: same as now</option>
+          ${['S','A','B','C'].map(t=>`<option value="${t}" ${t===startingTier?'selected':''}>Started at Tier ${t}</option>`).join('')}
+        </select>
+      </div>` : ''}
     </div>
   `;}).join('');
+
+  box.querySelectorAll('[data-ptag-toggle]').forEach(el=>{
+    el.onclick = ()=>{
+      const n = el.dataset.ptagToggle;
+      openPlayerTags[n] = !openPlayerTags[n];
+      renderPlayerTagsList();
+    };
+  });
 
   box.querySelectorAll('.ptag-tier').forEach(sel=>{
     sel.addEventListener('change', async e=>{
@@ -6637,15 +6722,22 @@ Player C &amp; Player D"></textarea>
         || (matchFixPlan.change.match && matchFixPlan.change.match.id === m.id)));
     const isManaging = isUnlocked && (managingGameId === m.id || hasStagedFix);
 
+    // Manage sits on the submission line, not beside the matchup. On a narrow
+    // iPhone a button in the title row squeezed four names into a column and
+    // wrapped them; the submission line is short, already muted, and has room
+    // to spare on the right.
     html += `<div class="callout-card" style="${cardStyle}">
       <div class="game-card-head">
         <div class="game-card-clickable" data-gameid="${m.id}" style="cursor:pointer; min-width:0; flex:1;">
           <div class="cc-title">${titleText}</div>
-          <div class="cc-detail">${scoreText}${scoreBinding}${m.note?' · '+m.note:''}<br/>${metaLine}</div>
+          <div class="cc-detail">${scoreText}${scoreBinding}${m.note?' · '+m.note:''}</div>
+          <div class="cc-meta-row">
+            <div class="cc-meta">${metaLine}</div>
+            ${isUnlocked ? `<button class="game-manage-btn${isManaging ? ' open' : ''}" data-manage="${m.id}"
+              aria-expanded="${isManaging}" title="${isManaging ? 'Hide admin actions' : 'Correct or remove this game'}">${isManaging ? 'Close' : '··· Manage'}</button>` : ''}
+          </div>
           ${detailContent}
         </div>
-        ${isUnlocked ? `<button class="game-manage-btn${isManaging ? ' open' : ''}" data-manage="${m.id}"
-          aria-expanded="${isManaging}" title="${isManaging ? 'Hide admin actions' : 'Correct or remove this game'}">${isManaging ? 'Close' : '··· Manage'}</button>` : ''}
       </div>
       ${isManaging ? `<div class="game-manage-body">
         <div class="difficulty-row match-action-row">

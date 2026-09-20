@@ -674,6 +674,9 @@ test('the review asks for Reliability, and says what an override departed from',
       document.querySelector('#tabrow .tab-btn[data-tab="manage"]').click();
       activeTab = 'manage';
       reviewSubject = 'Ant Slice';
+      // Admin/Manage opens collapsed, so open the section first -- the same
+      // tap a person makes.
+      adminOpenSections.review = true;
       renderManage();
       document.querySelector('.review-tier[data-event="PROMOTION"]').click();
 
@@ -741,6 +744,180 @@ test('the review asks for Reliability, and says what an override departed from',
     assert.match(r.confirm, new RegExp(String(Math.round(r.recommended * 100))),
       'the confirmation must name the recommendation the board departed from');
     assert.strictEqual(r.writes, 0, 'staging writes nothing');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// ===================== ADMIN/MANAGE MOBILE REFINEMENT (20 Sep 2026) ========
+// A presentation refactor, so these check layout and interaction. The data
+// behaviour is covered elsewhere and must be untouched.
+
+test('Admin/Manage opens with every section collapsed, every time', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner';
+      const enter = () => {
+        activeTab = 'manage';
+        lastRenderedTab = null;          // as if arriving from another tab
+        renderActiveTab();
+      };
+      enter();
+      const heads = [...document.querySelectorAll('[data-acc-toggle]')];
+      const out = { sections: heads.length, openOnArrival: document.querySelectorAll('.admin-acc.is-open').length };
+
+      // Opening two leaves both open.
+      document.querySelector('[data-acc-toggle="players"]').click();
+      document.querySelector('[data-acc-toggle="export"]').click();
+      out.openedTwo = document.querySelectorAll('.admin-acc.is-open').length;
+      out.bodies = document.querySelectorAll('.admin-acc-body').length;
+
+      // Toggling one closed leaves the other alone.
+      document.querySelector('[data-acc-toggle="players"]').click();
+      out.afterClosingOne = [...document.querySelectorAll('.admin-acc.is-open')].map((el) => el.dataset.acc);
+
+      // Re-rendering in place (a save, a staged decision) must NOT collapse it.
+      renderManage();
+      out.afterRerender = [...document.querySelectorAll('.admin-acc.is-open')].map((el) => el.dataset.acc);
+
+      // Leaving and coming back does.
+      activeTab = 'games'; renderActiveTab();
+      enter();
+      out.afterReturning = document.querySelectorAll('.admin-acc.is-open').length;
+
+      out.emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(
+        [...document.querySelectorAll('.admin-acc-title')].map((e) => e.textContent).join(' '));
+      return out;
+    });
+
+    assert.ok(r.sections >= 8, `expected the admin sections, got ${r.sections}`);
+    assert.strictEqual(r.openOnArrival, 0, 'the screen opens collapsed');
+    assert.strictEqual(r.openedTwo, 2, 'multiple sections may be open at once');
+    assert.strictEqual(r.bodies, 2, 'a collapsed section renders no body at all');
+    assert.deepStrictEqual(r.afterClosingOne, ['export']);
+    assert.deepStrictEqual(r.afterRerender, ['export'],
+      're-rendering in place must not slam an open section shut');
+    assert.strictEqual(r.afterReturning, 0, 'returning to the screen collapses everything again');
+    assert.strictEqual(r.emoji, false, 'admin headings carry no emoji icons');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Collapsed sections are not in the DOM, so everything renderManage wires has
+// to tolerate its element being absent. Before the accordion they always
+// existed and nothing checked — this threw on the very first render.
+test('every Admin/Manage section can be opened and used without error', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner';
+      activeTab = 'manage'; lastRenderedTab = null; renderActiveTab();
+      const keys = [...document.querySelectorAll('[data-acc-toggle]')].map((el) => el.dataset.accToggle);
+      const opened = [];
+      keys.forEach((k) => {
+        document.querySelector(`[data-acc-toggle="${k}"]`).click();   // open
+        opened.push({ key: k, body: !!document.querySelector(`[data-acc="${k}"] .admin-acc-body`) });
+        document.querySelector(`[data-acc-toggle="${k}"]`).click();   // and closed again
+      });
+      return { keys, opened };
+    });
+    assert.ok(r.keys.length >= 8);
+    r.opened.forEach((o) => assert.strictEqual(o.body, true, `${o.key} did not open`));
+    assert.deepStrictEqual(app.pageErrors, [], 'opening a section must not throw');
+  } finally { await app.close(); }
+});
+
+test('Player tags reads as a record list and expands in place', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner';
+      activeTab = 'manage'; lastRenderedTab = null; renderActiveTab();
+      document.querySelector('[data-acc-toggle="players"]').click();
+
+      const rows = [...document.querySelectorAll('.ptag-row')];
+      const out = {
+        rows: rows.length,
+        players: PLAYERS.length,
+        controlsClosed: document.querySelectorAll('.ptag-controls').length,
+        firstName: rows[0].querySelector('.ptag-name').textContent,
+        firstMeta: rows[0].querySelector('.ptag-meta').textContent,
+        hasState: !!rows[0].querySelector('.ptag-state'),
+        // The maintenance list must not borrow the public serif player styling.
+        // "sans-serif" contains "serif", so match the actual serif families.
+        fontFamily: getComputedStyle(rows[0].querySelector('.ptag-name')).fontFamily,
+      };
+
+      const name = rows[0].dataset.row;
+      document.querySelector(`[data-ptag-toggle="${name}"]`).click();
+      out.openOne = document.querySelectorAll('.ptag-controls').length;
+      const open = document.querySelector(`[data-row="${name}"]`);
+      out.controls = {
+        tier: !!open.querySelector('.ptag-tier'),
+        starting: !!open.querySelector('.ptag-starting'),
+        active: !!open.querySelector('.ptag-active'),
+      };
+      // Nothing may clip at phone width.
+      out.clipped = [...open.querySelectorAll('.ptag-controls select')]
+        .filter((el) => el.scrollWidth > el.clientWidth + 1).length;
+
+      document.querySelector(`[data-ptag-toggle="${name}"]`).click();
+      out.closedAgain = document.querySelectorAll('.ptag-controls').length;
+      return out;
+    });
+
+    assert.strictEqual(r.rows, r.players, 'every player gets a row');
+    assert.strictEqual(r.controlsClosed, 0, 'rows start as summaries, not forms');
+    assert.ok(r.firstName.length > 0);
+    assert.match(r.firstMeta, /Tier [SABC]/, 'the summary says what they are');
+    assert.strictEqual(r.hasState, true, 'and whether they are active');
+    assert.doesNotMatch(r.fontFamily, /Georgia|Iowan|var\(--font-prestige\)/i,
+      `admin typography, not the public player-name serif: got ${r.fontFamily}`);
+    assert.match(r.fontFamily, /sans-serif|Helvetica|Arial/i);
+    assert.strictEqual(r.openOne, 1, 'tapping opens exactly one row, in place');
+    assert.deepStrictEqual(r.controls, { tier: true, starting: true, active: true });
+    assert.strictEqual(r.clipped, 0, 'no control may be cut off at phone width');
+    assert.strictEqual(r.closedAgain, 0);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a match card gives the matchup the full width and puts Manage on the submission line', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });   // iPhone SE
+    const r = await app.run(() => {
+      isUnlocked = true; adminRole = 'owner';
+      document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
+      gamesMonth = 'all'; selectedGamesPlayer = 'all';
+      renderGamesTab();
+      const cards = [...document.querySelectorAll('#gamesView .callout-card')].slice(0, 12);
+      return cards.map((c) => {
+        const title = c.querySelector('.cc-title');
+        const metaRow = c.querySelector('.cc-meta-row');
+        const manage = c.querySelector('.game-manage-btn');
+        const clickable = c.querySelector('.game-card-clickable');
+        return {
+          manageInMetaRow: !!(metaRow && metaRow.contains(manage)),
+          manageInTitleRow: !!(title && title.contains(manage)),
+          // The matchup gets the card's width: nothing sits beside it.
+          titleWidth: title ? Math.round(title.getBoundingClientRect().width) : 0,
+          cardWidth: clickable ? Math.round(clickable.getBoundingClientRect().width) : 0,
+          titleClipped: title ? title.scrollWidth > title.clientWidth + 1 : false,
+          manageRight: !!(manage && metaRow
+            && manage.getBoundingClientRect().right >= metaRow.getBoundingClientRect().right - 2),
+        };
+      });
+    });
+
+    assert.ok(r.length >= 5, `expected a feed, got ${r.length} cards`);
+    r.forEach((c, i) => {
+      assert.strictEqual(c.manageInMetaRow, true, `card ${i}: Manage is not on the submission line`);
+      assert.strictEqual(c.manageInTitleRow, false, `card ${i}: Manage is still in the matchup row`);
+      assert.strictEqual(c.titleWidth, c.cardWidth, `card ${i}: the matchup does not get the full width`);
+      assert.strictEqual(c.titleClipped, false, `card ${i}: the matchup is clipped`);
+      assert.strictEqual(c.manageRight, true, `card ${i}: Manage is not right-aligned`);
+    });
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
@@ -944,6 +1121,7 @@ test('an unavailable review action is disabled and says why', { skip }, async ()
       isUnlocked = true; currentUserName = 'Board';
       const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
       if (b) b.click();
+      adminOpenSections.review = true;
       reviewSubject = 'Rishi'; renderManage();
       document.querySelector('.review-tier').click();
 
@@ -1021,6 +1199,7 @@ test('the historical audit trail labels what is active and what was replaced', {
       isUnlocked = true; currentUserName = 'Board';
       const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
       if (b) b.click();
+      adminOpenSections.historical = true;
       renderManage();
       // A synthetic trail: one superseded promotion, one live promotion, and
       // the reassessment recorded with it.
@@ -1810,8 +1989,10 @@ test('the expanded Games card stays compact', { skip }, async () => {
     assert.match(r.visible, /RATING CHANGE, PER PLAYER/i);
     assert.strictEqual(r.hasDisclosure, true);
 
-    const lines = r.visible.split('\n').filter(Boolean);
-    assert.ok(lines.length <= 12, `the expanded card should stay short, got ${lines.length} lines:\n${r.visible}`);
+    // Trimmed: a line of indentation is not something the reader sees, and
+    // counting it made this brittle to any change in how the card nests.
+    const lines = r.visible.split('\n').map((l) => l.trim()).filter(Boolean);
+    assert.ok(lines.length <= 12, `the expanded card should stay short, got ${lines.length} lines:\n${lines.join('\n')}`);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
@@ -2148,8 +2329,10 @@ test('the expanded Games card stays compact', { skip }, async () => {
     assert.match(r.visible, /RATING CHANGE, PER PLAYER/i);
     assert.strictEqual(r.hasDisclosure, true);
 
-    const lines = r.visible.split('\n').filter(Boolean);
-    assert.ok(lines.length <= 12, `the expanded card should stay short, got ${lines.length} lines:\n${r.visible}`);
+    // Trimmed: a line of indentation is not something the reader sees, and
+    // counting it made this brittle to any change in how the card nests.
+    const lines = r.visible.split('\n').map((l) => l.trim()).filter(Boolean);
+    assert.ok(lines.length <= 12, `the expanded card should stay short, got ${lines.length} lines:\n${lines.join('\n')}`);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
