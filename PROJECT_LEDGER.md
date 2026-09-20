@@ -33,8 +33,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `9ac4285` |
-| Tests | **345 / 345 passing** (64 of them drive a real browser) |
+| Last verified implementation commit | `aef42a7` |
+| Tests | **369 / 369 passing** (66 of them drive a real browser) |
 | Firestore (live, re-read 20 Sep) | 156 matches · 664 journey events · 34 players |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -751,6 +751,90 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (NEXT 11 and 12 done; one instruction narrowed, deliberately)
+
+`Ledger CCode`. Took NEXT #11 (canonical tier order) then #12 (the approved
+reassessment Reliability rule). **369 / 369 tests**, 66 in a browser.
+Commits `f26fa3a` and `aef42a7`. Screenshots regenerated.
+
+#### NEXT 11 — canonical tier order (`f26fa3a`)
+
+Not only presentation polish. Two real defects were underneath it:
+
+- **`matchupKey` ordered the two sides by string comparison.** Alphabetically
+  `S` sorts *after* `A`, so `SS vs AA` was being labelled and filtered as
+  `AA vs AA`'s neighbour `AA vs SS` — the weaker partnership first, a label the
+  club would never write. Now compared by tier strength position by position,
+  which is exactly `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`.
+- **The filter list was sorted by match count.** The option someone reached for
+  last week moved as soon as more games were played. Now ordered by strength;
+  counts stay visible and decide nothing.
+
+`GameType.orderTeam` reads a partnership out stronger-first, keeping stored
+order when partners share a tier, without mutating the caller's array. Wired
+into `namesWithHistoricalTier`, which is every place a partnership is shown.
+
+**One edge case the live record actually contains:** a singles match makes a
+one-letter key (`A vs B`). A missing position ranks below every tier, so a lone
+player sorts after every pairing opening with their tier — arbitrary but fixed,
+and pinned, so the list cannot reshuffle later.
+
+**INSTRUCTION NARROWED, and Shaun should confirm.** The rule says *"between
+partnerships, display the stronger canonical partnership first"*. I applied that
+to the **matchup label** and **not** to the two sides of a match card, because
+on a card the side order is not free:
+
+- on a decided match the first side is **the side that won** (`X def Y`), so
+  swapping them turns a loss into a win;
+- on a draw the first side is **the side the score is written from** — the card
+  says so explicitly — so swapping them inverts the scoreline.
+
+Neither is presentation-only, and both contradict the standing rule that a loss
+must look like a loss. A browser test now proves the sides of a decided match
+are never swapped. **If Shaun did mean card sides too, say so and I will do it
+properly — it needs the `def` wording and the score binding to move with it.**
+
+#### NEXT 12 — Recommended Reliability (`aef42a7`)
+
+`reassessment.js` returned `recommendationReliability: null` on the grounds that
+no validated method existed. There is one now:
+
+```
+reliability = min( prior, 0.20 + (prior − 0.20) × max(0, 1 − |Δrating| / 150) )
+```
+
+The `min` is load-bearing: without it a player already below 20% is **raised**
+to the floor by a decision that only added doubt. Pinned by a property test
+sweeping evidence and move size.
+
+The recommendation follows **whatever anchor is on the table**, not only the
+rating this module recommends, so the board's own override can be priced too. A
+rating recommendation that cannot be made produces no reliability recommendation
+either — there would be no move behind it.
+
+**Recorded deliberately: the 20% floor does not reproduce the club's own
+history.** Shaun, Tom and Fatch were each reopened to **10%** by board decision,
+and all three were re-anchors past the full-reopen distance, so the rule now
+recommends **20%** for those same inputs. Those stay recorded board decisions;
+the board can still override to 10%. A test pins the divergence so a later
+reader does not mistake it for a regression.
+
+One existing test asserted the old "no reliability is fabricated" contract. It
+was **replaced, not deleted**, with the new one.
+
+#### Still open
+
+**NEXT #13 is the next task and is a bigger piece than the rule was:** the
+Use-recommendation / Override UX with attribution and reason, and storing
+**both** the system recommendation and the board's final choice on the event.
+That touches the event schema, so it deserves its own pass rather than being
+tacked onto this one. Until it lands, the next validation of the rule still has
+only three data points to work from.
+
+**Baton → Shaun** for the card-orientation confirmation above; otherwise NEXT
+#13 is mine and unblocked. Home visual acceptance from 19 Sep is still open with
+CGPT.
 
 ### CGPT — 20 Sep 2026 (20% reassessment floor approved)
 Shaun fixed the remaining move-scaled parameters: **D = 150 points** and
@@ -2762,13 +2846,15 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 8. Keep native Share / WhatsApp + Copy message as backlog follow-on work.
 9. Do not change Sequential-v1 or stored ratings/history.
 10. Update Ledger with commit/tests and baton back to CGPT/Shaun.
-11. **Canonicalise Games partnership display and matchup-filter ordering** using
+11. **DONE (`f26fa3a`).** Canonicalise Games partnership display and matchup-filter ordering using
     `S > A > B > C` and partnership strength
     `SS > SA > SB > SC > AA > AB > AC > BB > BC > CC`. Higher-tier partner
     first; stronger partnership first; equal-tier/equal-composition ties preserve
     stored order/orientation; counts do not control filter order.
-12. **Reassessment Reliability:** MOVE-SCALED approved with **D = 150 points**
-    and a **20% minimum/floor**. Modelling is complete (`9ac4285`).
-13. **Unblocked:** implement the move-scaled rule in `reassessment.js`, plus
-    Use-recommendation / Override UX with attribution and reason, storing both
-    the system recommendation and final choice.
+12. **DONE (`aef42a7`).** Reassessment Reliability: MOVE-SCALED approved with
+    **D = 150 points** and a **20% minimum/floor**. Modelling `9ac4285`, rule
+    implemented as `Reassessment.recommendReliability` (`move-scaled-v1`).
+13. **NEXT, unblocked — the remaining half of item 12.** The rule is done; the
+    UX is not. Build Use-recommendation / Override with attribution and reason,
+    and store **both** the system recommendation and the board's final choice on
+    the reassessment event. Touches the event schema, so it needs its own pass.
