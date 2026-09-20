@@ -145,12 +145,32 @@
     const decisions = Review.decisionsFor(toReview(adjustment, ctx), { [adjustment.playerId]: ctx.before });
     const live = ctx.existing.filter((e) => !e.superseded);
     return decisions.map((d) => {
+      // What the system said, flattened onto the event.
+      //
+      // These decisions go STRAIGHT to the engine as replay inputs -- this path
+      // does not go through ClubDecision.prepare, which is where the monthly
+      // review flattens them. The engine reads scalars, so a `recommendation`
+      // object was silently dropped and every historical adjustment stored a
+      // null recommendation: the audit trail could not show whether the board
+      // had followed the system or departed from it, which is the one question
+      // it exists to answer.
+      const rec = d.recommendation || null;
+      const withRec = {
+        ...d,
+        recommendationRating: rec ? rec.recommendationRating : null,
+        recommendationReliability: rec ? rec.recommendationReliability : null,
+        // One field, and whichever recommendation actually exists names the
+        // method behind it: the rating method where there is a rating
+        // recommendation, otherwise the Reliability rule. No new stored field
+        // is introduced for this.
+        recommendationMethodVersion: rec ? (rec.methodVersion || rec.reliabilityRule || null) : null,
+      };
       // A decision of the same type on the same date replaces the one already
       // there; anything else is simply added alongside.
       const replaced = live.find((e) => e.eventType === d.eventType);
-      if (!replaced) return d;
+      if (!replaced) return withRec;
       const nextRevision = (Math.max(0, ...live.filter((e) => e.eventType === d.eventType).map((e) => e.revision || 1)) + 1);
-      return { ...d, supersedes: replaced.id, revision: nextRevision };
+      return { ...withRec, supersedes: replaced.id, revision: nextRevision };
     });
   }
 

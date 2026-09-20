@@ -163,3 +163,42 @@ test('historical club adjustment is separate from historical match correction', 
   });
   assert.ok(/type: 'clubDecision'/.test(code));
 });
+
+// These decisions go STRAIGHT to the engine as replay inputs — this path does
+// not go through ClubDecision.prepare, which is where the monthly review
+// flattens the recommendation onto the event. The engine reads scalars, so a
+// `recommendation` object was silently dropped and every historical adjustment
+// stored a null recommendation. The audit trail could not answer the one
+// question it exists for: did the board follow the system, or depart from it?
+test('a historical adjustment records what the system recommended, not just what the board chose', () => {
+  const { stored, provenance } = record();
+  const Review = require('../assets/js/monthlyReview.js');
+
+  const adjustment = {
+    playerId: 'Tom', effectiveDate: '2026-07-01', tierEvent: 'PROMOTION', newTier: 'B',
+    ratingDecision: Review.DECISION.CLUB_OVERRIDE,
+    overrideRating: 1400, overrideReliability: 0.10,
+    reason: 'Board: re-anchored to the standard Tier B baseline.', createdBy: 'Board',
+  };
+  const p = HA.plan({ stored, adjustment, provenance });
+
+  const doc = p.writes[Store.COLLECTIONS.journey]
+    .find((d) => d.playerId === 'Tom' && d.effectiveDate === '2026-07-01'
+      && d.eventType === 'CLUB_RATING_REASSESSMENT');
+  assert.ok(doc, 'the reassessment must be written');
+
+  // What the board chose.
+  assert.ok(Math.abs(doc.newReliability - 0.10) < 1e-9);
+  assert.ok(Math.abs(doc.newPowerRating - 1400) < 1e-9);
+
+  // And what it departed from. A 297-point re-anchor is past the full-reopen
+  // distance, so the rule recommends its 20% floor; the board chose 10%.
+  assert.ok(typeof doc.recommendationReliability === 'number',
+    `the recommendation must reach the record, got ${doc.recommendationReliability}`);
+  assert.ok(Math.abs(doc.recommendationReliability - 0.20) < 1e-9,
+    `expected the 20% floor, got ${doc.recommendationReliability}`);
+  assert.notStrictEqual(doc.newReliability, doc.recommendationReliability,
+    'this is exactly the case where the two differ, which is why both are stored');
+  assert.ok(doc.recommendationMethodVersion,
+    'the method behind the recommendation must be named');
+});
