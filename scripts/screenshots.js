@@ -70,6 +70,10 @@ const SHOTS = [
     note: 'Unlocked, one card at a time, behind a compact Manage affordance in the card header. Two separate actions with their own words: a removal is confirmed by a button that says Remove and replay, never by one that says correct. The blast radius is measured by replaying and shown in full before anything is written.' },
   { file: '11-full-calculation.png', title: 'The full calculation',
     note: 'The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.' },
+  { file: '16-players-directory.png', title: 'Players — the Directory as it opens',
+    note: 'The list is the screen. Filters are folded behind a line that says what is on ("All tiers, all players"), so the first player sits near the top instead of below half a screen of controls. A row leads with the name in the public serif, with tier and rating as quiet metadata under it; Active is the normal state and no longer shouts on every row.' },
+  { file: '16b-players-directory-filters.png', title: 'Players — the filters, opened',
+    note: 'One tap. Tier chips wrap rather than running off the right edge of a phone, and choosing one leaves the panel open under the finger. Every filter, sort and navigation behaviour is the one that was already there.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -268,6 +272,24 @@ async function render(players, matches, journey, readAt) {
       return deleteMatch(del.dataset.delete);
     },
     () => { const el = [...document.querySelectorAll('#gamesView .callout-card')].find((e) => /re-derives every rating/i.test(e.textContent)); if (el) el.scrollIntoView({ block: 'start' }); });
+
+  // The Players Directory, as it opens: filters folded behind their summary,
+  // the list itself starting near the top of the screen.
+  await shot('16-players-directory.png',
+    () => {
+      const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+      closeSheet();
+      playersTierFilter = 'All'; playersActiveFilter = 'all'; playersSortBy = 'name';
+      playersFiltersOpen = false;
+      goToSection('players');
+      renderPlayersTab();
+    },
+    // The previous scene left the page scrolled; the Directory's whole point
+    // is what it looks like when it opens.
+    () => window.scrollTo(0, 0));
+  await shot('16b-players-directory-filters.png',
+    () => { const t = document.getElementById('playersFilterToggle'); if (t) t.click(); },
+    () => window.scrollTo(0, 0));
 
   const openGuide = () => {
     const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');

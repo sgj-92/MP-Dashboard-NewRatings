@@ -2143,6 +2143,23 @@ let playersTierFilter = 'All';
 let playersActiveFilter = 'all'; // 'all' | 'active' | 'inactive'
 let playersSortBy = 'name';      // 'name' | 'rating'
 
+// A player's name is free text, and it is both rendered as text and carried in
+// a data attribute, so quotes and angle brackets have to be neutralised for
+// both. A name containing `<b>` is a name, not markup: without this it renders
+// as "ac" and loses two characters of somebody's identity. The name is read
+// back from the element rather than spliced into an inline handler, which is
+// what the old rows did -- `onclick="openSheet('...')"` with an apostrophe in
+// a name is one bad surname away from a syntax error.
+function escapeHtml(value){
+  return String(value)
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Secondary filters stay folded until asked for. Not persisted: the Directory
+// should open the same way every time.
+let playersFiltersOpen = false;
+
 function renderPlayersTab(){
   const box = document.getElementById('playersView');
 
@@ -2155,24 +2172,38 @@ function renderPlayersTab(){
   if(playersSortBy === 'rating') rows.sort((a,b)=> b.rating - a.rating);
   else rows.sort((a,b)=> a.name.localeCompare(b.name));
 
-  let html = `<div class="fg-controls">
-    <div class="fg-row"><label class="fg-label">Tier</label>
-      <div class="tierbar" id="playersTierBar" style="padding:0;"></div>
-    </div>
-    <div class="fg-row"><label class="fg-label">Status</label>
-      <div class="fg-toggle" id="playersActiveToggle">
-        <button class="fg-toggle-btn ${playersActiveFilter==='all'?'active':''}" data-active="all">All</button>
-        <button class="fg-toggle-btn ${playersActiveFilter==='active'?'active':''}" data-active="active">Active</button>
-        <button class="fg-toggle-btn ${playersActiveFilter==='inactive'?'active':''}" data-active="inactive">Inactive</button>
-      </div>
-    </div>
-    <div class="fg-row"><label class="fg-label">Sort</label>
-      <div class="fg-toggle" id="playersSortToggle">
-        <button class="fg-toggle-btn ${playersSortBy==='name'?'active':''}" data-sortby="name">A–Z</button>
-        <button class="fg-toggle-btn ${playersSortBy==='rating'?'active':''}" data-sortby="rating">Power Rating</button>
-      </div>
+  // What the folded control says, so the filter state is legible without
+  // opening it. Anything other than "everyone" is worth announcing.
+  const tierText = playersTierFilter === 'All' ? 'All tiers' : `Tier ${playersTierFilter}`;
+  const statusText = playersActiveFilter === 'all' ? 'all players'
+    : (playersActiveFilter === 'active' ? 'active only' : 'inactive only');
+  const filtered = playersTierFilter !== 'All' || playersActiveFilter !== 'all';
+
+  let html = `<div class="pdir-bar">
+    <button type="button" class="pdir-filter-btn${filtered ? ' is-on' : ''}" id="playersFilterToggle" aria-expanded="${playersFiltersOpen}">
+      <span>Filters · <span class="pdir-filter-state">${tierText}, ${statusText}</span></span>
+      <span class="pdir-filter-chev" aria-hidden="true">▾</span>
+    </button>
+    <div class="fg-toggle" id="playersSortToggle">
+      <button class="fg-toggle-btn ${playersSortBy==='name'?'active':''}" data-sortby="name">A–Z</button>
+      <button class="fg-toggle-btn ${playersSortBy==='rating'?'active':''}" data-sortby="rating">Power Rating</button>
     </div>
   </div>`;
+
+  if(playersFiltersOpen){
+    html += `<div class="pdir-filters">
+      <div class="fg-row"><label class="fg-label">Tier</label>
+        <div class="pdir-tierbar" id="playersTierBar"></div>
+      </div>
+      <div class="fg-row"><label class="fg-label">Status</label>
+        <div class="fg-toggle" id="playersActiveToggle">
+          <button class="fg-toggle-btn ${playersActiveFilter==='all'?'active':''}" data-active="all">All</button>
+          <button class="fg-toggle-btn ${playersActiveFilter==='active'?'active':''}" data-active="active">Active</button>
+          <button class="fg-toggle-btn ${playersActiveFilter==='inactive'?'active':''}" data-active="inactive">Inactive</button>
+        </div>
+      </div>
+    </div>`;
+  }
 
   if(rows.length === 0){
     html += `<div class="section-sub">No players match that filter.</div>`;
@@ -2181,20 +2212,29 @@ function renderPlayersTab(){
     return;
   }
 
+  html += `<div class="pdir-count">${rows.length} player${rows.length===1?'':'s'}${filtered ? ' · filtered' : ''}</div>`;
+
+  // Letter headings only make sense alphabetically. Sorted by rating they
+  // would mark divisions that are not there.
   let lastLetter = '';
   rows.forEach(p=>{
-    const showLetter = playersSortBy === 'name';
-    const letter = p.name[0].toUpperCase();
-    const newLetter = showLetter && letter !== lastLetter;
-    if(showLetter) lastLetter = letter;
-    const statusBadge = p.active
-      ? `<span class="risk-badge risk-stable" style="margin-left:6px;">Active</span>`
-      : `<span class="risk-badge risk-unproven" style="margin-left:6px;">Inactive</span>`;
-    html += `<div class="alpha-row" onclick="openSheet('${p.name.replace(/'/g,"\\'")}')">
-      <div class="alpha-letter">${newLetter ? letter : ''}</div>
-      <div class="alpha-name">${p.name}${statusBadge}</div>
-      <div class="alpha-tier">Tier ${p.tier} · ${Math.round(p.rating)}</div>
-    </div>`;
+    if(playersSortBy === 'name'){
+      const letter = p.name[0].toUpperCase();
+      if(letter !== lastLetter){
+        html += `<div class="pdir-letter">${escapeHtml(letter)}</div>`;
+        lastLetter = letter;
+      }
+    }
+    // Active is the normal state and does not need to shout on every row;
+    // inactive is the one worth noticing.
+    const inactive = p.active ? '' : `<span class="pdir-inactive">Inactive</span>`;
+    html += `<button type="button" class="pdir-row" data-player="${escapeHtml(p.name)}">
+      <span class="pdir-main">
+        <span class="pdir-name">${escapeHtml(p.name)}</span>
+        <span class="pdir-meta">Tier ${p.tier} · <b>${Math.round(p.rating)}</b></span>
+      </span>
+      <span class="pdir-right">${inactive}<span class="pdir-chev" aria-hidden="true">›</span></span>
+    </button>`;
   });
 
   box.innerHTML = html;
@@ -2202,6 +2242,7 @@ function renderPlayersTab(){
 }
 
 function wirePlayersControls(){
+  // The tier chips only exist while the filters are open.
   const bar = document.getElementById('playersTierBar');
   if(bar){
     TIERS.forEach(t=>{
@@ -2212,11 +2253,19 @@ function wirePlayersControls(){
       bar.appendChild(b);
     });
   }
+  const toggle = document.getElementById('playersFilterToggle');
+  if(toggle) toggle.onclick = ()=>{ playersFiltersOpen = !playersFiltersOpen; renderPlayersTab(); };
+
   document.querySelectorAll('#playersActiveToggle .fg-toggle-btn').forEach(b=>{
     b.onclick = ()=>{ playersActiveFilter = b.dataset.active; renderPlayersTab(); };
   });
   document.querySelectorAll('#playersSortToggle .fg-toggle-btn').forEach(b=>{
     b.onclick = ()=>{ playersSortBy = b.dataset.sortby; renderPlayersTab(); };
+  });
+  // A row is a button now, so the name no longer has to survive being spliced
+  // into an inline onclick -- it is read back from the element.
+  document.querySelectorAll('#playersView .pdir-row').forEach(el=>{
+    el.onclick = ()=> openSheet(el.dataset.player);
   });
 }
 

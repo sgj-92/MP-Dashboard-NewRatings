@@ -84,6 +84,18 @@ Unlocked, one card at a time, behind a compact Manage affordance in the card hea
 
 The disclosure inside the monthly breakdown: sequential-v1 stated as it actually is -- applied once in order, never re-solved, never reset at a month boundary, with K falling as evidence builds. It also shows the unrounded month-end figure.
 
+### Players — the Directory as it opens
+
+![Players — the Directory as it opens](16-players-directory.png)
+
+The list is the screen. Filters are folded behind a line that says what is on ("All tiers, all players"), so the first player sits near the top instead of below half a screen of controls. A row leads with the name in the public serif, with tier and rating as quiet metadata under it; Active is the normal state and no longer shouts on every row.
+
+### Players — the filters, opened
+
+![Players — the filters, opened](16b-players-directory-filters.png)
+
+One tap. Tier chips wrap rather than running off the right edge of a phone, and choosing one leaves the panel open under the finger. Every filter, sort and navigation behaviour is the one that was already there.
+
 ### Power Rating Guide — in short
 
 ![Power Rating Guide — in short](12-rating-guide-summary.png)

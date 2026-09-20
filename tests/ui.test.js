@@ -1220,6 +1220,205 @@ test('a player who does not change tier still gets exactly one League row', { sk
   } finally { await app.close(); }
 });
 
+// ===================== PLAYERS DIRECTORY REFRESH (20 Sep 2026) ============
+// A public-facing directory, not an admin list. The filter panel took nearly
+// half the first screen on a phone and the tier chips ran off the right edge.
+// Presentation only: every filter, sort and navigation behaviour is preserved.
+
+test('the Directory opens on players, not on a filter form', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });   // iPhone SE
+    // goToSection hides the shared Rankings chrome (month/tier toolbar, the
+    // "# Player Rating" column header) on a setTimeout(0) off the tab click,
+    // so measuring geometry in the same synchronous turn measures the screen
+    // as it never appears to anyone. Let navigation settle first.
+    await app.run(() => { goToSection('players'); renderPlayersTab(); });
+    await app.page.waitForTimeout(50);
+    const r = await app.run(() => {
+      const view = document.getElementById('playersView');
+      const firstRow = view.querySelector('.pdir-row');
+      return {
+        filtersFolded: !document.getElementById('playersTierBar'),
+        summary: document.getElementById('playersFilterToggle').innerText.replace(/\s+/g, ' ').trim(),
+        // How far down the screen the first player is.
+        firstRowTop: Math.round(firstRow.getBoundingClientRect().top),
+        viewport: window.innerHeight,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+        sortVisible: !!document.getElementById('playersSortToggle'),
+        compareVisible: /Compare/i.test(document.body.innerText),
+      };
+    });
+
+    assert.strictEqual(r.filtersFolded, true, 'secondary filters start folded');
+    assert.match(r.summary, /All tiers, all players/, 'the folded control says what is on');
+    assert.ok(r.firstRowTop < r.viewport * 0.4,
+      `the first player should be near the top, was ${r.firstRowTop} of ${r.viewport}`);
+    assert.strictEqual(r.overflow, false, 'nothing may run off the side at 375px');
+    assert.strictEqual(r.sortVisible, true, 'sort stays visible — it is the primary control');
+    assert.strictEqual(r.compareVisible, true, 'Directory / Compare is preserved');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('every tier chip is reachable and nothing runs off the edge', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });
+    const r = await app.run(() => {
+      goToSection('players');
+      renderPlayersTab();
+      document.getElementById('playersFilterToggle').click();
+      const bar = document.getElementById('playersTierBar');
+      const right = bar.getBoundingClientRect().right;
+      const chips = [...bar.querySelectorAll('.tierbtn')];
+      return {
+        chips: chips.map((c) => c.textContent),
+        // The old row was a single line that clipped "Tier C" off the screen.
+        clipped: chips.filter((c) => c.getBoundingClientRect().right > right + 1).length,
+        wrapped: new Set(chips.map((c) => Math.round(c.getBoundingClientRect().top))).size > 1,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+    });
+    assert.deepStrictEqual(r.chips, ['All', 'Tier S', 'Tier A', 'Tier B', 'Tier C']);
+    assert.strictEqual(r.clipped, 0, 'no chip may be cut off');
+    assert.strictEqual(r.wrapped, true, 'they wrap rather than scrolling out of sight');
+    assert.strictEqual(r.overflow, false);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Active does not shout on every row; Inactive still does', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      goToSection('players');
+      renderPlayersTab();
+      const view = document.getElementById('playersView');
+      const rows = [...view.querySelectorAll('.pdir-row')];
+      return {
+        rows: rows.length,
+        activePlayers: PLAYERS.filter((p) => p.active).length,
+        inactivePlayers: PLAYERS.filter((p) => !p.active).length,
+        badges: view.querySelectorAll('.pdir-inactive').length,
+        saysActive: /\bACTIVE\b/i.test(view.innerText.replace(/Inactive/gi, '')),
+        // Identity leads, in the public serif; the rest is interface.
+        nameFont: getComputedStyle(rows[0].querySelector('.pdir-name')).fontFamily,
+        metaFont: getComputedStyle(rows[0].querySelector('.pdir-meta')).fontFamily,
+        metaText: rows[0].querySelector('.pdir-meta').innerText,
+        hasChevron: !!rows[0].querySelector('.pdir-chev'),
+      };
+    });
+
+    assert.ok(r.activePlayers > 5 && r.inactivePlayers > 0, 'the fixture needs both');
+    assert.strictEqual(r.badges, r.inactivePlayers, 'exactly the inactive players are badged');
+    assert.strictEqual(r.saysActive, false, 'no ACTIVE pill on every row');
+    assert.match(r.nameFont, /Georgia|Iowan|serif/i, 'identity keeps the public serif');
+    assert.match(r.metaFont, /Helvetica|Arial|sans-serif/i, 'metadata is interface type');
+    assert.match(r.metaText, /Tier [SABC] · \d+/, 'tier and rating, concisely');
+    assert.strictEqual(r.hasChevron, true, 'a row says it opens something');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('letter headings appear alphabetically and not when sorted by rating', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      goToSection('players');
+      renderPlayersTab();
+      const letters = () => [...document.querySelectorAll('#playersView .pdir-letter')].map((e) => e.textContent);
+      const ratings = () => [...document.querySelectorAll('#playersView .pdir-meta')]
+        .map((e) => Number(e.innerText.replace(/[^0-9]/g, '')));
+      const az = { letters: letters(), names: [...document.querySelectorAll('.pdir-name')].map((e) => e.textContent) };
+      document.querySelector('#playersSortToggle [data-sortby="rating"]').click();
+      return { az, byRating: { letters: letters(), ratings: ratings() } };
+    });
+
+    assert.ok(r.az.letters.length > 5, 'A–Z is grouped');
+    assert.deepStrictEqual(r.az.letters, r.az.letters.slice().sort(), 'in alphabetical order');
+    assert.deepStrictEqual(r.az.names, r.az.names.slice().sort((a, b) => a.localeCompare(b)));
+    assert.deepStrictEqual(r.byRating.letters, [],
+      'sorted by rating, letter headings would mark divisions that are not there');
+    assert.deepStrictEqual(r.byRating.ratings, r.byRating.ratings.slice().sort((a, b) => b - a));
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('filtering and profile navigation still work from the folded control', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      goToSection('players');
+      renderPlayersTab();
+      const rows = () => document.querySelectorAll('#playersView .pdir-row').length;
+      const out = { all: rows() };
+
+      document.getElementById('playersFilterToggle').click();
+      const tierB = [...document.querySelectorAll('#playersTierBar .tierbtn')].find((b) => b.textContent === 'Tier B');
+      tierB.click();
+      out.tierB = rows();
+      out.expectedTierB = PLAYERS.filter((p) => p.tier === 'B').length;
+      out.summary = document.getElementById('playersFilterToggle').innerText.replace(/\s+/g, ' ');
+      out.panelStaysOpen = !!document.getElementById('playersTierBar');
+
+      document.querySelector('#playersActiveToggle [data-active="inactive"]').click();
+      out.inactiveOnly = rows();
+      out.expectedInactiveB = PLAYERS.filter((p) => p.tier === 'B' && !p.active).length;
+
+      // Back to everyone, then open a profile.
+      [...document.querySelectorAll('#playersTierBar .tierbtn')].find((b) => b.textContent === 'All').click();
+      document.querySelector('#playersActiveToggle [data-active="all"]').click();
+      const first = document.querySelector('#playersView .pdir-row');
+      out.opened = first.dataset.player;
+      first.click();
+      out.sheetShows = (document.getElementById('sheetName') || {}).textContent || '';
+      return out;
+    });
+
+    assert.ok(r.all > 20);
+    assert.strictEqual(r.tierB, r.expectedTierB, 'the tier filter still filters');
+    assert.match(r.summary, /Tier B/, 'and the folded control reports it');
+    assert.strictEqual(r.panelStaysOpen, true, 'choosing a filter does not close the panel under the finger');
+    assert.strictEqual(r.inactiveOnly, r.expectedInactiveB, 'status filtering still combines with tier');
+    assert.ok(r.opened, 'a row carries the player it opens');
+    assert.ok(r.sheetShows.includes(r.opened), `tapping the row must open ${r.opened}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// A name is free text. The old rows spliced it into an inline onclick, which is
+// one apostrophe away from a syntax error.
+test('a player whose name contains quotes is still safe to render and tap', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const awkward = ["O'Neill", 'Ann "Ace" Lee', 'a<b>c'];
+      PLAYERS.push(...awkward.map((name, i) => ({
+        name, tier: 'B', rating: 1200 + i, active: true, total: 0, wins: 0, losses: 0, draws: 0,
+      })));
+      goToSection('players');
+      renderPlayersTab();
+      const rows = [...document.querySelectorAll('#playersView .pdir-row')];
+      const found = awkward.map((n) => {
+        const row = rows.find((el) => el.dataset.player === n);
+        return { name: n, present: !!row, shown: row ? row.querySelector('.pdir-name').textContent : null };
+      });
+      const target = rows.find((el) => el.dataset.player === "O'Neill");
+      target.click();
+      const opened = (document.getElementById('sheetName') || {}).textContent || '';
+      awkward.forEach((n) => { const i = PLAYERS.findIndex((p) => p.name === n); if (i !== -1) PLAYERS.splice(i, 1); });
+      return { found, opened };
+    });
+    r.found.forEach((f) => {
+      assert.strictEqual(f.present, true, `${f.name} must render`);
+      assert.strictEqual(f.shown, f.name, `${f.name} must read as itself`);
+    });
+    assert.ok(r.opened.includes("O'Neill"), `tapping must open the right profile, got "${r.opened}"`);
+    assert.deepStrictEqual(app.pageErrors, [], 'an awkward name must not throw');
+  } finally { await app.close(); }
+});
+
 test('a correction that changes the date is refused rather than mis-filed', { skip }, async () => {
   const msg = await shared.run(() => matchFixDateChangeRefusal('2026-06-02', '2026-06-09'));
   assert.match(msg, /identifier is built from its date/);

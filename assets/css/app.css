@@ -1815,3 +1815,79 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .ptag-controls .ptag-tier{ flex:1 1 110px; min-width:0; }
 .ptag-controls .ptag-active{ flex:1 1 110px; min-width:0; }
 .ptag-controls .ptag-starting{ flex:1 1 100%; min-width:0; }
+
+/* ===================== PLAYERS DIRECTORY =====================
+   A public-facing directory, not an admin list. The filter panel used to take
+   nearly half the first screen on a phone -- three stacked rows of controls
+   above the first player -- and the tier chips ran off the right edge. The
+   secondary filters now fold away behind a summary that says what is on.
+
+   Player identity leads; tier and rating follow it, quietly. Active is the
+   normal state and no longer announces itself on every row; inactive still
+   does, because that is the one worth noticing. */
+.pdir-bar{ display:flex; flex-direction:column; gap:8px; margin:10px 0 6px; }
+.pdir-filter-btn{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; padding:11px 13px;
+  background:var(--surface); border:1px solid var(--surface-border-soft);
+  border-radius:12px; cursor:pointer; text-align:left;
+  font-family:'Helvetica Neue', Arial, sans-serif; color:var(--text-dim);
+  font-size:12.5px;
+}
+.pdir-filter-btn .pdir-filter-state{ color:var(--text); font-weight:600; }
+.pdir-filter-btn.is-on{ border-color:var(--gold-dim); }
+.pdir-filter-chev{ flex:none; font-size:11px; transition:transform .18s ease; }
+.pdir-filter-btn[aria-expanded="true"] .pdir-filter-chev{ transform:rotate(180deg); color:var(--gold-bright); }
+.pdir-filters{
+  border:1px solid var(--surface-border-soft); border-radius:12px;
+  background:var(--surface); padding:12px 13px; margin-bottom:6px;
+}
+.pdir-filters .fg-label{ margin-bottom:6px; display:block; }
+.pdir-filters .fg-row + .fg-row{ margin-top:12px; }
+/* Wrapping, not scrolling: a chip that runs off the right edge is a chip
+   nobody knows is there. */
+.pdir-tierbar{ display:flex; flex-wrap:wrap; gap:6px; padding:0; }
+.pdir-count{
+  font-family:'Helvetica Neue', Arial, sans-serif;
+  font-size:11px; color:var(--text-dim); margin:2px 2px 8px;
+}
+
+.pdir-letter{
+  font-family:'Helvetica Neue', Arial, sans-serif;
+  font-size:11px; font-weight:700; letter-spacing:.12em; color:var(--gold-soft);
+  margin:16px 2px 6px;
+}
+.pdir-letter:first-child{ margin-top:6px; }
+
+.pdir-row{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; padding:12px 13px; margin-bottom:6px;
+  background:var(--surface); border:1px solid var(--surface-border-soft);
+  border-radius:12px; cursor:pointer; text-align:left;
+}
+.pdir-row:active{ border-color:var(--gold-dim); }
+/* The row is a <button>, so its children are spans; they have to be made
+   block-level or the name and its tier/rating run together on one line. */
+.pdir-main{ display:block; min-width:0; }
+/* Identity in the public serif, the same as the profile and rankings it leads
+   to. Everything else is interface. */
+.pdir-name{
+  display:block;
+  font-family:'Georgia', 'Iowan Old Style', serif;
+  font-size:15px; color:var(--text); line-height:1.25;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.pdir-meta{
+  display:block;
+  font-family:'Helvetica Neue', Arial, sans-serif;
+  font-size:11.5px; color:var(--text-dim); margin-top:3px;
+}
+.pdir-meta b{ color:var(--gold-soft); font-weight:600; }
+.pdir-right{ display:flex; align-items:center; gap:8px; flex:none; }
+.pdir-inactive{
+  font-family:'Helvetica Neue', Arial, sans-serif;
+  font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--text-dim); border:1px solid var(--line);
+  border-radius:999px; padding:3px 7px; white-space:nowrap;
+}
+.pdir-chev{ color:var(--text-dim); font-size:15px; line-height:1; }
