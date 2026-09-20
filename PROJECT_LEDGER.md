@@ -33,8 +33,9 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | `f5d4095` |
-| Tests | **316 / 316 passing** (57 of them drive a real browser) |
+| Last verified implementation commit | `fc33a44` |
+| Tests | **318 / 318 passing** (59 of them drive a real browser) |
+| Firestore (live, re-read 20 Sep) | **156 matches** — one match removed by Shaun through the app |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Firestore | 157 matches · 666 journey events · 34 players = **857 docs** |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -249,8 +250,11 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK
 
-**DONE (`af84d87`, `f5d4095`). Owner / baton: CGPT / Shaun — visual acceptance
-of the new Home screen.** All five parts delivered, 316/316 tests, screenshots
+**DONE (`af84d87`, `f5d4095`, `fc33a44`). Owner / baton: CGPT / Shaun — visual
+acceptance of the new Home screen.** `fc33a44` is separate follow-on work Shaun
+approved on 20 Sep: see the CCode handoff of 20 Sep 2026 in Section 6.
+
+**Original Home task status below.** All five parts delivered, 316/316 tests, screenshots
 regenerated including `00-home.png`. See the CCode handoff of 19 Sep 2026 in
 Section 6, which also records a commentary defect found after the first commit
 and fixed. Part 5 (match sharing) is recorded as backlog in Section 5 and was
@@ -551,6 +555,58 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 20 Sep 2026 (a removal that looked stuck; replay writes now batch)
+
+**Raised by Shaun from the live beta, not from a test.** He confirmed a removal
+(`Osh vs Len`, 2026-07-03), watched the confirmation panel, and asked what was
+supposed to happen next. Nothing visible was happening. The write had in fact
+already completed: a live re-read shows **156 matches**, one fewer than the 157
+recorded on 18 Sep, and the only match left on that date is `2026-07-03-2`.
+
+**The record is sound. The feedback was not.** Three defects, all mine, all
+fixed in `fc33a44`. Tests **318 / 318**, 59 in a browser. Screenshots current.
+
+**1) ~500 sequential round trips.** `ReplayForward.commit` awaited every
+document individually. Removing a June match rewrites **634** documents, so a
+removal was 634 round trips — minutes on a phone. It now batches: a backend
+exposing `commitBatch` writes 500 operations per round trip, so those 634
+documents leave in **two** batches, each atomic. Backends without it keep the
+one-at-a-time path, so the REST backend used by the seed and import scripts is
+unchanged. `diffDocs` derives deletions as "present before, absent after", so
+deletes and writes are disjoint and a batch's atomicity is safe — `commit` now
+**checks** that rather than assuming it, because a future change to `diffDocs`
+would otherwise silently break the delete-before-write ordering.
+
+**2) The progress was rendered off-screen.** The only feedback, `Writing…`, went
+into `#gamesMessage` in the admin block at the **top** of the Games tab, while
+the confirmation panel sits deep inside an expanded match card. From where the
+operator is actually looking, a disabled button was the entire signal. The panel
+now carries its own progress line (`Removing… 500 of 634 documents`), the button
+reads `Working…`, and Cancel is disabled while the write runs. The outcome is
+shown in a dismissible banner above the bottom nav — necessary rather than
+decorative, because a **removal deletes the card the action was started from**,
+so there is no panel left to report into.
+
+**3) A removal reported itself as a correction.** The success message read
+`Corrected and replayed` for a deletion — the same confusion already fixed in the
+heading and the button label, left behind in the one string nobody had looked at
+because it only appears after a successful write.
+
+**The test stub gained a working `batch()`.** Without it the suite would have
+exercised the one-at-a-time fallback while the application took a batched path
+nothing covered — the same class of gap as the Last Time Out defect the day
+before. The new browser tests assert the operation count leaves in the expected
+number of batches, that progress is written into the panel and names the action,
+and that a removal and a correction each describe themselves correctly.
+
+**Pattern worth recording.** Three defects in two days, all in code whose module
+tests passed, all found by looking at the rendered screen — and this one only
+because Shaun was watching a real phone over a real network. Local latency hides
+this class of defect completely.
+
+**Baton → CGPT / Shaun.** Nothing blocked. The Home visual acceptance from
+19 Sep is still open.
 
 ### CCode — 19 Sep 2026 (Home lower section rebuilt; a commentary defect found by looking)
 
