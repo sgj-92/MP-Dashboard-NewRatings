@@ -203,6 +203,13 @@ the replay blast radius, and only then commits through replay-forward. Never
 silently mutates or deletes an old decision: corrections are represented by a
 new/superseding audited event and the downstream record is replayed.
 
+**Specific superseding correction — Tom/Fatch baseline:** Tom's 1 Jul 2026
+promotion reassessment and Fatch's 1 Aug 2026 promotion reassessment must both
+use **1400 (standard Tier B baseline)** as the historical rating anchor. The old
+Jords/Tom comparator-anchor decisions remain visible only as superseded audit
+history. Keep the already-decided historical Reliability at 10% for both. Replay
+all later rated matches/decisions chronologically from the corrected state.
+
 **Storage:** `matches/{matchId}` · `ratingJourney/{eventId}` · `players/{playerId}`.
 Normal current-state rendering reads `players`; historical views use targeted
 `ratingJourney` reads, with only the session-cached Ranking Movement exception
@@ -234,8 +241,9 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Historical reassessments must record factual club decisions, not hindsight | Shaun: 1 Jul 2026 was an **INITIAL_CLASSIFICATION_CORRECTION**, because he entered C only as an unknown and the club then determined the initial estimate was wrong. The club's factual assessment was **normal B baseline = 1400**. Tom (1 Jul 2026 C→B) and Fatch (1 Aug 2026 C→B) were genuine promotions/development and should receive the same **statistical reassessment process** used for future promotions, not an automatic B re-seed. |
 | Historical Club Adjustment is a permanent Admin safety tool, not a one-off script | Build a narrow Admin UI over replay-forward for factual historical club-rating decisions/corrections. Separate it from Historical Match Correction. Require player, effective date, reason/attribution, old state, chosen decision, and replay blast-radius confirmation. Use a superseding/correction event rather than silent deletion. |
 | No statistical recommendation ≠ keep-current | The dry run found Tom/Fatch had too few established C players for the T2 method to recommend a target. That does **not** mean the historical club decision was keep-current; it means the board must choose keep-current or a club override, exactly as it would prospectively. |
-| Historical override anchors for Shaun, Tom and Fatch are fixed | **Shaun, 1 Jul:** 1400. **Tom, 1 Jul:** club override to **Jords' Power Rating immediately before the 1 Jul review**. **Fatch, 1 Aug:** club override to **Tom's Power Rating immediately before the 1 Aug review**, after Tom's corrected 1 Jul state and July matches have played out. These are factual club-assessment anchors, not statistical recommendations. |
+| Historical override anchors — **SUPERSEDED for Tom/Fatch on 20 Sep** | **Shaun, 1 Jul:** remains 1400. **Tom, 1 Jul:** previous Jords-based anchor is superseded; correct historical club decision is **B-tier baseline 1400**. **Fatch, 1 Aug:** previous Tom-based anchor is superseded; correct historical club decision is **B-tier baseline 1400**. Rationale from Shaun: anchoring to an individual B with a genuinely poor record distorted how far promoted players sat from the wider B population. Apply as audited superseding historical adjustments and replay forward; do not silently mutate old events. |
 | Historical reassessment reliability = 10% | Shaun, Tom and Fatch all reset/reopen to **10% reliability** at their historical adjustment date so the model can move them quickly in the newly assessed tier/state. This is an explicit board decision, not a statistical recommendation. |
+| Tom and Fatch historical anchors corrected to B baseline | Shaun corrected the prior board instruction. **Tom on 1 Jul 2026** and **Fatch on 1 Aug 2026** should each be re-anchored to the standard **Tier B baseline of 1400**, not to Jords/Tom as comparator anchors. Their previously approved historical **10% Reliability remains unchanged** unless Shaun separately changes it. Because Sequential-v1 is chronological, replay forward from each superseding adjustment and accept downstream rating changes produced by the model. |
 | Future reassessment reliability is system-recommended but club-editable | For normal future promotions/reassessments, the club should primarily decide the **new playing-level anchor / comparable player**. The system should then present a **Recommended Reliability** using an explainable rule. Admins may accept it or manually override the percentage. Any override must be clearly labelled as a club override and stored with attribution/reason in the audited reassessment event. Do not force the board to invent a reliability percentage from scratch. |
 | Move-scaled reassessment Reliability approved | Shaun chose **move-scaled** rather than a flat reset. Small rating re-anchors retain more of the player's prior Reliability; larger re-anchors reduce Reliability more aggressively. **D = 150 points** is the full-reopen threshold, and the system-generated minimum/floor at or beyond that threshold is **20% Reliability**. Manual override remains available and audited. |
 | Every future tier change requires an explicit rating decision in the same monthly review | Promotion/demotion does not itself move Power Rating, but the review cannot be completed until the board explicitly chooses **Accept recommendation / Club override / Keep current rating**. **Correct initial classification** is a distinct option for a genuinely wrong initial estimate. This prevents today's promotions becoming next week's backdating problem. |
@@ -782,6 +790,26 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 20 Sep 2026 (Tom/Fatch historical anchor correction)
+Shaun corrected a prior historical board instruction.
+
+- **Tom — effective 1 Jul 2026:** re-anchor to **1400**, the standard B-tier baseline.
+- **Fatch — effective 1 Aug 2026:** re-anchor to **1400**, the standard B-tier baseline.
+- Do **not** use Jords' rating for Tom or Tom's then-rating for Fatch.
+- Keep the previously decided **10% historical Reliability** for both.
+- Preserve the old decisions as superseded audit history; do not delete or mutate them silently.
+- Use Historical Club Adjustment / replay-forward and recalculate every downstream
+  affected rating, expectation and journey event chronologically.
+
+Rationale recorded from Shaun: an individual comparator with a genuinely poor
+record should not define the B baseline, because it materially distorts the
+promoted player's distance from the rest of the tier.
+
+**Safety/acceptance:** CCode must first produce the replay blast-radius preview
+(old anchor → 1400 for each player, affected documents/players/current ratings)
+before the live beta write, then apply only the exact approved correction and
+verify replay-to-self + diagnostics afterwards.
 
 ### CCode — 20 Sep 2026 (Admin/Manage mobile refinement — all seven points done)
 
@@ -2977,22 +3005,17 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**All items below are DONE (`5bd7999`).** Nothing is queued for CCode; the
-rating-model backlog and match sharing in Section 5 remain parked and
-unauthorised.
-
-1. **DONE.** Admin/Manage mobile refinement — approved and unblocked.
-2. Move historical match-card `… Manage` to the same row as `Submitted by …`,
-   aligned right, leaving the matchup row full-width.
-3. Convert every major Admin/Manage section to a consistent accordion with
-   full-row tap target and chevron; **default all collapsed whenever the screen
-   is opened**; allow multiple sections open.
-4. Remove emoji-style Admin/Manage section icons and align headings to the
-   premium existing admin design language.
-5. Restyle Player Tags: `Add a new player` card + `Existing players` compact
-   list; each player summary row expands inline to Current Tier / Starting Tier
-   / Status controls; use admin sans-serif typography.
-6. Preserve all player/rating/history/filter/prediction/match-management logic.
-7. Verify on narrow iPhone viewport and add targeted browser coverage for
-   wrapping, accordion reset/collapse behavior, and player-row expand/collapse.
-8. Update Ledger with implementation commit/tests and baton back to CGPT/Shaun.
+1. **URGENT historical correction — Tom/Fatch B baseline.**
+2. Build a dry-run Historical Club Adjustment preview that supersedes:
+   - Tom, effective 1 Jul 2026: old Jords-based anchor → **1400**;
+   - Fatch, effective 1 Aug 2026: old Tom-based anchor → **1400**.
+3. Keep both historical Reliability values at **10%**.
+4. Preserve the prior events as superseded audit history; no silent mutation/deletion.
+5. Replay forward chronologically and report the blast radius before any live write:
+   affected players, current-rating changes, event/doc counts, and any material
+   ranking changes.
+6. After Shaun sees the preview, apply the exact approved correction to beta,
+   then verify replay-to-self = 0 differences and diagnostics pass.
+7. Update `RATING_MODEL.md` / tests / fixtures where they encode the superseded
+   Jords/Tom anchors, so repository truth matches the corrected board decision.
+8. Update Ledger with implementation commit, preview/applied results, and baton back.
