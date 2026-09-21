@@ -84,6 +84,8 @@ const SHOTS = [
     note: 'The disclosure says the thing a reader would otherwise have to assume: that the window is per player, that it ignores the month selector, and that a row with fewer than ten games is a short sample rather than a bad one.' },
   { file: '19-admin-predict.png', title: 'Admin — Predict a Matchup',
     note: 'Admin-only by design: players agree a game in the group first, then send the four names. The card answers the questions in the order they are asked — who should win, what share of the games, who is playing and at what rating, and how big the edge is. No engine terminology: the 80/20 blend and the phrase "Expected performance score" are gone. It says share of games, never a chance of winning, because no win-probability model has been validated. Visual treatment is deliberately unchanged pending Shaun\'s render.' },
+  { file: '20-admin-rename.png', title: 'Admin — renaming a player',
+    note: 'A name is a label, not an identity. The confirmation names both, and says the thing that matters: the record does not move. Renaming writes one field on one document — no match, no rating journey event and no document id is touched, which is why it is safe to do twice or fifty times.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -358,6 +360,27 @@ async function render(players, matches, journey, readAt) {
       document.getElementById('predA1').dispatchEvent(new Event('input'));
     },
     () => { const el = document.querySelector('[data-acc="predict"]'); if (el) el.scrollIntoView({ block: 'start' }); });
+
+  // Renaming a player: one field on one document, with the confirmation open.
+  await shot('20-admin-rename.png',
+    () => {
+      const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+      closeSheet();
+      isUnlocked = true; currentUserName = 'Board';
+      const more = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+      if (more) more.click();
+      adminOpenSections = { players: true };
+      renderManage();
+      const subject = 'Shaun';
+      openPlayerTags[subject] = true;
+      renderPlayerTagsList();
+      const input = document.querySelector(`.ptag-rename-input[data-name="${subject}"]`);
+      if (!input) return;
+      input.value = 'Shaun J';
+      input.dispatchEvent(new Event('input'));
+      document.querySelector(`.ptag-rename-ask[data-name="${subject}"]`).click();
+    },
+    () => { const el = document.querySelector('.ptag-rename'); if (el) el.scrollIntoView({ block: 'center' }); });
 
   const openGuide = () => {
     const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');

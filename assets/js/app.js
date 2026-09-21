@@ -975,6 +975,22 @@ let MONTHLY_VIEWS = null;
 let PRODUCTION_SNAPSHOT_INDEX = (typeof PRODUCTION_SNAPSHOT !== 'undefined' && typeof V3Bridge !== 'undefined')
   ? V3Bridge.indexSnapshot(PRODUCTION_SNAPSHOT) : {};
 
+// The frozen identity behind a display name. EVERYTHING that writes to the
+// record -- a new match, a club decision, a historical adjustment -- must go
+// through this first. A display name written into the record would be a new
+// player as far as the engine is concerned.
+function playerIdFor(name){
+  if(V3_STATE && V3_STATE.alias) return PlayerNames.toId(V3_STATE.alias, name);
+  return name;
+}
+
+// …and the reverse, for the rare place that holds a stored id and needs to
+// show it (the admin audit trail, mostly).
+function displayNameFor(playerId){
+  if(V3_STATE && V3_STATE.alias) return PlayerNames.toDisplay(V3_STATE.alias, playerId);
+  return playerId;
+}
+
 async function loadV3State(){
   if(!db){ V3_STATE = {loaded:false, error:'No database connection.', players:{}}; }
   else {
@@ -983,10 +999,11 @@ async function loadV3State(){
     if(V3_STATE.loaded){
       try {
         const rawMatches = {};
-        V3_MATCHES = await V3Bridge.loadMatches(backend, rawMatches);
+        const rawJourney = {};
+        V3_MATCHES = await V3Bridge.loadMatches(backend, rawMatches, V3_STATE.alias);
         // Loaded at start-up rather than lazily because the app opens on a
         // monthly view, so a lazy read would fire immediately anyway.
-        V3_JOURNEY = await V3Bridge.loadJourney(backend);
+        V3_JOURNEY = await V3Bridge.loadJourney(backend, rawJourney, V3_STATE.alias);
         // Tiers come from v3 state, NOT from TIER_MAP. TIER_MAP is still {} at
         // this point -- rebuildMapsFromState() has not run yet -- and an empty
         // map made tierAsOf() answer `undefined` for every player who was not
@@ -1013,7 +1030,11 @@ async function loadV3State(){
         MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF });
         // The record in its stored form, which is what a replay is verified
         // against. Assembled from documents already read; it costs nothing.
-        V3_RECORD = { matches: rawMatches.raw || [], journey: V3_JOURNEY, players: V3_STATE.rawPlayerDocs || [] };
+        // The record in its STORED form -- ids, not labels. Everything above
+        // works in labels; the replay verifier, the repair planner and the
+        // diagnostics must see exactly what is in Firestore, or a renamed
+        // player looks like a player who has vanished and been replaced.
+        V3_RECORD = { matches: rawMatches.raw || [], journey: rawJourney.raw || [], players: V3_STATE.rawPlayerDocs || [] };
       }
       catch(e){
         V3_MATCHES = []; V3_JOURNEY = []; MONTHLY_VIEWS = null;
@@ -3975,12 +3996,12 @@ async function histLoadContext(){
   if(!player){ histMessage = name ? `No v3 record for "${name}".` : 'Enter a player name.'; renderManage(); return; }
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ histMessage = 'Enter an effective date as YYYY-MM-DD.'; renderManage(); return; }
 
-  histAdj = { playerId: player, effectiveDate: date, tierEvent: null, newTier: null,
+  histAdj = { playerId: playerIdFor(player), effectiveDate: date, tierEvent: null, newTier: null,
     ratingDecision: null, overrideRating: null, overrideReliability: null, reliabilityChoice: null,
     correctedRating: null, correctedReliability: null, reason: '', createdBy: reviewActor() };
   histPlan = null; histMessage = '';
   try {
-    histCtx = HistoricalAdjustment.context({ journey: V3_JOURNEY, playerId: player, effectiveDate: date, toTier: null });
+    histCtx = HistoricalAdjustment.context({ journey: (V3_RECORD && V3_RECORD.journey) || [], playerId: playerIdFor(player), effectiveDate: date, toTier: null });
   } catch(e){ histCtx = null; histMessage = e.message; }
   renderManage();
 }
@@ -4012,7 +4033,7 @@ function histDraft(){
 // from that historical date -- never from today's pools.
 function histRefreshContext(toTier){
   histCtx = HistoricalAdjustment.context({
-    journey: V3_JOURNEY, playerId: histAdj.playerId,
+    journey: (V3_RECORD && V3_RECORD.journey) || [], playerId: histAdj.playerId,
     effectiveDate: histAdj.effectiveDate, toTier,
   });
 }
@@ -4412,7 +4433,7 @@ function Engine_reliability(evidence){ return RatingEngine.reliability(evidence)
 function reviewSnapshot(){
   const date = reviewToday();
   if(!reviewSnapshotCache || reviewSnapshotCache.date !== date){
-    reviewSnapshotCache = { date, state: MonthlyReview.preReviewSnapshot(V3_JOURNEY, date) };
+    reviewSnapshotCache = { date, state: MonthlyReview.preReviewSnapshot((V3_RECORD && V3_RECORD.journey) || [], date) };
   }
   return reviewSnapshotCache.state;
 }
@@ -4525,7 +4546,7 @@ function buildReviewPanelHtml(name){
   if(!live) return `<div class="section-sub" style="color:var(--red);">${name} has no v3 record.</div>`;
   if(!s) return `<div class="section-sub" style="color:var(--red);">${name} has no recorded state before ${reviewToday()}, so there is nothing to review against.</div>`;
 
-  const last = ClubDecision.lastEventDate(V3_JOURNEY, name);
+  const last = ClubDecision.lastEventDate((V3_RECORD && V3_RECORD.journey) || [], playerIdFor(name));
   const d = reviewDraft && reviewDraft.playerId === name ? reviewDraft : null;
   const up = TIER_ABOVE[s.tier], down = TIER_BELOW[s.tier];
 
@@ -4835,10 +4856,14 @@ function stageReview(){
   const snap = reviewSnapshot();
   const recordedAt = new Date().toISOString();
   try {
-    const decisions = MonthlyReview.decisionsFor(reviewDraftForCheck(), snap);
+    const decisions = MonthlyReview.decisionsFor(reviewDraftForCheck(), snap)
+      // A decision is about to become a document, so from here on the player
+      // is an identity, not a label. Without this a renamed player's decision
+      // would be filed under a player the record has never heard of.
+      .map(d => ({ ...d, playerId: playerIdFor(d.playerId) }));
     const working = {};
-    Object.entries(V3_STATE.players).forEach(([k,v])=>{ working[k] = {...v}; });
-    const journey = V3_JOURNEY.slice();
+    Object.entries(V3_STATE.playersById).forEach(([k,v])=>{ working[k] = {...v}; });
+    const journey = ((V3_RECORD && V3_RECORD.journey) || []).slice();
     const prepared = [];
     decisions.forEach(decision=>{
       const p = ClubDecision.prepare({ state: working, journey, decision, today: reviewToday(), recordedAt });
@@ -5422,6 +5447,67 @@ async function submitNewGame(){
 // same every time it is opened.
 let openPlayerTags = {};
 
+// Rename state. Nothing here is persisted: a half-typed name should not
+// survive a reload, and the confirmation should never be pre-armed.
+let renameDraft = {};        // display name -> what is being typed
+let renameConfirm = null;    // the plan awaiting a yes
+let renameBusy = false;
+let renameMessage = null;
+let renameMessageFor = null; // the playerId the message belongs to
+let renameOk = false;
+
+// Element ids have to be usable in a selector, and a player name is free text.
+function escapeAttrId(value){
+  return String(value).replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+// Renaming writes ONE field on ONE document. It does not touch a match, a
+// journey event, or any document id -- which is what makes it safe to do
+// twice, or fifty times. See assets/js/playerNames.js.
+async function commitRename(displayName){
+  const player = PLAYERS.find(p => p.name === displayName);
+  const docs = (V3_STATE && V3_STATE.rawPlayerDocs) || [];
+  const plan = PlayerNames.planRename(renameDraft[displayName], {
+    playerId: player ? player.playerId : displayName, docs,
+  });
+  renameMessageFor = player ? player.playerId : displayName;
+  if(!plan.ok){
+    renameOk = false; renameMessage = plan.reason; renameConfirm = null;
+    renderPlayerTagsList();
+    return;
+  }
+  if(!db){
+    renameOk = false; renameMessage = 'No database connection.';
+    renderPlayerTagsList();
+    return;
+  }
+  renameBusy = true; renderPlayerTagsList();
+  try {
+    const stored = docs.find(d => d.id === plan.playerId);
+    // set() with the whole document rather than a partial update, because the
+    // compat backend offers set and the document is small -- and writing it
+    // whole means the stored shape cannot be half-updated.
+    await db.collection(RatingStore.COLLECTIONS.players).doc(plan.playerId)
+      .set({ ...stored, ...plan.update });
+    renameOk = true;
+    renameMessage = `${plan.from} is now ${plan.to}. Nothing else changed.`;
+    renameConfirm = null;
+    delete renameDraft[displayName];
+    // Re-read so every screen picks up the new label from the record rather
+    // than from an assumption about what was just written.
+    await loadV3State();
+    recomputeAll();
+    renderPlayerTagsList();
+    renderManage();
+  } catch(e){
+    renameOk = false;
+    renameMessage = 'Could not rename: ' + (e && e.message ? e.message : String(e));
+  } finally {
+    renameBusy = false;
+    renderPlayerTagsList();
+  }
+}
+
 function renderPlayerTagsList(){
   const box = document.getElementById('playerTagsList');
   if(!box) return;
@@ -5454,9 +5540,55 @@ function renderPlayerTagsList(){
           <option value="" ${startingTier===''?'selected':''}>Started: same as now</option>
           ${['S','A','B','C'].map(t=>`<option value="${t}" ${t===startingTier?'selected':''}>Started at Tier ${t}</option>`).join('')}
         </select>
+      </div>
+      <div class="ptag-rename">
+        <label class="fg-label" for="ptagRename-${escapeAttrId(p.name)}">Name</label>
+        <input class="fg-select ptag-rename-input" id="ptagRename-${escapeAttrId(p.name)}"
+          data-name="${escapeHtml(p.name)}" value="${escapeHtml(renameDraft[p.name] !== undefined ? renameDraft[p.name] : p.name)}"
+          placeholder="${escapeHtml(p.name)}" />
+        ${renameConfirm && renameConfirm.playerId === p.playerId
+          ? `<div class="ptag-rename-confirm">
+               <div>Rename <b>${escapeHtml(renameConfirm.from)}</b> to <b>${escapeHtml(renameConfirm.to)}</b>?</div>
+               <div class="ptag-rename-note">Their record does not move. Every match, rating, tier change and statistic stays exactly where it is — only what they are called changes.</div>
+               <div class="cc-meta-row">
+                 <button class="preset-btn ptag-rename-go" data-name="${escapeHtml(p.name)}">${renameBusy ? 'Renaming…' : 'Rename'}</button>
+                 <button class="preset-btn ptag-rename-cancel" data-name="${escapeHtml(p.name)}">Cancel</button>
+               </div>
+             </div>`
+          : `<button class="preset-btn ptag-rename-ask" data-name="${escapeHtml(p.name)}">Rename…</button>`}
+        ${renameMessage && renameMessageFor === p.playerId
+          ? `<div class="ptag-rename-note${renameOk ? '' : ' is-bad'}">${escapeHtml(renameMessage)}</div>` : ''}
+        ${p.previousDisplayNames && p.previousDisplayNames.length
+          ? `<div class="ptag-rename-note">Previously ${p.previousDisplayNames.map(n=>escapeHtml(n)).join(', ')}.</div>` : ''}
       </div>` : ''}
     </div>
   `;}).join('');
+
+  box.querySelectorAll('.ptag-rename-input').forEach(inp=>{
+    inp.addEventListener('input', ()=>{ renameDraft[inp.dataset.name] = inp.value; });
+  });
+  box.querySelectorAll('.ptag-rename-ask').forEach(btn=>{
+    btn.onclick = ()=>{
+      const n = btn.dataset.name;
+      const player = PLAYERS.find(p => p.name === n);
+      const docs = (V3_STATE && V3_STATE.rawPlayerDocs) || [];
+      const plan = PlayerNames.planRename(renameDraft[n] !== undefined ? renameDraft[n] : n, {
+        playerId: player ? player.playerId : n, docs,
+      });
+      renameMessageFor = player ? player.playerId : n;
+      // Everything is checked BEFORE the confirmation, so the confirmation
+      // only ever asks about a rename that would actually work.
+      if(!plan.ok){ renameOk = false; renameMessage = plan.reason; renameConfirm = null; }
+      else { renameOk = true; renameMessage = null; renameConfirm = plan; }
+      renderPlayerTagsList();
+    };
+  });
+  box.querySelectorAll('.ptag-rename-cancel').forEach(btn=>{
+    btn.onclick = ()=>{ renameConfirm = null; renameMessage = null; renderPlayerTagsList(); };
+  });
+  box.querySelectorAll('.ptag-rename-go').forEach(btn=>{
+    btn.onclick = ()=>{ if(!renameBusy) commitRename(btn.dataset.name); };
+  });
 
   box.querySelectorAll('[data-ptag-toggle]').forEach(el=>{
     el.onclick = ()=>{
@@ -7377,8 +7509,9 @@ function pendingToEngineMatch(m, id){
     id,
     date: m.date,
     sourceIndex: Number(id.slice(m.date.length + 1)),
-    teamA: m.winners,
-    teamB: m.losers,
+    // Back to identities before this reaches the record.
+    teamA: m.winners.map(playerIdFor),
+    teamB: m.losers.map(playerIdFor),
     sets: m.sets,
     outcome: m.isDraw ? RatingEngine.OUTCOME.DRAW : RatingEngine.OUTCOME.A_WINS,
     type: m.type || 'doubles',

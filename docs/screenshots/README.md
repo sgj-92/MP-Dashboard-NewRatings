@@ -126,6 +126,12 @@ The disclosure says the thing a reader would otherwise have to assume: that the 
 
 Admin-only by design: players agree a game in the group first, then send the four names. The card answers the questions in the order they are asked — who should win, what share of the games, who is playing and at what rating, and how big the edge is. No engine terminology: the 80/20 blend and the phrase "Expected performance score" are gone. It says share of games, never a chance of winning, because no win-probability model has been validated. Visual treatment is deliberately unchanged pending Shaun's render.
 
+### Admin — renaming a player
+
+![Admin — renaming a player](20-admin-rename.png)
+
+A name is a label, not an identity. The confirmation names both, and says the thing that matters: the record does not move. Renaming writes one field on one document — no match, no rating journey event and no document id is touched, which is why it is safe to do twice or fifty times.
+
 ### Power Rating Guide — in short
 
 ![Power Rating Guide — in short](12-rating-guide-summary.png)

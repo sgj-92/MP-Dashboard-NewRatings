@@ -237,6 +237,16 @@
 
   const PROVENANCE_FIELDS = ['createdBy', 'recordedAt', 'source'];
 
+  // A replay reconstructs ENGINE state. It must not destroy fields it does not
+  // own -- and a player's display name is not engine state, it is a label the
+  // engine has never heard of. Without this, the first replay after a rename
+  // rebuilds the player document without its name, `verifyNoOp` reports it as a
+  // difference, and the app then refuses every match edit because the record
+  // no longer appears to replay to itself. The same would be true of any field
+  // added to a player document later, which is why the list is a constant here
+  // rather than a special case for renaming.
+  const PLAYER_LABEL_FIELDS = ['displayName', 'previousDisplayNames'];
+
   // The matches written are the ones replayed, taken from the inputs. Deriving
   // them from the replay's own records would be re-reading the engine's working
   // rather than the history it was given.
@@ -246,7 +256,7 @@
   // editing now, and restamping it would rewrite who recorded the whole season
   // -- which also made every document differ, so every edit looked like a full
   // rebuild.
-  function docsOf(inputs, replay, provenance, keepProvenanceFrom) {
+  function docsOf(inputs, replay, provenance, keepProvenanceFrom, keepLabelsFrom) {
     // applyStateEvent builds its own return shape and does not carry `revision`
     // or `supersedes` through. Without re-attaching them the superseding
     // correction is written with the BASE id and overwrites the very decision
@@ -289,6 +299,15 @@
         PROVENANCE_FIELDS.forEach((f) => { if (was[f] !== undefined) d[f] = was[f]; });
       });
     }
+    if (keepLabelsFrom) {
+      const original = {};
+      (keepLabelsFrom || []).forEach((d) => { original[d.id] = d; });
+      plan[Store.COLLECTIONS.players].forEach((d) => {
+        const was = original[d.id];
+        if (!was) return;
+        PLAYER_LABEL_FIELDS.forEach((f) => { if (was[f] !== undefined) d[f] = was[f]; });
+      });
+    }
     return plan;
   }
 
@@ -321,7 +340,7 @@
   // diverged, and no change may be planned on top of that.
   function verifyNoOp(stored, provenance) {
     const inputs = inputsFromRecord(stored);
-    const rebuilt = docsOf(inputs, replayInputs(inputs), provenance, stored.journey);
+    const rebuilt = docsOf(inputs, replayInputs(inputs), provenance, stored.journey, stored.players);
     const storedDocs = {
       [Store.COLLECTIONS.matches]: stored.matches || [],
       [Store.COLLECTIONS.journey]: stored.journey || [],
@@ -361,7 +380,7 @@
   // the caller should stop and look at it.
   function planRepair(stored, provenance) {
     const inputs = inputsFromRecord(stored);
-    const rebuilt = docsOf(inputs, replayInputs(inputs), provenance || {}, stored.journey);
+    const rebuilt = docsOf(inputs, replayInputs(inputs), provenance || {}, stored.journey, stored.players);
     const storedDocs = {
       [Store.COLLECTIONS.matches]: stored.matches || [],
       [Store.COLLECTIONS.journey]: stored.journey || [],
@@ -432,9 +451,9 @@
       throw err;
     }
 
-    const beforeDocs = docsOf(inputs, replayInputs(inputs), provenance, stored.journey);
+    const beforeDocs = docsOf(inputs, replayInputs(inputs), provenance, stored.journey, stored.players);
     const afterReplay = replayInputs(changed);
-    const afterDocs = docsOf(changed, afterReplay, provenance, stored.journey);
+    const afterDocs = docsOf(changed, afterReplay, provenance, stored.journey, stored.players);
     const d = diffDocs(beforeDocs, afterDocs);
 
     // A superseded decision is deliberately not replayed, which makes it look

@@ -11,10 +11,12 @@
 // reconstructed value. A believable but wrong number is worse than a gap.
 
 (function (root, factory) {
-  const api = factory(typeof require === 'function' ? require('./ratingEngine.js') : root.RatingEngine);
+  const api = factory(
+    typeof require === 'function' ? require('./ratingEngine.js') : root.RatingEngine,
+    typeof require === 'function' ? require('./playerNames.js') : root.PlayerNames);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.V3Bridge = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (Engine) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Engine, Names) {
   'use strict';
 
   const REQUIRED_FIELDS = ['id', 'rating', 'effectiveEvidence', 'lifetimeMatches', 'tier', 'classificationStatus'];
@@ -42,7 +44,7 @@
   }
 
   function createState() {
-    return { loaded: false, error: null, players: {}, playerCount: 0, loadedAt: null, problems: [] };
+    return { loaded: false, error: null, players: {}, playersById: {}, alias: null, playerCount: 0, loadedAt: null, problems: [] };
   }
 
   // backend: anything with getAll(collection). Browser passes a Firestore
@@ -65,14 +67,38 @@
     // and re-reading 34 documents to get back what was just read would be a
     // read budget spent on nothing.
     state.rawPlayerDocs = docs;
+    // A name is a label; `id` is the identity and never changes. The app above
+    // this line works entirely in labels, so the translation happens here,
+    // once, and `rawPlayerDocs` keeps the stored form for the replay verifier.
+    state.alias = Names.buildAlias(docs);
     docs.forEach((d) => {
       const problems = validatePlayerDoc(d);
       if (problems.length) {
         state.problems.push(`${d.id || '(no id)'}: ${problems.join(', ')}`);
         return;
       }
-      state.players[d.id] = {
+      const shown = Names.displayFor(d);
+      // The same state twice, under both keys. The app reads `players` and
+      // talks in labels; anything preparing a document for the record reads
+      // `playersById` and talks in identities. Building both here means no
+      // call site has to remember to convert -- it picks the map that matches
+      // what it is about to do.
+      state.playersById[d.id] = {
         name: d.id,
+        playerId: d.id,
+        rating: d.rating,
+        reliability: Engine.reliability(d.effectiveEvidence),
+        reliabilityBand: reliabilityBand(Engine.reliability(d.effectiveEvidence)),
+        effectiveEvidence: d.effectiveEvidence,
+        lifetimeMatches: d.lifetimeMatches,
+        tier: d.tier,
+        classificationStatus: d.classificationStatus,
+        ratingModelVersion: d.ratingModelVersion || null,
+      };
+      state.players[shown] = {
+        name: shown,
+        playerId: d.id,
+        previousDisplayNames: d.previousDisplayNames || [],
         rating: d.rating,
         reliability: Engine.reliability(d.effectiveEvidence),
         reliabilityBand: reliabilityBand(Engine.reliability(d.effectiveEvidence)),
@@ -96,14 +122,14 @@
   // Converts a stored v3 match into the shape the existing application reads.
   // Team A is the winning side for every decided match; a draw carries isDraw
   // and its side assignment is arbitrary but fixed.
-  function toLegacyMatchShape(doc) {
+  function toLegacyMatchShape(doc, alias) {
     const isDraw = doc.outcome === Engine.OUTCOME.DRAW;
     return {
       id: doc.id,
       date: doc.date,
       sourceIndex: doc.sourceIndex,
-      winners: doc.teamA,
-      losers: doc.teamB,
+      winners: Names.mapTeam(alias, doc.teamA),
+      losers: Names.mapTeam(alias, doc.teamB),
       sets: doc.sets.map((s) => [s.teamA, s.teamB]),
       type: doc.type || 'doubles',
       note: '',
@@ -117,22 +143,31 @@
   // so the application and the rating it displays walk the same sequence.
   // `collect`, when given, receives the documents as stored -- the shape the
   // replay verifier needs, which the legacy shape below has already lost.
-  async function loadMatches(backend, collect) {
+  async function loadMatches(backend, collect, alias) {
     const docs = await backend.getAll('matches');
     if (!docs || docs.length === 0) throw new Error('The v3 matches collection is empty.');
     if (collect) collect.raw = docs;
     return docs
-      .map(toLegacyMatchShape)
+      .map((d) => toLegacyMatchShape(d, alias))
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.sourceIndex - b.sourceIndex));
   }
 
   // The Rating Journey. Read once per session for the monthly views, never for
   // ordinary player state -- that still comes from the compact `players`
   // collection. 633 documents today, growing ~120 a month.
-  async function loadJourney(backend) {
+  async function loadJourney(backend, collect, alias) {
     const docs = await backend.getAll('ratingJourney');
     if (!docs || docs.length === 0) throw new Error('The ratingJourney collection is empty.');
-    return docs;
+    if (collect) collect.raw = docs;
+    // Every screen that reads the journey -- the Rating Journey, the monthly
+    // views, tier history, match facts -- looks a player up by what they are
+    // called. The document id is deliberately NOT rewritten: it is the record's
+    // own key and the verifier compares against `collect.raw`.
+    if (!alias) return docs;
+    return docs.map((d) => (
+      Object.prototype.hasOwnProperty.call(alias.toDisplay || {}, d.playerId)
+        ? { ...d, playerId: alias.toDisplay[d.playerId] }
+        : d));
   }
 
   // The map buildPlayers() consumes: name -> Power Rating. Reading this when
@@ -167,8 +202,14 @@
     player.lifetimeMatches = v3.lifetimeMatches;
     player.classificationStatus = v3.classificationStatus;
     player.ratingModelVersion = v3.ratingModelVersion;
+    // The frozen identity behind the label, so anything about to touch the
+    // record can find it without going back through the alias map.
+    player.playerId = v3.playerId || player.name;
+    player.previousDisplayNames = v3.previousDisplayNames || [];
 
-    const snap = snapshotIndex ? snapshotIndex[player.name] : null;
+    // The export's only join key is the name as it was when the snapshot was
+    // frozen -- which is the player's id, not whatever they are called now.
+    const snap = snapshotIndex ? snapshotIndex[v3.playerId || player.name] : null;
     player.productionSnapshotRating = snap ? snap.power_rating : null;
     player.productionSnapshotMissing = !snap;
     player.productionVsV3 = snap ? Math.round((v3.rating - snap.power_rating) * 10) / 10 : null;

@@ -1937,3 +1937,18 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .lg-controls .fg-row{ margin-bottom: 0; min-width: 0; }
 .lg-controls .fg-label{ font-size: 10px; margin-bottom: 4px; }
 .lg-controls .fg-select{ padding: 7px 9px; font-size: 13px; }
+
+/* Rename sits inside the player row that is already open, below the tier and
+   status controls — a label change, presented as one. */
+.ptag-rename{ margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--surface-border); }
+.ptag-rename .fg-label{ display:block; margin-bottom: 5px; }
+.ptag-rename-input{ width: 100%; margin-bottom: 8px; }
+.ptag-rename-confirm{
+  background: var(--surface-2); border: 1px solid var(--surface-border);
+  border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
+}
+.ptag-rename-note{
+  font-family: var(--font-interface); font-size: 11px; color: var(--text-dim);
+  margin-top: 6px; line-height: 1.45;
+}
+.ptag-rename-note.is-bad{ color: var(--red); }

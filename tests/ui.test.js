@@ -4052,3 +4052,261 @@ test('an awkward player name survives the prediction card', { skip }, async () =
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== PLAYER RENAME =====================
+// Shaun: "I just need editable names with no consequences."
+//
+// So the identity is frozen and only the label moves. `players/{playerId}`
+// keeps its document id for ever, every ratingJourney event keeps its id (which
+// has the old name inside it), and every match keeps the names it was recorded
+// with. A rename writes ONE field on ONE document.
+//
+// These tests exist to prove the "no consequences" half, because that is the
+// half that would be expensive to be wrong about.
+
+const openTags = (app) => app.run(() => {
+  isUnlocked = true; currentUserName = 'Board'; adminRole = 'owner';
+  const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+  if (b) b.click();
+  adminOpenSections = { players: true };
+  renderManage();
+});
+
+// Everything about a player that a rename must not disturb.
+const FINGERPRINT = `(name) => {
+  const p = PLAYERS.find(x => x.name === name);
+  const ms = ALL_MATCHES.filter(m => m.winners.includes(name) || m.losers.includes(name));
+  const j = (typeof playerJourney === 'function') ? playerJourney(name) : null;
+  return {
+    found: !!p,
+    playerId: p && p.playerId,
+    rating: p && Math.round(p.rating * 1000) / 1000,
+    tier: p && p.tier,
+    reliability: p && p.reliability,
+    lifetimeMatches: p && p.lifetimeMatches,
+    wins: p && p.wins, losses: p && p.losses, draws: p && p.draws,
+    matches: ms.length,
+    matchIds: ms.map(m => m.id).sort(),
+    journeyPoints: j && j.journey ? j.journey.length : null,
+    journeyLast: j && j.journey && j.journey.length ? Math.round(j.journey[j.journey.length - 1].rating * 1000) / 1000 : null,
+  };
+}`;
+
+test('renaming a player changes the label and nothing else', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openTags(app);
+    const r = await app.run((fpSrc) => {
+      const fingerprint = eval(fpSrc);
+      // A player with real history, so there is something to lose.
+      const subject = [...PLAYERS].sort((a, b) => b.lifetimeMatches - a.lifetimeMatches)[0].name;
+      const before = fingerprint(subject);
+      const recordBefore = {
+        players: JSON.stringify(V3_RECORD.players),
+        matches: JSON.stringify(V3_RECORD.matches),
+        journey: JSON.stringify(V3_RECORD.journey),
+      };
+      const newName = subject + ' J';
+
+      // Drive the real control, the way an admin does.
+      openPlayerTags[subject] = true; renderPlayerTagsList();
+      const input = document.querySelector(`.ptag-rename-input[data-name="${subject}"]`);
+      input.value = newName;
+      input.dispatchEvent(new Event('input'));
+      document.querySelector(`.ptag-rename-ask[data-name="${subject}"]`).click();
+      const confirmText = document.querySelector('.ptag-rename-confirm').innerText.replace(/\s+/g, ' ');
+      document.querySelector(`.ptag-rename-go[data-name="${subject}"]`).click();
+
+      return { subject, newName, before, recordBefore, confirmText,
+        writes: window.__writes.map(w => ({ collection: w.collection, id: w.id, deleted: !!w.deleted })) };
+    }, FINGERPRINT);
+
+    // The confirmation says what it is about to do, in both names.
+    assert.match(r.confirmText, new RegExp(`Rename ${r.subject} to ${r.newName}\\?`), r.confirmText);
+
+    await app.page.waitForTimeout(400);
+    const after = await app.run(([fpSrc, subject, newName]) => {
+      const fingerprint = eval(fpSrc);
+      return {
+        old: fingerprint(subject),
+        renamed: fingerprint(newName),
+        record: {
+          players: JSON.stringify(V3_RECORD.players),
+          matches: JSON.stringify(V3_RECORD.matches),
+          journey: JSON.stringify(V3_RECORD.journey),
+        },
+        writes: window.__writes.map(w => ({ collection: w.collection, id: w.id, deleted: !!w.deleted })),
+        doc: (window.__data.players || {})[subject],
+      };
+    }, [FINGERPRINT, r.subject, r.newName]);
+
+    // 1. Exactly one document written, and it is their own — nothing deleted.
+    assert.strictEqual(after.writes.length, 1, `one write, got ${JSON.stringify(after.writes)}`);
+    assert.deepStrictEqual(after.writes[0], { collection: 'players', id: r.subject, deleted: false },
+      'the write goes to their ORIGINAL document id, which never moves');
+
+    // 2. The stored record is byte-identical apart from that one document.
+    assert.strictEqual(after.record.matches, r.recordBefore.matches, 'no match may change');
+    assert.strictEqual(after.record.journey, r.recordBefore.journey, 'no journey event may change');
+    assert.strictEqual(after.doc.displayName, r.newName);
+    assert.deepStrictEqual(after.doc.previousDisplayNames, [r.subject], 'the old name is kept');
+    assert.strictEqual(after.doc.id, r.subject, 'the document id is untouched');
+
+    // 3. The player is now found under the new name, with an identical history.
+    assert.strictEqual(after.old.found, false, 'the old name no longer resolves');
+    assert.strictEqual(after.renamed.found, true, 'the new one does');
+    const {ceremony, ...beforeRest} = r.before;
+    assert.deepStrictEqual(
+      { ...after.renamed, playerId: undefined },
+      { ...beforeRest, playerId: undefined },
+      'every number about this player must survive the rename unchanged',
+    );
+    assert.strictEqual(after.renamed.playerId, r.subject, 'and they are still keyed by the original name');
+    assert.ok(after.renamed.matches > 5, 'the subject needs real history for this to mean anything');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a renamed player keeps their place on every screen', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openTags(app);
+    const r = await app.run(() => {
+      const subject = [...PLAYERS].sort((a, b) => b.lifetimeMatches - a.lifetimeMatches)[0].name;
+      const newName = subject + ' J';
+      const rank = () => [...PLAYERS].sort((a, b) => b.rating - a.rating).findIndex(p => p.lifetimeMatches
+        && (p.name === subject || p.name === newName));
+      const before = { rank: rank(), count: PLAYERS.length };
+
+      openPlayerTags[subject] = true; renderPlayerTagsList();
+      const input = document.querySelector(`.ptag-rename-input[data-name="${subject}"]`);
+      input.value = newName; input.dispatchEvent(new Event('input'));
+      document.querySelector(`.ptag-rename-ask[data-name="${subject}"]`).click();
+      document.querySelector(`.ptag-rename-go[data-name="${subject}"]`).click();
+      return { subject, newName, before };
+    });
+    await app.page.waitForTimeout(400);
+
+    const after = await app.run(([subject, newName]) => {
+      const rank = () => [...PLAYERS].sort((a, b) => b.rating - a.rating).findIndex(p => p.lifetimeMatches
+        && (p.name === subject || p.name === newName));
+      // The Directory, a profile, and a match card.
+      goToSection('players'); renderPlayersTab();
+      const inDirectory = [...document.querySelectorAll('#playersView .pdir-row')].map(e => e.dataset.player);
+      openSheet(newName);
+      const sheetName = document.getElementById('sheetName').textContent;
+      // openSheet builds these directly, so they are what "their history is
+      // still on it" actually means here.
+      const statsText = document.getElementById('sheetStats').innerText.replace(/\s+/g, ' ');
+      const profileText = document.getElementById('sheetProfile').innerText;
+      closeSheet();
+      // And a match still names them — under the new label.
+      const anyMatch = ALL_MATCHES.find(m => m.winners.includes(newName) || m.losers.includes(newName));
+      return {
+        rank: rank(), count: PLAYERS.length,
+        inDirectoryNew: inDirectory.includes(newName),
+        inDirectoryOld: inDirectory.includes(subject),
+        sheetName, statsText, profileLength: profileText.length,
+        recordShown: /\d+-\d+/.test(statsText),
+        matchNamesThem: !!anyMatch,
+      };
+    }, [r.subject, r.newName]);
+
+    assert.strictEqual(after.count, r.before.count, 'no player is gained or lost');
+    assert.strictEqual(after.rank, r.before.rank, 'their ranking position is unchanged');
+    assert.strictEqual(after.inDirectoryNew, true, 'the Directory lists the new name');
+    assert.strictEqual(after.inDirectoryOld, false, 'and not the old one');
+    assert.strictEqual(after.sheetName, r.newName, 'their profile opens under the new name');
+    assert.strictEqual(after.recordShown, true, `their W-L record is still on the profile: ${after.statsText}`);
+    assert.ok(after.profileLength > 200, 'and the profile body is built');
+    assert.strictEqual(after.matchNamesThem, true, 'and their matches still name them');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the record still replays to itself after a rename', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openTags(app);
+    const r = await app.run(() => {
+      const before = ReplayForward.verifyNoOp(V3_RECORD, {});
+      const subject = [...PLAYERS].sort((a, b) => b.lifetimeMatches - a.lifetimeMatches)[0].name;
+      openPlayerTags[subject] = true; renderPlayerTagsList();
+      const input = document.querySelector(`.ptag-rename-input[data-name="${subject}"]`);
+      input.value = subject + ' J'; input.dispatchEvent(new Event('input'));
+      document.querySelector(`.ptag-rename-ask[data-name="${subject}"]`).click();
+      document.querySelector(`.ptag-rename-go[data-name="${subject}"]`).click();
+      return { subject, beforeOk: before.identical, beforeDiffs: before.count };
+    });
+    await app.page.waitForTimeout(400);
+    const after = await app.run(() => {
+      const v = ReplayForward.verifyNoOp(V3_RECORD, {});
+      return { ok: v.identical, diffs: v.count, sample: (v.differences || []).slice(0, 5) };
+    });
+    assert.strictEqual(r.beforeOk, true, 'the fixture replays to itself to begin with');
+    assert.strictEqual(after.ok, true,
+      `a rename must not break the replay precondition, got ${after.diffs}: ${JSON.stringify(after.sample)}`);
+    assert.strictEqual(after.diffs, 0);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a blank or taken name is refused before the confirmation appears', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openTags(app);
+    const r = await app.run(() => {
+      const [a, b] = PLAYERS.map(p => p.name);
+      const out = {};
+      const attempt = (name, value) => {
+        openPlayerTags[name] = true; renderPlayerTagsList();
+        const input = document.querySelector(`.ptag-rename-input[data-name="${name}"]`);
+        input.value = value; input.dispatchEvent(new Event('input'));
+        document.querySelector(`.ptag-rename-ask[data-name="${name}"]`).click();
+        return {
+          confirmShown: !!document.querySelector('.ptag-rename-confirm'),
+          message: (document.querySelector('.ptag-rename-note.is-bad') || {}).innerText || null,
+          writes: window.__writes.length,
+        };
+      };
+      out.blank = attempt(a, '   ');
+      out.taken = attempt(a, b);
+      out.sameAsNow = attempt(a, a);
+      out.slash = attempt(a, 'a/b');
+      out.ok = attempt(a, a + ' J');
+      out.names = [a, b];
+      return out;
+    });
+
+    assert.strictEqual(r.blank.confirmShown, false, 'a blank name never reaches a confirmation');
+    assert.match(r.blank.message, /blank/);
+    assert.strictEqual(r.taken.confirmShown, false, "another player's name is refused");
+    assert.match(r.taken.message, new RegExp(`${r.names[1]} already uses that name`));
+    assert.strictEqual(r.sameAsNow.confirmShown, false);
+    assert.match(r.sameAsNow.message, /already their name/);
+    assert.strictEqual(r.slash.confirmShown, false);
+    assert.match(r.slash.message, /slash/);
+    assert.strictEqual(r.ok.confirmShown, true, 'a good name does reach the confirmation');
+    assert.strictEqual(r.ok.writes, 0, 'and nothing is written until it is confirmed');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('renaming is admin-only', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = false; currentUserName = '';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+      if (b) b.click();
+      renderManage();
+      return {
+        control: !!document.querySelector('.ptag-rename-input'),
+        body: document.getElementById('manageView').innerText,
+      };
+    });
+    assert.strictEqual(r.control, false, 'no rename control behind the lock screen');
+    assert.doesNotMatch(r.body, /Rename/i);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
