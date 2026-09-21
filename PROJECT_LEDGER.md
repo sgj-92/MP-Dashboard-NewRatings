@@ -433,6 +433,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
+| Monthly Power Rankings must be chronologically coherent around a mid-month reassessment | Shaun, 21 Sep 2026. A monthly row must never combine a player's **post-change tier** with a **pre-change rating snapshot** merely because both fell inside the selected month. Before the effective date: old tier with the appropriate pre-change state. From the effective date onward: new tier with the post-reassessment state. General for every mid-month change — September's Rishi, Ant Slicer and Jams, and every future reassessment — never special-cased per player. The approved split-month League treatment is unchanged. **Do not alter Sequential-v1, reassessment mathematics or stored rating history to make a screen look right.** |
+| Monthly Summary is independently collapsible | Shaun, 21 Sep 2026. The whole `September 2026 — Monthly Summary` block gets its own subtle heading-and-chevron disclosure, **defaulting expanded**, collapsing Key Takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved Without Playing and Crossovers together. Independent of the Tier S/A/B/C League disclosures. Same lightweight treatment as the League refinement — **explicitly not another large bordered dropdown or card**, which Shaun rejected during that work. |
 | Player names can be edited by Admin with confirmation | **DONE `25e4624`.** Shaun, 21 Sep 2026, resolving the stop condition himself: *"I just need editable names with no consequences."* The identity is frozen (`playerId` never changes) and a `displayName` field carries the label, so a rename writes one field on one document and the record is untouched. Add an **Admin-only** rename action in player management. Renaming must change the player's display name while preserving the same underlying player identity and all historical match/rating/tier/statistics relationships. Before writing, show a confirmation such as **“Rename Shaun to Shaun J?”**. Block blank names and duplicate/conflicting names. If any historical data is keyed directly by display name rather than stable player id, CCode must stop and report the migration/blast radius before implementing. Preserve the old name in an audit/history field where practical. |
 | Players Directory visual refresh | Shaun, 20 Sep 2026. Bring Directory in line with the newer premium/private-club Money Padel UI. Preserve Directory/Compare, tier/status filters, A–Z/Power Rating sort, player navigation and active/inactive meaning. Reduce the feeling of a large settings/filter form followed by a plain database list. **DONE `43401f8`.** |
 | Tom/Fatch must not reference Jords comparator | Shaun reconfirmed 20 Sep 2026 after seeing stale information. Both historical B anchors are 1400 baseline with 20% reliability. CCode must audit both displayed explanation and stored/replayed state rather than assuming this is cosmetic. **Audited `838ca66`: the record was already correct; the stale source was a document.** |
@@ -447,6 +449,61 @@ Tom/Fatch audit (`838ca66`), the Players Directory refresh (`43401f8`), the
 League refinement (`3e326e1`) and Shaun's disclosure correction to it
 (`11ed091`). **Nothing is queued for CCode.** The open product questions are in
 Section 8.
+
+---
+
+### Monthly Rankings coherence + Monthly Summary disclosure — ACTIVE (21 Sep 2026)
+
+Two requests from Shaun, arriving together.
+
+#### 1. Monthly Power Rankings around a mid-month reassessment
+
+Shaun found a likely historical-display bug in the September monthly Power
+Rankings. **Rishi** moved Tier B → Tier A during September in the board's
+emergency mid-month reassessments. The UI correctly places him in **Tier A**
+but shows **`1464`** with **`overall: 1642`** — `1464` looking like his
+old pre-reassessment B rating shown beside his new A-tier classification.
+
+Required:
+
+- Investigate the **source**, not Rishi. The fix must be general.
+- Before the reassessment effective date → old tier plus the appropriate
+  pre-change rating/state.
+- From the effective date onward → new tier plus the post-reassessment state.
+- A monthly row must **never** combine a post-change tier with a pre-change
+  rating snapshot merely because both happened inside the selected month.
+- Works for all of September's movers (Rishi, Ant Slicer, Jams) and for any
+  future reassessment.
+- The approved split-month **League** treatment is preserved exactly: games
+  before the effective date accrue to the old tier, games on/after it to the
+  new tier, points never transfer, `All together` stays the whole month.
+- **First establish whether this is a monthly-view snapshot-selection bug or
+  whether the persisted historical state is itself wrong.** Do not alter
+  Sequential-v1, reassessment mathematics or stored rating history merely to
+  make the screen look correct.
+- Regression coverage using a player whose tier and rating both change during
+  a month, written so it fails if the UI recombines the new tier with the old
+  rating.
+
+#### 2. Monthly Summary collapsible
+
+Make the complete `September 2026 — Monthly Summary` section independently
+collapsible, using the subtle heading-plus-chevron disclosure now established
+in Rankings. **Not another large bordered dropdown or card** — Shaun rejected
+that treatment during the League Table refinement.
+
+- Defaults **expanded**.
+- Small subtle chevron on the Monthly Summary heading; the whole heading row
+  may be tappable.
+- Collapsing hides the complete summary together: Key Takeaways, Monthly
+  Performance, Rating Movement, Ranking Movement, Moved Without Playing,
+  Crossovers.
+- Expanding restores the existing content unchanged.
+- Independent of the Tier S/A/B/C League Table disclosures.
+- Preserve existing typography, spacing and the dark/gold system.
+- Browser coverage for the default-expanded state and expand/collapse.
+
+**Baton → CCode. Approved and unblocked.**
 
 ---
 
@@ -1361,6 +1418,33 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 21 Sep 2026 (monthly rankings coherence + Monthly Summary disclosure)
+
+Two requests from Shaun, recorded above in Section 4.
+
+1. **Monthly Power Rankings coherence around mid-month reassessments.** Rishi
+   shows a Tier A placement beside what looks like his pre-reassessment B
+   rating. Find the source; do not special-case a player. Establish first
+   whether the persisted state is wrong or only the monthly view's choice of
+   snapshot. No engine, reassessment or stored-history changes to make a
+   screen look right.
+2. **Monthly Summary collapsible**, defaulting expanded, using the subtle
+   disclosure pattern — not the bordered card treatment Shaun rejected during
+   the League work.
+
+**A coordination note worth keeping, because it is the second time this has
+nearly happened.** CGPT attempted this handoff itself and **deliberately wrote
+nothing.** The GitHub connector available in that turn offered only a
+whole-file replacement for `PROJECT_LEDGER.md`. The Ledger is now 4,300+ lines
+and has already been destroyed once through exactly that kind of unsafe
+whole-file write (20 Sep: 3320 lines → 122). Rather than risk overwriting
+CCode's newer Ledger state, CGPT stopped and handed the write to CCode, who
+can edit the file in place. **That was the right call** and the constraint
+should be treated as standing: *the Ledger is appended to and edited in place,
+never replaced wholesale.*
+
+**Baton → CCode. Approved and unblocked.**
 
 ### CCode — 21 Sep 2026 (renames applied by Shaun; live record verified)
 
