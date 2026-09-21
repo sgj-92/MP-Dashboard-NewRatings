@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`55d2fa7`** |
-| Tests | **430 / 430 passing** (97 of them drive a real browser) |
+| Last verified implementation commit | **`25e4624`** |
+| Tests | **445 / 445 passing** (102 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -193,6 +193,25 @@ sides → teams and ratings → rating-point edge → a one-line muted footer. T
 80/20 machinery and the phrase `Expected performance score` are gone from it.
 **Visual treatment deliberately unchanged**, per Shaun's same-day deferral.
 Captured in `docs/screenshots/19-admin-predict.png`.
+
+**Player rename — DONE (`25e4624`), by freezing the identity instead of
+migrating the record.** Shaun's answer to the A-or-B question was neither:
+*"I just need editable names with no consequences."* So `playerId` keeps its
+current value for ever and a new `displayName` carries the label. A rename
+writes **one field on one document** — no match, no journey event and no
+document id is touched. `playerNames.js` translates at the two edges; the app
+above them works in labels, the record below them works in identities.
+
+**A defect that found, and the reason this needed a test rather than a
+demo:** after a rename the record **no longer replayed to itself**.
+`buildWritePlan` rebuilds a player document from engine state, which has no
+display name, so `verifyNoOp` reported `players/Rishi differs` — and a record
+that does not verify is a record the app **refuses to edit**. Renaming anyone
+would have silently disabled match corrections. Fixed in `replayForward` with
+`PLAYER_LABEL_FIELDS`, beside the provenance fields it already preserved for
+the same reason. The rule now holds generally: *a replay reconstructs engine
+state and must not destroy fields it does not own* — true for any field added
+to a player document in future, not just this one.
 
 **A second duplicate explanation, found by collapsing the tier tables.** The
 legacy per-tab explainer also said *"Points: 3 for a win, 1 for a draw"*, so
@@ -394,7 +413,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
-| Player names can be edited by Admin with confirmation | **BLOCKED on a Shaun decision — see Section 4.** The brief's own stop condition is met: there is no stable player id, the display name is the identity, and it is embedded in every `ratingJourney` document id. Shaun, 21 Sep 2026. Add an **Admin-only** rename action in player management. Renaming must change the player's display name while preserving the same underlying player identity and all historical match/rating/tier/statistics relationships. Before writing, show a confirmation such as **“Rename Shaun to Shaun J?”**. Block blank names and duplicate/conflicting names. If any historical data is keyed directly by display name rather than stable player id, CCode must stop and report the migration/blast radius before implementing. Preserve the old name in an audit/history field where practical. |
+| Player names can be edited by Admin with confirmation | **DONE `25e4624`.** Shaun, 21 Sep 2026, resolving the stop condition himself: *"I just need editable names with no consequences."* The identity is frozen (`playerId` never changes) and a `displayName` field carries the label, so a rename writes one field on one document and the record is untouched. Add an **Admin-only** rename action in player management. Renaming must change the player's display name while preserving the same underlying player identity and all historical match/rating/tier/statistics relationships. Before writing, show a confirmation such as **“Rename Shaun to Shaun J?”**. Block blank names and duplicate/conflicting names. If any historical data is keyed directly by display name rather than stable player id, CCode must stop and report the migration/blast radius before implementing. Preserve the old name in an audit/history field where practical. |
 | Players Directory visual refresh | Shaun, 20 Sep 2026. Bring Directory in line with the newer premium/private-club Money Padel UI. Preserve Directory/Compare, tier/status filters, A–Z/Power Rating sort, player navigation and active/inactive meaning. Reduce the feeling of a large settings/filter form followed by a plain database list. **DONE `43401f8`.** |
 | Tom/Fatch must not reference Jords comparator | Shaun reconfirmed 20 Sep 2026 after seeing stale information. Both historical B anchors are 1400 baseline with 20% reliability. CCode must audit both displayed explanation and stored/replayed state rather than assuming this is cosmetic. **Audited `838ca66`: the record was already correct; the stale source was a document.** |
 | The Ledger is restored in full, not kept compact | Shaun, 20 Sep 2026, after the 3320 → 122 line rewrite. The institutional record — Decisions Log, Handoffs, Open Questions, Recently Completed — is the point of the Ledger and is to be preserved, not summarised away. `LEDGER_ARCHIVE_2026-09-20.md` stays unchanged as the recovery snapshot. |
@@ -411,7 +430,64 @@ Section 8.
 
 ---
 
-### Player rename — STOPPED at the brief's own stop condition (21 Sep 2026)
+### Player rename — DELIVERED (`25e4624`, 21 Sep 2026)
+
+**Shaun's answer to the A-or-B question was neither: *"I just need editable
+names with no consequences. It's actually only two that need amending."***
+
+So neither option was taken. The record is not migrated (B) and no bulk
+rewrite of render sites was needed (A as originally scoped). Instead the
+identity is **frozen** and the label is set free: `playerId` keeps whatever
+value it has today, for ever, and a new `displayName` field carries what the
+player is called. **A rename writes one field on one document.** Nothing is
+deleted, no document id changes, and the blast radius below is now zero —
+renaming Rishi touches 1 document, not 156.
+
+`assets/js/playerNames.js` owns the translation, at two edges only:
+
+```
+RECORD  ──toDisplay──▶  the app and the screen    (ids   → labels)
+RECORD  ◀──toId───────  submissions and decisions (labels → ids)
+```
+
+`V3_STATE` carries the state twice — `players` keyed by label for everything
+that renders, `playersById` keyed by identity for anything preparing a
+document — so a call site picks the map that matches what it is about to do
+rather than having to remember to convert. `V3_RECORD` stays raw, because the
+replay verifier, the repair planner and the diagnostics must see exactly what
+is in Firestore.
+
+**The defect this surfaced is the important part of the story.** After a
+rename the record **no longer replayed to itself**: `buildWritePlan` rebuilds
+a player document from engine state, which has no display name, so
+`verifyNoOp` reported `players/Rishi differs`. A record that does not verify
+is a record the app refuses to edit — so renaming anybody would have quietly
+disabled every match correction. Fixed in `replayForward` with
+`PLAYER_LABEL_FIELDS`, beside the provenance fields already preserved for the
+same reason, and now stated as a general rule rather than a special case: **a
+replay reconstructs engine state and must not destroy fields it does not
+own.** Any field added to a player document later is covered.
+
+Validation runs **before** the confirmation, so the confirmation only ever
+asks about a rename that would work: blank, whitespace, slashes, another
+player's label, another player's underlying id, and their own current name
+are each refused with a reason. `previousDisplayNames` keeps the old name and
+the row shows it.
+
+**Coverage:** 10 module tests, 5 browser tests. The browser tests drive the
+real control and then assert the thing that matters — one write, to the
+original document id, nothing deleted; stored matches and journey
+byte-identical either side; every number about the player unchanged; ranking
+position unchanged; and the record still replaying to itself.
+
+**Still true, and worth keeping:** the audit below remains accurate about the
+record as stored. Nothing about it was migrated — it was made not to matter.
+Open Question 4 (the production snapshot joining on name) is also handled:
+`decoratePlayer` joins on the frozen id, so a rename cannot break it.
+
+---
+
+### Player rename — the audit that led here (21 Sep 2026)
 
 **The stop condition in this brief is met. No rename has been built and no data
 has been touched.** The brief says: *"If any canonical or historical record is
@@ -1266,7 +1342,42 @@ ideas only, or any matchup card) before it is scheduled.
 
 ## 6. HANDOFFS
 
-### CCode — 21 Sep 2026 (player rename STOPPED at the brief's stop condition)
+### CCode — 21 Sep 2026 (editable names delivered; the record was not migrated)
+
+`25e4624`. **445 / 445 tests (102 browser).**
+
+Shaun answered the A-or-B question with neither: *"I just need editable names
+with no consequences. It's actually only two that need amending."* Taken
+literally, and it turned out to be the best available answer — **the identity
+is frozen and only the label moves.** `playerId` keeps its current value for
+ever; a new `displayName` carries the name. A rename is **one field on one
+document**. The 156-document blast radius reported earlier is now 1.
+
+Full design in Section 4. The short version: `playerNames.js` translates at
+two edges, the app above them works in labels, the record below them works in
+identities, and `V3_RECORD` stays raw so the verifier sees what Firestore
+actually holds.
+
+**The defect this surfaced is the part worth reading.** After a rename the
+record no longer replayed to itself — `buildWritePlan` rebuilds a player
+document from engine state, which has no display name, so `verifyNoOp`
+reported `players/Rishi differs`. **A record that does not verify is a record
+the app refuses to edit, so renaming anybody would have silently disabled
+every match correction.** It was caught by the test that asserts the replay
+precondition still holds, not by using the feature. Fixed in `replayForward`
+with `PLAYER_LABEL_FIELDS` and generalised: a replay reconstructs engine state
+and must not destroy fields it does not own. Any field added to a player
+document in future is now safe by default.
+
+**Shaun: the two names are yours to change** — Admin → Player tags → open the
+player → Name. The confirmation names both and says what does not move. If
+you would rather I made the two changes directly, tell me which two and I
+will, but the control is there and it is the safer route: it is the same one
+path, tested, rather than a one-off script.
+
+**Baton → Shaun.**
+
+### CCode — 21 Sep 2026 (the audit that stopped the first attempt)
 
 **Nothing was built and nothing was written.** The brief instructed CCode to
 stop and report if canonical data is keyed by display name rather than a stable
@@ -4068,6 +4179,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `25e4624` | Editable player names: identity frozen as `playerId`, label carried by `displayName`, translation at two edges (`playerNames.js`); a replay now preserves player-document fields it does not own, which a rename had quietly broken |
 | `55d2fa7` | Predict a Matchup copy: predicted winner, expected game share both sides, rating-point edge and a muted footer, replacing `Expected performance score` and the 80/20 blend; visual treatment deferred |
 | `11ed091` | League disclosure correction: inline text-and-chevron disclosure in place of a bordered card, global tier accordion replaced by independent per-tier collapses defaulting to expanded |
 | `3e326e1` | League refinement: collapsible explanation and tier-table block, Month/View on one row, and a Last 10 form table over each player's own latest ten rated games (`lastTen.js`); duplicate legacy explainer hidden on the League view |
@@ -4123,15 +4235,15 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The implementation queue is blocked on one decision from Shaun.** `55d2fa7`,
-**430 / 430 tests (97 browser)**. Nothing was written for the rename task.
+**The approved queue is empty.** Baton with Shaun / CGPT. `25e4624`,
+**445 / 445 tests (102 browser)**.
 
-1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
-2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. Player names HTML-escaped where they render.
-3. **DONE (`3e326e1`).** League refinement. Collapsible explanation, Month/View on one row, and the Last 10 form table over each player's own latest up-to-10 rated games. `Form (10g)` kept on the monthly tables.
-4. **DONE (`11ed091`).** Disclosure correction: inline text-and-chevron disclosure, global tier accordion removed, independent per-tier collapses defaulting to expanded.
-5. **DONE (`55d2fa7`).** Predict a Matchup copy: predicted winner → expected share of games → teams and ratings → rating-point edge → muted footer. Visual treatment deliberately unchanged.
-6. **BLOCKED — Admin player rename.** The brief's own stop condition is met: there is no stable player id and the display name is embedded in every `ratingJourney` document id. Blast radius measured and written up in Section 4. **Needs one decision from Shaun: option A (display name separate from a frozen id — recommended) or option B (full re-keying migration per rename).** Implementable immediately either way once chosen.
+1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed.
+2. **DONE (`43401f8`).** Players Directory visual refresh.
+3. **DONE (`3e326e1`).** League refinement: collapsible explanation, Month/View on one row, Last 10 form table.
+4. **DONE (`11ed091`).** Disclosure correction: inline disclosure, independent per-tier collapses defaulting to expanded.
+5. **DONE (`55d2fa7`).** Predict a Matchup copy. Visual treatment deliberately unchanged.
+6. **DONE (`25e4624`).** Editable player names. Identity frozen, label free; a rename writes one field on one document and the record is untouched. Found and fixed a defect where a rename would have stopped the record verifying, and so stopped match corrections working.
 
 ### Waiting on Shaun
 
