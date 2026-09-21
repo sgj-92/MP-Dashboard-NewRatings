@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`3e326e1`** |
-| Tests | **422 / 422 passing** (89 of them drive a real browser) |
+| Last verified implementation commit | **`11ed091`** |
+| Tests | **425 / 425 passing** (92 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -174,6 +174,16 @@ lives in `lastTen.js` and was verified against an independent walk of the live
 record. Captured in `docs/screenshots/17-league-by-tier.png`,
 `17b-league-tiers-collapsed.png`, `18-league-last-10.png` and
 `18b-league-last-10-explained.png`.
+
+**Disclosure correction — DONE (`11ed091`).** Shaun reviewed the delivered
+screen and both disclosures were too heavy. `How this table works` is now a
+quiet tappable line with a small chevron — no card, border or fill — expanding
+inline, still collapsed by default. The global `Tier tables` accordion is gone:
+each tier heading carries its own chevron and collapses independently, keeping
+`.section-heading` so it stays the same type and weight as every other heading.
+Tiers default expanded and reset to expanded on entry to By tier by every
+route. Captured in `17-league-by-tier.png` and `17b-league-tiers-collapsed.png`
+(Tier A folded, B and C untouched).
 
 **A second duplicate explanation, found by collapsing the tier tables.** The
 legacy per-tab explainer also said *"Points: 3 for a win, 1 for a draw"*, so
@@ -373,7 +383,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
-| League Table disclosure correction — per-tier, not global | Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
+| League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Players Directory visual refresh | Shaun, 20 Sep 2026. Bring Directory in line with the newer premium/private-club Money Padel UI. Preserve Directory/Compare, tier/status filters, A–Z/Power Rating sort, player navigation and active/inactive meaning. Reduce the feeling of a large settings/filter form followed by a plain database list. **DONE `43401f8`.** |
 | Tom/Fatch must not reference Jords comparator | Shaun reconfirmed 20 Sep 2026 after seeing stale information. Both historical B anchors are 1400 baseline with 20% reliability. CCode must audit both displayed explanation and stored/replayed state rather than assuming this is cosmetic. **Audited `838ca66`: the record was already correct; the stale source was a document.** |
 | The Ledger is restored in full, not kept compact | Shaun, 20 Sep 2026, after the 3320 → 122 line rewrite. The institutional record — Decisions Log, Handoffs, Open Questions, Recently Completed — is the point of the Ledger and is to be preserved, not summarised away. `LEDGER_ARCHIVE_2026-09-20.md` stays unchanged as the recovery snapshot. |
@@ -382,15 +392,15 @@ Shaun's decisions, including where an agent recommended otherwise.
 
 ## 4. CURRENT TASK / PRODUCT & UI DIRECTION
 
-**Current baton: CCode.** Shaun reviewed the delivered League refinement and
-corrected the disclosure design. The Last 10 work and split-month behaviour stay
-accepted; only the League disclosure/accordion presentation needs another pass.
-This correction is approved and unblocked. Open product questions remain in
-Section 8 after the active correction.
+**Current baton: CGPT / Shaun.** The approved queue is delivered again — the
+Tom/Fatch audit (`838ca66`), the Players Directory refresh (`43401f8`), the
+League refinement (`3e326e1`) and Shaun's disclosure correction to it
+(`11ed091`). **Nothing is queued for CCode.** The open product questions are in
+Section 8.
 
 ---
 
-### League Table disclosure correction — ACTIVE (21 Sep 2026)
+### League Table disclosure correction — DELIVERED (`11ed091`, 21 Sep 2026)
 
 Shaun reviewed the delivered mobile screen and the disclosure treatment was too
 heavy. This is a **presentation correction only**. The underlying League
@@ -1070,6 +1080,43 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 21 Sep 2026 (disclosure correction delivered; queue empty again)
+
+`11ed091`. **425 / 425 tests (92 browser).** Presentation only — the League
+aggregation, split-month allocation, Last 10 table, league scoring and rating
+methodology are untouched, as required.
+
+Shaun was right on both counts, and the second one was a design error rather
+than a styling one.
+
+**The `How this table works` card.** I built a bordered block, which made the
+explanation heavier than the heading above it and competitive with the table
+below. It is now a quiet tappable line of text with a small chevron — no card,
+no border, no fill — expanding its copy inline, still collapsed by default.
+
+**The global `Tier tables` accordion was my own invention and it was wrong
+about what the four tables are.** The brief said the by-tier breakdown should
+be collapsible; I read that as one block. They are four separate competitions,
+so there was never a reason hiding Tier C should hide Tier A. Each tier heading
+now carries its own chevron and collapses independently, and the headings keep
+`.section-heading` — same type, same weight, same spacing as every other
+heading on the screen, with the chevron the only thing marking them as
+controls.
+
+Tiers default expanded and are **reset** to expanded on entry to By tier: from
+All together, from Last 10, and on arriving at the League screen at all. What
+someone collapsed on a previous visit is not a preference worth restoring them
+into.
+
+**Coverage against the acceptance list:** independent collapse; several
+collapsed at once with the rest untouched; the default-expanded entry state by
+all three routes; and computed-style assertions that neither disclosure carries
+a border, radius or fill, and that a tier heading is still a heading. Four new
+browser tests, each verified to fail against the old design.
+
+**Baton → CGPT / Shaun. Nothing is queued for CCode.** The four questions in
+Section 8 need a person, not an implementer.
 
 ### CGPT — 21 Sep 2026 (League disclosure correction)
 
@@ -3712,6 +3759,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `11ed091` | League disclosure correction: inline text-and-chevron disclosure in place of a bordered card, global tier accordion replaced by independent per-tier collapses defaulting to expanded |
 | `3e326e1` | League refinement: collapsible explanation and tier-table block, Month/View on one row, and a Last 10 form table over each player's own latest ten rated games (`lastTen.js`); duplicate legacy explainer hidden on the League view |
 | `43401f8` | Players Directory refresh: folded secondary filters with a state summary, wrapping tier chips, identity-first rows with a chevron, Inactive-only badging, A–Z-only letter headings; player names HTML-escaped where rendered |
 | `838ca66`, `14d5a67` | Tom/Fatch integrity audit: record verified correct, stale source (`HISTORICAL_REVIEW_DRYRUN.md`) corrected, `apply-historical-decisions.js` made unable to undo it; Ledger history preserved in `LEDGER_ARCHIVE_2026-09-20.md` |
@@ -3765,37 +3813,28 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**One approved correction is queued for CCode.** The delivered League feature
-set stays accepted; only its disclosure presentation changes.
+**Every approved item is delivered. Nothing is queued for CCode.** Baton with
+CGPT / Shaun. `11ed091`, **425 / 425 tests (92 browser)**.
 
-1. **ACTIVE — League disclosure correction (21 Sep).** Remove the large bordered
-   `How this table works` block and use a subtle inline disclosure, collapsed
-   by default.
-2. Remove the global `Tier tables` accordion. Give Tier S/A/B/C independent
-   lightweight chevrons; all default expanded on entry to By tier; collapsing
-   one tier must not change any other tier.
-3. Keep `By tier / All together / Last 10`, split-month treatment, league
-   scoring, Last 10 calculations and rating methodology unchanged.
-4. Add browser regression coverage for the inline info disclosure, absence of
-   the global tier fold, default-expanded tier state and independent collapse.
-5. **Previously delivered baseline remains valid:** Tom/Fatch audit
-   (`838ca66`), Players Directory refresh (`43401f8`), and League/Last-10
-   implementation (`3e326e1`, 422 / 422 tests, 89 browser).
+1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
+2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters with a state summary, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. All behaviour preserved. Player names are now HTML-escaped where they render.
+3. **DONE (`3e326e1`).** League refinement. Collapsible explanation, Month/View on one row, and the Last 10 form table over each player's own latest up-to-10 rated games — P/W/L/D/GD/Pts on the league's own 3/1/0, real sample shown and marked for anyone with fewer than ten. `Form (10g)` kept on the monthly tables. No rating-engine changes.
+4. **DONE (`11ed091`).** Shaun's 21 Sep disclosure correction to it: inline text-and-chevron disclosure with no card, the global tier accordion removed, and independent per-tier collapses that default to expanded on entry to By tier. Every acceptance point covered by a test that was verified to fail against the old design.
 
 ### Needing a person, not an implementer
 
-4. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-5. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C. Whether Tier S is a real tier, a legacy artefact or a data error is a product call. Low urgency, but it should not stay unanswered before beta.
-6. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-7. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+5. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+6. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C. Whether Tier S is a real tier, a legacy artefact or a data error is a product call. Low urgency, but it should not stay unanswered before beta.
+7. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+8. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-8. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-9. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+9. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+10. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
 the tier in force on each match date; points never transfer between tiers;
 `All together` stays one row and shows the transition. Nothing is queued for
-CCode." Item 4 above is the one open question it carried forward.*
+CCode." Item 5 above is the one open question it carried forward.*
