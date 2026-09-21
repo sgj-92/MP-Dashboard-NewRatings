@@ -3860,3 +3860,195 @@ test('the League view shows one explanation, not two', { skip }, async () => {
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== PREDICT A MATCHUP =====================
+// Shaun's 21 Sep direction. The tool is one of the most-used Admin features
+// and must STAY Admin-only: players agree a match in the group first, then
+// send him the four names. Exposing it to everyone would let people dodge an
+// agreed game or shop for an easy one.
+//
+// Copy and hierarchy only. The prediction itself still comes from
+// RatingEngine.expectedScore and nothing here changes it.
+
+const openPredict = (app) => app.run(() => {
+  isUnlocked = true; currentUserName = 'Board'; adminRole = 'owner';
+  const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+  if (b) b.click();
+  adminOpenSections = { predict: true };
+  renderManage();
+});
+
+const predictWith = (app, names) => app.run((n) => {
+  document.getElementById('predA1').value = n[0];
+  document.getElementById('predA2').value = n[1] || '';
+  document.getElementById('predB1').value = n[2];
+  document.getElementById('predB2').value = n[3] || '';
+  document.getElementById('predA1').dispatchEvent(new Event('input'));
+  const box = document.getElementById('predResult');
+  return { text: box.innerText.replace(/\s+/g, ' ').trim(), html: box.innerHTML };
+}, names);
+
+test('Predict a Matchup is Admin-only and unreachable when locked', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      isUnlocked = false; currentUserName = '';
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+      if (b) b.click();
+      renderManage();
+      const locked = {
+        form: !!document.getElementById('predA1'),
+        result: !!document.getElementById('predResult'),
+        body: document.getElementById('manageView').innerText,
+      };
+      // And it is not offered anywhere a normal player goes.
+      const playerSurfaces = ['home', 'rankings', 'play', 'players'].map((sec) => {
+        goToSection(sec);
+        return document.body.innerText;
+      }).join(' ');
+      return { locked, leaksToPlayers: /Predict a matchup/i.test(playerSurfaces) };
+    });
+    assert.strictEqual(r.locked.form, false, 'no prediction form behind the lock screen');
+    assert.strictEqual(r.locked.result, false);
+    assert.doesNotMatch(r.locked.body, /Predict a matchup/i, 'not even its heading');
+    assert.strictEqual(r.leaksToPlayers, false, 'and it appears on no player-facing section');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the prediction names a winner, in games not chances', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openPredict(app);
+    const r = await app.run(() => {
+      // Pick a genuinely lopsided matchup from the fixture so there is a
+      // winner to name.
+      const sorted = [...PLAYERS].sort((a, b) => b.rating - a.rating);
+      const strong = sorted.slice(0, 2).map((p) => p.name);
+      const weak = sorted.slice(-2).map((p) => p.name);
+      const set = (id, v) => { document.getElementById(id).value = v; };
+      set('predA1', strong[0]); set('predA2', strong[1]);
+      set('predB1', weak[0]); set('predB2', weak[1]);
+      document.getElementById('predA1').dispatchEvent(new Event('input'));
+      const box = document.getElementById('predResult');
+      const ratingOf = (n) => Math.round(PLAYERS.find((p) => p.name === n).rating);
+      // The card averages the real ratings and rounds once at the end;
+      // averaging rounded ratings gives a different answer by a point.
+      const raw = (n) => PLAYERS.find((p) => p.name === n).rating;
+      const gap = Math.abs(
+        (raw(strong[0]) + raw(strong[1])) / 2 - (raw(weak[0]) + raw(weak[1])) / 2,
+      );
+      return {
+        text: box.innerText.replace(/\s+/g, ' ').trim(),
+        strong, weak, gap: Math.round(gap),
+        ratings: [...strong, ...weak].map(ratingOf),
+      };
+    });
+
+    // 1. the predicted winner, by name
+    assert.match(r.text, new RegExp(`${r.strong[0]} & ${r.strong[1]} should win`),
+      `must name the winning team: ${r.text}`);
+    // 2. expected share of games, both sides
+    const shares = [...r.text.matchAll(/(\d+)%/g)].map((m) => Number(m[1]));
+    assert.strictEqual(shares.length, 2, `two percentages, got ${JSON.stringify(shares)}`);
+    assert.strictEqual(shares[0] + shares[1], 100, 'the two sides account for all the games');
+    assert.ok(shares[0] > 50, 'the favoured side is expected to take more of them');
+    assert.match(r.text, /Expected to win about \d+% of the games, against \d+%/);
+    // 3. teams and their ratings
+    r.ratings.forEach((v) => assert.ok(r.text.includes(String(v)), `rating ${v} must be shown`));
+    // 4. the rating-point advantage
+    assert.match(r.text, new RegExp(`Favoured by ${r.gap} rating point`),
+      `must show the rating edge of ${r.gap}: ${r.text}`);
+    // …and the footer, small and factual.
+    assert.match(r.text, /Based on current Power Ratings · Prediction only · Nothing is recorded\./);
+
+    // What must NOT be there: engine terminology, and any claim of a chance.
+    assert.doesNotMatch(r.text, /Expected performance score/i);
+    assert.doesNotMatch(r.text, /0\.80|0\.20|80%.*game share|performance score/i);
+    assert.doesNotMatch(r.text, /chance|probability|likelihood|odds/i,
+      'a share of games is not a validated win probability');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a near-even matchup is not sold as a confident call', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openPredict(app);
+    const r = await app.run(() => {
+      // Two pairs deliberately built to sit within a point or two.
+      const sorted = [...PLAYERS].sort((a, b) => b.rating - a.rating);
+      let best = null;
+      for (let i = 0; i < sorted.length; i++) {
+        for (let j = i + 1; j < sorted.length; j++) {
+          for (let k = 0; k < sorted.length; k++) {
+            for (let l = k + 1; l < sorted.length; l++) {
+              const names = [sorted[i].name, sorted[j].name, sorted[k].name, sorted[l].name];
+              if (new Set(names).size !== 4) continue;
+              const g = Math.abs((sorted[i].rating + sorted[j].rating) / 2
+                - (sorted[k].rating + sorted[l].rating) / 2);
+              if (best === null || g < best.g) best = { g, names };
+            }
+          }
+        }
+      }
+      const set = (id, v) => { document.getElementById(id).value = v; };
+      set('predA1', best.names[0]); set('predA2', best.names[1]);
+      set('predB1', best.names[2]); set('predB2', best.names[3]);
+      document.getElementById('predA1').dispatchEvent(new Event('input'));
+      return { gap: best.g, text: document.getElementById('predResult').innerText.replace(/\s+/g, ' ').trim() };
+    });
+    assert.ok(r.gap < 15, `the fixture should offer a close pairing, got ${r.gap}`);
+    assert.doesNotMatch(r.text, /should win/, 'a two-point gap is not a prediction of a win');
+    assert.match(r.text, /shade it|Too close to call/, `expected a hedged verdict: ${r.text}`);
+    assert.match(r.text, /Based on current Power Ratings/);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the prediction still comes from the engine, not from new arithmetic', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openPredict(app);
+    const r = await app.run(() => {
+      const sorted = [...PLAYERS].sort((a, b) => b.rating - a.rating);
+      const names = [sorted[0].name, sorted[1].name, sorted[20].name, sorted[21].name];
+      const set = (id, v) => { document.getElementById(id).value = v; };
+      set('predA1', names[0]); set('predA2', names[1]);
+      set('predB1', names[2]); set('predB2', names[3]);
+      document.getElementById('predA1').dispatchEvent(new Event('input'));
+      const rat = (n) => PLAYERS.find((p) => p.name === n).rating;
+      const engine = RatingEngine.expectedScore(
+        (rat(names[0]) + rat(names[1])) / 2,
+        (rat(names[2]) + rat(names[3])) / 2,
+      );
+      const shown = [...document.getElementById('predResult').innerText.matchAll(/(\d+)%/g)].map((m) => Number(m[1]));
+      return { engine: Math.round(engine * 100), shown };
+    });
+    assert.strictEqual(r.shown[0], r.engine,
+      'the percentage shown is the engine\'s own expectation, rounded');
+    assert.strictEqual(r.shown[1], 100 - r.engine);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('an awkward player name survives the prediction card', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openPredict(app);
+    const r = await app.run(() => {
+      PLAYERS.push({ name: 'a<b>c', tier: 'B', rating: 1400, active: true, total: 0, wins: 0, losses: 0, draws: 0 });
+      const others = PLAYERS.filter((p) => p.name !== 'a<b>c').slice(0, 3).map((p) => p.name);
+      const set = (id, v) => { document.getElementById(id).value = v; };
+      set('predA1', 'a<b>c'); set('predA2', others[0]);
+      set('predB1', others[1]); set('predB2', others[2]);
+      document.getElementById('predA1').dispatchEvent(new Event('input'));
+      const box = document.getElementById('predResult');
+      const out = { text: box.innerText, boldCount: box.querySelectorAll('b').length };
+      PLAYERS.splice(PLAYERS.findIndex((p) => p.name === 'a<b>c'), 1);
+      return out;
+    });
+    assert.ok(r.text.includes('a<b>c'), `the name must read as itself, got: ${r.text}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

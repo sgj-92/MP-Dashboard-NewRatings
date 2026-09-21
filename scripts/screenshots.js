@@ -82,6 +82,8 @@ const SHOTS = [
     note: 'Each player\'s own most recent ten rated games, wherever they fall. Not scoped to the selected month: every row covers the same number of games rather than the same number of days, which is what makes two rows comparable. Same 3/1/0 scoring. A short sample is marked "of 10" beside the P it qualifies and is never padded.' },
   { file: '18b-league-last-10-explained.png', title: 'Last 10 — what it is measuring',
     note: 'The disclosure says the thing a reader would otherwise have to assume: that the window is per player, that it ignores the month selector, and that a row with fewer than ten games is a short sample rather than a bad one.' },
+  { file: '19-admin-predict.png', title: 'Admin — Predict a Matchup',
+    note: 'Admin-only by design: players agree a game in the group first, then send the four names. The card answers the questions in the order they are asked — who should win, what share of the games, who is playing and at what rating, and how big the edge is. No engine terminology: the 80/20 blend and the phrase "Expected performance score" are gone. It says share of games, never a chance of winning, because no win-probability model has been validated. Visual treatment is deliberately unchanged pending Shaun\'s render.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -336,6 +338,26 @@ async function render(players, matches, journey, readAt) {
   await shot('18b-league-last-10-explained.png',
     () => { leagueExplainerOpen = true; renderSummaryLeagueTable(); },
     () => window.scrollTo(0, 0));
+
+  // Predict a Matchup, the Admin workflow Shaun runs when players send him a
+  // four-player combination. Copy and hierarchy only for now -- the visual
+  // treatment is deferred until Shaun approves a render.
+  await shot('19-admin-predict.png',
+    () => {
+      const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+      closeSheet();
+      isUnlocked = true; currentUserName = 'Board';
+      const more = document.querySelector('#tabrow .tab-btn[data-tab="manage"]');
+      if (more) more.click();
+      adminOpenSections = { predict: true };
+      renderManage();
+      const sorted = [...PLAYERS].sort((a, b) => b.rating - a.rating);
+      const set = (id, v) => { document.getElementById(id).value = v; };
+      set('predA1', sorted[3].name); set('predA2', sorted[9].name);
+      set('predB1', sorted[14].name); set('predB2', sorted[16].name);
+      document.getElementById('predA1').dispatchEvent(new Event('input'));
+    },
+    () => { const el = document.querySelector('[data-acc="predict"]'); if (el) el.scrollIntoView({ block: 'start' }); });
 
   const openGuide = () => {
     const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');

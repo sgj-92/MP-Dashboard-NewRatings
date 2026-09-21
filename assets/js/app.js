@@ -5034,26 +5034,49 @@ function renderManage(){
     const ratingA = teamA.reduce((s,n)=>s+getP(n).rating,0) / teamA.length;
     const ratingB = teamB.reduce((s,n)=>s+getP(n).rating,0) / teamB.length;
     const gap = Math.abs(ratingA - ratingB);
-    const isClose = gap < 15;
     const aFavored = ratingA > ratingB;
+
     // Routed through the engine rather than re-derived, so a prediction can
-    // never drift from what the engine would actually expect. This is the
-    // performance score it targets, not a share of games.
+    // never drift from what the engine would actually expect.
+    //
+    // This single expectation is what the app has always shown players as
+    // "expected to win about X% of the games" -- the same phrasing the rating
+    // explainer uses, and the wording Shaun approved. What it must never be
+    // called is a chance of winning: it is a share of games, and no
+    // win-probability model has been validated. The 0.80/0.20 blend the
+    // engine compares it against is engine detail and does not belong on an
+    // Admin decision card.
     const expectedA = RatingEngine.expectedScore(ratingA, ratingB);
+    const sharePctA = Math.round(expectedA * 100);
+    const sharePctB = 100 - sharePctA;
 
-    const teamALabel = teamA.map(n=>`${n} (${Math.round(getP(n).rating)})`).join(' &amp; ');
-    const teamBLabel = teamB.map(n=>`${n} (${Math.round(getP(n).rating)})`).join(' &amp; ');
-    const favLine = isClose
-      ? `Evenly matched on paper (${Math.round(gap)} pt gap).`
-      : (aFavored
-        ? `<b>${teamA.join(' & ')}</b> favored by ${Math.round(gap)} pts on paper.`
-        : `<b>${teamB.join(' & ')}</b> favored by ${Math.round(gap)} pts on paper.`);
+    const nameList = (team) => team.map(n=>escapeHtml(n)).join(' & ');
+    const ratedList = (team) => team.map(n=>`${escapeHtml(n)} (${Math.round(getP(n).rating)})`).join(' & ');
 
+    const favTeam = aFavored ? teamA : teamB;
+    const favShare = aFavored ? sharePctA : sharePctB;
+    const againstShare = aFavored ? sharePctB : sharePctA;
+
+    // Naming a winner off a two-point gap would be overclaiming, and refusing
+    // to name one at all would make the card useless. So the verdict scales
+    // with the gap, and only a genuine tie gets no name.
+    const verdict = gap < 1
+      ? `Too close to call`
+      : (gap < 15
+        ? `<b>${nameList(favTeam)}</b> shade it`
+        : `<b>${nameList(favTeam)}</b> should win`);
+    const edgeLine = gap < 1
+      ? `Level on current ratings.`
+      : `Favoured by <b>${Math.round(gap)}</b> rating point${Math.round(gap)===1?'':'s'}.`;
+
+    // Order is the order the reader asks the questions in: who wins, by how
+    // much of the game, who is playing, and how strong the call is.
     resultBox.innerHTML = `<div class="matchup-vs" style="margin-top:8px;">
-      <div><b style="color:var(--text);">${teamALabel}</b> vs <b style="color:var(--text);">${teamBLabel}</b></div>
-      <div style="margin-top:6px; font-size:12.5px;">${favLine}</div>
-      <div style="margin-top:4px; font-size:12.5px; color:var(--text-dim);">Expected performance score: ${expectedA.toFixed(2)} / ${(1-expectedA).toFixed(2)}</div>
-      <div style="margin-top:6px; font-size:10.5px; color:var(--text-dim);">The score the engine would expect each side to reach: 0.80 × share of games won + 0.20 × the result. Based on today's ratings, because this game hasn't been played — nothing here is recorded.</div>
+      <div style="font-size:13.5px; color:var(--text);">${verdict}</div>
+      <div style="margin-top:6px; font-size:12.5px;">Expected to win about <b>${favShare}%</b> of the games, against <b>${againstShare}%</b>.</div>
+      <div style="margin-top:8px; font-size:12.5px; color:var(--text-dim);">${ratedList(teamA)} vs ${ratedList(teamB)}</div>
+      <div style="margin-top:4px; font-size:12.5px; color:var(--text-dim);">${edgeLine}</div>
+      <div style="margin-top:8px; font-size:10.5px; color:var(--text-dim);">Based on current Power Ratings · Prediction only · Nothing is recorded.</div>
     </div>`;
   }
   // Every wiring below has to tolerate its section being collapsed: the

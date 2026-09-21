@@ -120,6 +120,12 @@ Each player's own most recent ten rated games, wherever they fall. Not scoped to
 
 The disclosure says the thing a reader would otherwise have to assume: that the window is per player, that it ignores the month selector, and that a row with fewer than ten games is a short sample rather than a bad one.
 
+### Admin — Predict a Matchup
+
+![Admin — Predict a Matchup](19-admin-predict.png)
+
+Admin-only by design: players agree a game in the group first, then send the four names. The card answers the questions in the order they are asked — who should win, what share of the games, who is playing and at what rating, and how big the edge is. No engine terminology: the 80/20 blend and the phrase "Expected performance score" are gone. It says share of games, never a chance of winning, because no win-probability model has been validated. Visual treatment is deliberately unchanged pending Shaun's render.
+
 ### Power Rating Guide — in short
 
 ![Power Rating Guide — in short](12-rating-guide-summary.png)
