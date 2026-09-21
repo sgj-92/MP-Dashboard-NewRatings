@@ -394,6 +394,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
+| Player names can be edited by Admin with confirmation | Shaun, 21 Sep 2026. Add an **Admin-only** rename action in player management. Renaming must change the player's display name while preserving the same underlying player identity and all historical match/rating/tier/statistics relationships. Before writing, show a confirmation such as **“Rename Shaun to Shaun J?”**. Block blank names and duplicate/conflicting names. If any historical data is keyed directly by display name rather than stable player id, CCode must stop and report the migration/blast radius before implementing. Preserve the old name in an audit/history field where practical. |
 | Players Directory visual refresh | Shaun, 20 Sep 2026. Bring Directory in line with the newer premium/private-club Money Padel UI. Preserve Directory/Compare, tier/status filters, A–Z/Power Rating sort, player navigation and active/inactive meaning. Reduce the feeling of a large settings/filter form followed by a plain database list. **DONE `43401f8`.** |
 | Tom/Fatch must not reference Jords comparator | Shaun reconfirmed 20 Sep 2026 after seeing stale information. Both historical B anchors are 1400 baseline with 20% reliability. CCode must audit both displayed explanation and stored/replayed state rather than assuming this is cosmetic. **Audited `838ca66`: the record was already correct; the stale source was a document.** |
 | The Ledger is restored in full, not kept compact | Shaun, 20 Sep 2026, after the 3320 → 122 line rewrite. The institutional record — Decisions Log, Handoffs, Open Questions, Recently Completed — is the point of the Ledger and is to be preserved, not summarised away. `LEDGER_ARCHIVE_2026-09-20.md` stays unchanged as the recovery snapshot. |
@@ -407,6 +408,38 @@ Tom/Fatch audit (`838ca66`), the Players Directory refresh (`43401f8`), the
 League refinement (`3e326e1`) and Shaun's disclosure correction to it
 (`11ed091`). **Nothing is queued for CCode.** The open product questions are in
 Section 8.
+
+---
+
+### Player rename — ACTIVE Admin feature
+
+Add the ability for an Admin to rename an existing player from the existing
+player-management area.
+
+Required behaviour:
+
+- Admin-only. Do not expose player self-service renaming.
+- Entry point should live with existing player management / Existing players,
+  not in a public-facing profile flow.
+- Renaming changes the **display name only** and must preserve the same
+  underlying player identity.
+- Existing matches, ratingJourney events, tier history, current rating,
+  partnerships, head-to-head, league rows, profile history and statistics must
+  continue to resolve to the same player after the rename.
+- Before committing, show an explicit confirmation containing old and new names,
+  e.g. **“Rename Shaun to Shaun J?”**
+- Reject blank/whitespace-only names.
+- Reject duplicates or any name collision that would make player resolution
+  ambiguous.
+- Preserve the previous name in an audit/history field where practical.
+- If any canonical or historical record is currently keyed by player name
+  rather than a stable id, **do not silently rewrite it**. CCode must first
+  report the affected collections/code paths and the migration blast radius in
+  this Ledger before applying a migration.
+- Add regression coverage proving the renamed player keeps the same historical
+  record and that confirmation/collision validation works.
+
+**Baton → CCode. Approved and unblocked.**
 
 ---
 
@@ -1143,6 +1176,26 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 21 Sep 2026 (Admin player rename)
+
+Shaun approved an Admin-only player rename action.
+
+Implement it in the existing player-management area. The rename must preserve
+the player's underlying identity and all historical relationships; confirmation
+must explicitly show **old name → new name** before writing. Reject blank and
+duplicate/conflicting names. Preserve the old name for audit where practical.
+
+Before implementation, inspect how player identity is referenced across current
+state and history. If any canonical data is keyed by display name rather than a
+stable player id, stop and record the exact migration/blast radius before
+changing data.
+
+Add browser/module regression coverage for confirmation, duplicate protection,
+and historical continuity after rename.
+
+**Baton → CCode. Approved and unblocked.**
+
 
 ### CCode — 21 Sep 2026 (Predict a Matchup copy delivered; awaiting a visual render)
 
@@ -3945,14 +3998,23 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved implementation queue is empty.** Baton with Shaun / CGPT.
-`55d2fa7`, **430 / 430 tests (97 browser)**.
+**One approved Admin feature is queued for CCode.** Predict a Matchup copy is
+delivered through `55d2fa7` (430 / 430 tests, 97 browser). Baton now passes
+to CCode for Admin player rename.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
 2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters with a state summary, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. All behaviour preserved. Player names are now HTML-escaped where they render.
 3. **DONE (`3e326e1`).** League refinement. Collapsible explanation, Month/View on one row, and the Last 10 form table over each player's own latest up-to-10 rated games — P/W/L/D/GD/Pts on the league's own 3/1/0, real sample shown and marked for anyone with fewer than ten. `Form (10g)` kept on the monthly tables. No rating-engine changes.
 4. **DONE (`11ed091`).** Shaun's 21 Sep disclosure correction to it: inline text-and-chevron disclosure with no card, the global tier accordion removed, and independent per-tier collapses that default to expanded on entry to By tier.
 5. **DONE (`55d2fa7`).** Predict a Matchup copy: predicted winner → expected share of games both sides → teams and ratings → rating-point edge → muted footer. `Expected performance score` and the 80/20 blend removed from the card. Admin-only confirmed and now guarded by a test. Browser coverage for every acceptance point. **Visual treatment deliberately unchanged.**
+
+6. **ACTIVE — Admin player rename.** Add rename in player management with
+   explicit old→new confirmation, blank/duplicate validation and historical
+   continuity. First verify identity is stable-id based; if any canonical data
+   is keyed by name, report migration scope before writing.
+7. Add regression coverage proving rename preserves the same player's match,
+   rating, tier and stats history and that confirmation/collision validation
+   works.
 
 ### Waiting on Shaun
 
