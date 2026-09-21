@@ -384,7 +384,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
-| Predict a Matchup remains Admin-only and returns to plain-language result copy | Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Give the result a more premium Money Padel matchup-card presentation with only a small muted note that it is based on current Power Ratings and records nothing. |
+| Predict a Matchup remains Admin-only and returns to plain-language result copy | Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
 | Players Directory visual refresh | Shaun, 20 Sep 2026. Bring Directory in line with the newer premium/private-club Money Padel UI. Preserve Directory/Compare, tier/status filters, A–Z/Power Rating sort, player navigation and active/inactive meaning. Reduce the feeling of a large settings/filter form followed by a plain database list. **DONE `43401f8`.** |
 | Tom/Fatch must not reference Jords comparator | Shaun reconfirmed 20 Sep 2026 after seeing stale information. Both historical B anchors are 1400 baseline with 20% reliability. CCode must audit both displayed explanation and stored/replayed state rather than assuming this is cosmetic. **Audited `838ca66`: the record was already correct; the stale source was a document.** |
 | The Ledger is restored in full, not kept compact | Shaun, 20 Sep 2026, after the 3320 → 122 line rewrite. The institutional record — Decisions Log, Handoffs, Open Questions, Recently Completed — is the point of the Ledger and is to be preserved, not summarised away. `LEDGER_ARCHIVE_2026-09-20.md` stays unchanged as the recovery snapshot. |
@@ -426,32 +426,20 @@ Product / copy direction:
 - Do **not** label the game-share percentage as a calibrated “chance to win”
   unless a separate win-probability model is ever validated. Wording such as
   **“Len & Tom should win”** plus **“67% expected share of games”** is acceptable.
-- Give the result a more polished/premium **Money Padel matchup-card** treatment
-  rather than a technical calculation panel. Keep the hierarchy fast to scan:
-  predicted winner → expected game share → teams/ratings → rating-point edge.
+- **Visual treatment is intentionally deferred.** Do not invent or implement a new
+  result-card layout until Shaun provides/approves a visual render. For now,
+  change only the wording/content hierarchy: predicted winner → expected game
+  share → teams/ratings → rating-point edge.
 - Keep only a small muted footer such as **“Based on current Power Ratings ·
   Prediction only · Nothing is recorded.”**
 - Underlying prediction/rating mathematics, persisted ratings and Sequential-v1
   are unchanged.
 
-Suggested hierarchy (illustrative, not pixel-locked):
+Visual design note:
 
-```
-MATCH PREDICTION
-
-Len & Tom
-1682 · 1351
-
-67% — 33%
-
-Rocky & MK
-1396 · 1393
-
-LEN & TOM SHOULD WIN
-Favoured by 122 rating points
-
-Based on current Power Ratings · Prediction only
-```
+- Do not treat the previous chat mockup/example as an approved component design.
+- Shaun will provide/approve a separate visual render before CCode changes the
+  visual styling/layout of this result.
 
 Acceptance / regression coverage:
 
@@ -1163,7 +1151,7 @@ Implement the presentation/copy refinement only:
 - show rating-point advantage;
 - remove user-facing `Expected performance score` / engine terminology from the
   plain result card;
-- visually upgrade it into a premium Money Padel matchup card;
+- do not change the visual layout yet; wait for Shaun's approved visual render;
 - keep only a small “based on current Power Ratings / prediction only / nothing
   recorded” note;
 - no engine, rating, expectation or persistence changes.
@@ -3914,8 +3902,9 @@ CCode for Predict a Matchup copy/presentation only.
 
 5. **ACTIVE — Predict a Matchup simplification.** Keep the tool Admin-only.
    Replace technical `Expected performance score` copy with predicted winner,
-   expected game-share percentages and rating-point advantage; apply the premium
-   matchup-card hierarchy from Section 4. No calculation changes.
+   expected game-share percentages and rating-point advantage. **Do not implement
+   a new visual card/layout yet**; visual redesign waits for Shaun's approved
+   render. No calculation changes.
 6. Add browser regression coverage proving non-admin users cannot access the
    feature and the plain result card shows winner / game share / rating edge
    without engine terminology.
