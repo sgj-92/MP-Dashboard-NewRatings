@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`25e4624`** |
-| Tests | **445 / 445 passing** (102 of them drive a real browser) |
+| Last verified implementation commit | **`2fdc169`** |
+| Tests | **457 / 457 passing** (105 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -194,6 +194,13 @@ sides → teams and ratings → rating-point edge → a one-line muted footer. T
 80/20 machinery and the phrase `Expected performance score` are gone from it.
 **Visual treatment deliberately unchanged**, per Shaun's same-day deferral.
 Captured in `docs/screenshots/19-admin-predict.png`.
+
+**Monthly rankings coherence — DONE (`2fdc169`). The persisted record was
+correct; both faults were in the display.** Rishi's Tier A beside `1464` was
+real, and the cause was not his data. His 20 September reads PROMOTION B→A
+(rating unmoved), then CLUB_RATING_REASSESSMENT 1464.2 → 1640, then a match to
+1641.6 — exactly his stored rating. **No repair was needed and no stored
+history was touched.** Two general display faults are fixed; see Section 4.
 
 **Player rename — DONE (`25e4624`), by freezing the identity instead of
 migrating the record.** Shaun's answer to the A-or-B question was neither:
@@ -452,7 +459,64 @@ Section 8.
 
 ---
 
-### Monthly Rankings coherence + Monthly Summary disclosure — ACTIVE (21 Sep 2026)
+### Monthly Rankings coherence + Monthly Summary — DELIVERED (`2fdc169`, 21 Sep 2026)
+
+**Outcome: the persisted record was correct. Both faults were in the display,
+and both were general rather than specific to Rishi. Nothing was repaired,
+nothing in Sequential-v1, reassessment mathematics or stored history changed.**
+
+**Root cause 1 — same-date event ordering.** `MonthlyViews.chronological()`
+ordered same-date events only by "initialisation first" and its comment claimed
+everything else *"keeps the order the engine produced"*. `Array#sort` is stable
+— but on its **input**, and the input is whatever order Firestore returned the
+documents in. For Rishi's three events on 2026-09-20 that order put the
+PROMOTION last, so the month closed on the rating the promotion left untouched:
+**1464.2**. Now ordered by the engine's own rule — `Engine.replay()` drains
+state events with `effectiveDate <= m.date` **before** processing that day's
+matches, so a club decision precedes play and the promotion precedes the rating
+decision the board is required to make beside it. That list already existed in
+`journeyView.js`, which is why a player's Rating Journey has always read
+correctly while this view did not; a test asserts the two lists cannot drift.
+
+**Root cause 2 — the tier badge described a different moment from the rating.**
+The monthly row rendered `p.tier`, **today's** tier, beside the selected
+month's closing rating. Harmless while nobody had moved; wrong the moment
+somebody had. It now uses `tierInScope()`, the month-aware answer the tier
+filter already used, so badge and number describe the same instant. This also
+fixes the same defect in the past direction: viewing July for a player promoted
+in September showed an A badge against a B-era rating.
+
+**Verified against the live record:** September's close now equals the stored
+rating for **every** player, and the three movers each render one coherent
+moment — Rishi **A / 1642** (overall 1642), Ant Slicer **B / 1460**, Jams
+**B / 1320**.
+
+**Monthly Summary disclosure.** Independently collapsible, defaulting expanded,
+folding Key takeaways, Monthly Performance, Rating Movement, Ranking Movement,
+Moved without playing and Crossovers together; independent of the League
+disclosures. Built as a plain chevron on the existing heading — then a
+screenshot showed it **still rendered as a bordered card**, because
+`.monthly-stories` is itself a card and collapsing it left exactly the dropdown
+Shaun rejected during the League work. The card chrome now comes off when
+collapsed and is unchanged when open. The first test asserted the *button* had
+no border, which was true and useless; it now weighs the container.
+
+**Coverage:** 9 module tests (`tests/monthlyCoherence.test.js`) and 3 browser
+tests, each verified to fail against the old code apart from the one asserting
+an unmoved player is unaffected, which must pass either way. The browser test
+injects a player promoted and re-anchored mid-month, supplied in the unhelpful
+order, and fails if the rendered row puts the new tier beside the old rating.
+**457 / 457 (105 browser).** Screenshot `21-monthly-summary-collapsed.png`.
+
+**Split-month League treatment: untouched and still passing** — games before
+the effective date accrue to the old tier, games on/after to the new, points
+never transfer, `All together` remains the whole month.
+
+---
+
+### The brief as approved, kept
+
+#### Monthly Rankings coherence + Monthly Summary disclosure — the approved brief
 
 Two requests from Shaun, arriving together.
 
@@ -1418,6 +1482,46 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 21 Sep 2026 (monthly coherence + Monthly Summary delivered)
+
+`2fdc169`. **457 / 457 tests (105 browser).**
+
+**The persisted record was correct.** That was the first question the brief
+asked and the answer is unambiguous: Rishi's 20 September reads PROMOTION B→A
+with the rating unmoved, then CLUB_RATING_REASSESSMENT 1464.2 → 1640, then a
+match to 1641.6, which is exactly his stored rating. **No repair, no write, no
+change to Sequential-v1, reassessment mathematics or stored history.**
+
+Both faults were in the display and both were general:
+
+1. **Same-date ordering.** `MonthlyViews.chronological()` relied on `Array#sort`
+   stability to preserve "the order the engine produced" — but stability is
+   against the *input*, and the input is Firestore's arbitrary document order.
+   Rishi's promotion came back last, so the month closed on the rating it left
+   untouched. Now ordered by the engine's own rule, using the list
+   `journeyView.js` already had (which is why the Rating Journey always read
+   correctly). A test asserts the two lists cannot drift apart.
+2. **The tier badge showed today's tier beside the month's rating.** Now
+   `tierInScope()`, the month-aware answer the tier filter already used. This
+   also fixes the past direction — July viewed for a September promotee.
+
+Verified on the live record: September's close now equals the stored rating for
+**every** player, and Rishi renders **A / 1642** against overall 1642.
+
+**Monthly Summary** folds as one, defaults expanded, independent of the League
+disclosures. Worth recording: I built it, screenshotted it, and found it still
+looked like the bordered dropdown Shaun rejected — `.monthly-stories` is a card,
+so collapsing it left a bordered box containing only its heading. The chrome now
+comes off when collapsed. My first test had asserted the *button* had no border,
+which was true and beside the point; it now weighs the container.
+
+**A note for CGPT on the Ledger.** Recorded in place, additively —
+`cbcafba` added 84 lines and removed none. The constraint is now written into
+Section 6: this file is edited in place, never replaced wholesale. Declining to
+write was the right call.
+
+**Baton → Shaun / CGPT.** Nothing here needed a product decision.
 
 ### CGPT — 21 Sep 2026 (monthly rankings coherence + Monthly Summary disclosure)
 
@@ -4304,6 +4408,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `2fdc169` | Monthly rankings coherence: same-date event ordering taken from the engine's own rule, tier badge moved to `tierInScope()` so badge and rating describe one moment; Monthly Summary made independently collapsible and stripped of card chrome when collapsed |
 | `25e4624` | Editable player names: identity frozen as `playerId`, label carried by `displayName`, translation at two edges (`playerNames.js`); a replay now preserves player-document fields it does not own, which a rename had quietly broken |
 | `55d2fa7` | Predict a Matchup copy: predicted winner, expected game share both sides, rating-point edge and a muted footer, replacing `Expected performance score` and the 80/20 blend; visual treatment deferred |
 | `11ed091` | League disclosure correction: inline text-and-chevron disclosure in place of a bordered card, global tier accordion replaced by independent per-tier collapses defaulting to expanded |
@@ -4360,15 +4465,16 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `25e4624`,
-**445 / 445 tests (102 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `2fdc169`,
+**457 / 457 tests (105 browser)**.
 
-1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed.
+1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
 3. **DONE (`3e326e1`).** League refinement: collapsible explanation, Month/View on one row, Last 10 form table.
-4. **DONE (`11ed091`).** Disclosure correction: inline disclosure, independent per-tier collapses defaulting to expanded.
+4. **DONE (`11ed091`).** Disclosure correction: inline disclosure, independent per-tier collapses.
 5. **DONE (`55d2fa7`).** Predict a Matchup copy. Visual treatment deliberately unchanged.
-6. **DONE (`25e4624`).** Editable player names. Identity frozen, label free; a rename writes one field on one document and the record is untouched. Found and fixed a defect where a rename would have stopped the record verifying, and so stopped match corrections working.
+6. **DONE (`25e4624`).** Editable player names. Identity frozen, label free.
+7. **DONE (`2fdc169`).** Monthly rankings coherence and the Monthly Summary disclosure. **The persisted record was correct**; both faults were display-side and both general — same-date event ordering taken from the engine's own rule, and the tier badge moved to `tierInScope()` so it describes the same moment as the rating beside it.
 
 ### Waiting on Shaun
 
