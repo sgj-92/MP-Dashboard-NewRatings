@@ -73,7 +73,8 @@ figure a handoff below was written against:
 
 | Read | Record |
 |---|---|
-| 20 Sep, after Shaun's three reviews (current) | 155 matches · **672** journey events · 34 players — replays to itself, diagnostics 8/8 |
+| **21 Sep, after three renames and four new matches (current)** | **159 matches · 688 journey events · 34 players — replays to itself, 0 differences** |
+| 20 Sep, after Shaun's three reviews | 155 matches · **672** journey events · 34 players — replays to itself, diagnostics 8/8 |
 | 20 Sep, after the removal was finished | 156 matches · 664 journey events · 34 players |
 | 18 Sep, after the production import | 157 matches · 666 journey events · 34 players = **857 docs** |
 
@@ -212,6 +213,25 @@ would have silently disabled match corrections. Fixed in `replayForward` with
 the same reason. The rule now holds generally: *a replay reconstructs engine
 state and must not destroy fields it does not own* — true for any field added
 to a player document in future, not just this one.
+
+**The renames are live and verified (21 Sep).** Shaun renamed three players in
+the app — **Ant Slice → Ant Slicer**, **Dennis → Denis**, **Stormzy → Stormz** —
+and reports it working. Verified against a fresh read of the live record:
+
+| Checked | Found |
+|---|---|
+| Player document ids | **Unchanged.** Still `Ant Slice`, `Dennis`, `Stormzy`. No new label is used as an id anywhere |
+| Matches / journey under a new label | **None.** All 38 matches and 43 journey events for the three still sit under their original ids |
+| `previousDisplayNames` | Present on all three, holding the old name |
+| **Replay-to-self** | **IDENTICAL, 0 differences** — so match corrections still work, which is the thing a rename could have broken |
+| Every match name resolves to a player doc id | **Yes**, all 34 |
+
+**The write path was exercised in production, not just in tests.** Two matches
+were recorded on 21 Sep *after* the renames — `PDM & Dennis vs Osh & Stormzy`
+and `Stormzy & Osh vs Antz & Fatch` — and both were written to the record under
+the players' **original ids**, not their new labels. That is the
+display → identity translation at the match write boundary working on live
+data.
 
 **A second duplicate explanation, found by collapsing the tier tables.** The
 legacy per-tab explainer also said *"Points: 3 for a win, 1 for a draw"*, so
@@ -1341,6 +1361,27 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 21 Sep 2026 (renames applied by Shaun; live record verified)
+
+Shaun renamed three players in the app and reports it working. Re-read the live
+record to check it rather than take the feature's word for it. **It is clean.**
+
+- **Ant Slice → Ant Slicer**, **Dennis → Denis**, **Stormzy → Stormz.**
+- Every player document id is **unchanged**; no new label appears as an id,
+  in any match, or on any journey event.
+- **The record replays to itself with 0 differences**, so match corrections
+  still work. That was the one thing a rename could plausibly have broken, and
+  it is the check worth having run.
+- Live record now **159 matches · 688 journey events · 34 players**.
+
+**The write boundary was proven on live data.** Two matches recorded on 21 Sep,
+*after* the renames, involve Dennis and Stormzy — and both were written under
+their **original ids**. The display → identity translation is working in
+production, not only in the fixture.
+
+Nothing needed fixing and nothing was written by CCode. **Baton stays with
+Shaun / CGPT.**
 
 ### CCode — 21 Sep 2026 (editable names delivered; the record was not migrated)
 
