@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`11ed091`** |
-| Tests | **425 / 425 passing** (92 of them drive a real browser) |
+| Last verified implementation commit | **`55d2fa7`** |
+| Tests | **430 / 430 passing** (97 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -184,6 +184,15 @@ each tier heading carries its own chevron and collapses independently, keeping
 Tiers default expanded and reset to expanded on entry to By tier by every
 route. Captured in `17-league-by-tier.png` and `17b-league-tiers-collapsed.png`
 (Tier A folded, B and C untouched).
+
+**Predict a Matchup — copy refinement DONE (`55d2fa7`).** The card led with
+*"Expected performance score: 0.82 / 0.18"* and the 80/20 blend beneath it —
+engine detail on a card whose reader is deciding whether a game is worth
+playing. It now reads: predicted winner → expected share of games for both
+sides → teams and ratings → rating-point edge → a one-line muted footer. The
+80/20 machinery and the phrase `Expected performance score` are gone from it.
+**Visual treatment deliberately unchanged**, per Shaun's same-day deferral.
+Captured in `docs/screenshots/19-admin-predict.png`.
 
 **A second duplicate explanation, found by collapsing the tier tables.** The
 legacy per-tab explainer also said *"Points: 3 for a win, 1 for a draw"*, so
@@ -384,7 +393,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
-| Predict a Matchup remains Admin-only and returns to plain-language result copy | Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
+| Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
 | Players Directory visual refresh | Shaun, 20 Sep 2026. Bring Directory in line with the newer premium/private-club Money Padel UI. Preserve Directory/Compare, tier/status filters, A–Z/Power Rating sort, player navigation and active/inactive meaning. Reduce the feeling of a large settings/filter form followed by a plain database list. **DONE `43401f8`.** |
 | Tom/Fatch must not reference Jords comparator | Shaun reconfirmed 20 Sep 2026 after seeing stale information. Both historical B anchors are 1400 baseline with 20% reliability. CCode must audit both displayed explanation and stored/replayed state rather than assuming this is cosmetic. **Audited `838ca66`: the record was already correct; the stale source was a document.** |
 | The Ledger is restored in full, not kept compact | Shaun, 20 Sep 2026, after the 3320 → 122 line rewrite. The institutional record — Decisions Log, Handoffs, Open Questions, Recently Completed — is the point of the Ledger and is to be preserved, not summarised away. `LEDGER_ARCHIVE_2026-09-20.md` stays unchanged as the recovery snapshot. |
@@ -401,7 +410,7 @@ Section 8.
 
 ---
 
-### Predict a Matchup — ACTIVE UI refinement (21 Sep 2026)
+### Predict a Matchup — copy DELIVERED (`55d2fa7`); visual render still awaited
 
 Shaun confirmed that Predict a Matchup has become one of the most-used Admin
 features, but it must **remain Admin-only**. Players are agreeing matches first
@@ -1134,6 +1143,50 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 21 Sep 2026 (Predict a Matchup copy delivered; awaiting a visual render)
+
+`55d2fa7`. **430 / 430 tests (97 browser).** Copy and information hierarchy
+only. **No visual change**, per the same-day deferral — no new card, no new
+layout, the existing container untouched. The prediction still comes from
+`RatingEngine.expectedScore`; no rating, expectation or stored data changed.
+
+The card now reads:
+
+```
+Osh & Rishi should win
+Expected to win about 82% of the games, against 18%.
+Osh (1712) & Rishi (1640) vs Omar (1411) & Mulley (1406)
+Favoured by 268 rating points.
+Based on current Power Ratings · Prediction only · Nothing is recorded.
+```
+
+**Two things held to deliberately, both of which the direction called for:**
+
+*Share of games, never a chance of winning.* The engine has one Elo
+expectation, and the app has always shown it to players as "expected to win
+about X% of the games" — the same phrasing `ratingExplainer.js` uses and the
+wording Shaun approved. No win-probability model has been validated, so
+"82% chance" would be a claim the record cannot support. A test asserts the
+card never says chance, probability, likelihood or odds.
+
+*A two-point gap is not a prediction of a win.* The verdict scales with the
+gap — **should win** above 15 points, **shade it** below, **Too close to call**
+for a genuine tie. Naming a winner off noise would make the card worse than
+silent, and the acceptance list's "names the predicted winning team" is still
+met wherever there is one.
+
+**On Admin-only:** it already held — `renderManage` returns the lock screen to
+non-admins, so the form does not exist for them. The new test is therefore a
+*guard*, not a change: it passes against the old code too, and it also asserts
+the feature appears on no player-facing section. Recorded plainly because the
+restriction is the point of the feature.
+
+**Still with Shaun: the visual render.** Nothing about the layout was invented
+while waiting. `19-admin-predict.png` shows the current copy in the existing
+treatment, which should make the render easier to specify against.
+
+**Baton → Shaun / CGPT.**
 
 ### CGPT — 21 Sep 2026 (Predict a Matchup simplification)
 
@@ -3837,6 +3890,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `55d2fa7` | Predict a Matchup copy: predicted winner, expected game share both sides, rating-point edge and a muted footer, replacing `Expected performance score` and the 80/20 blend; visual treatment deferred |
 | `11ed091` | League disclosure correction: inline text-and-chevron disclosure in place of a bordered card, global tier accordion replaced by independent per-tier collapses defaulting to expanded |
 | `3e326e1` | League refinement: collapsible explanation and tier-table block, Month/View on one row, and a Last 10 form table over each player's own latest ten rated games (`lastTen.js`); duplicate legacy explainer hidden on the League view |
 | `43401f8` | Players Directory refresh: folded secondary filters with a state summary, wrapping tier chips, identity-first rows with a chevron, Inactive-only badging, A–Z-only letter headings; player names HTML-escaped where rendered |
@@ -3891,38 +3945,36 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**One approved Admin UI refinement is queued for CCode.** The League work is
-delivered through `11ed091` (425 / 425 tests, 92 browser). Baton now passes to
-CCode for Predict a Matchup copy/presentation only.
+**The approved implementation queue is empty.** Baton with Shaun / CGPT.
+`55d2fa7`, **430 / 430 tests (97 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit. Anchors verified at 1400 / 20%, replay verified, no numerical repair needed. The stale source was `HISTORICAL_REVIEW_DRYRUN.md`, now corrected; `scripts/apply-historical-decisions.js` no longer able to undo the correction.
 2. **DONE (`43401f8`).** Players Directory visual refresh. Compact folded filters with a state summary, wrapping tier chips, identity-first tappable rows, Inactive-only badging, A–Z-only letter headings. All behaviour preserved. Player names are now HTML-escaped where they render.
 3. **DONE (`3e326e1`).** League refinement. Collapsible explanation, Month/View on one row, and the Last 10 form table over each player's own latest up-to-10 rated games — P/W/L/D/GD/Pts on the league's own 3/1/0, real sample shown and marked for anyone with fewer than ten. `Form (10g)` kept on the monthly tables. No rating-engine changes.
-4. **DONE (`11ed091`).** Shaun's 21 Sep disclosure correction to it: inline text-and-chevron disclosure with no card, the global tier accordion removed, and independent per-tier collapses that default to expanded on entry to By tier. Every acceptance point covered by a test that was verified to fail against the old design.
+4. **DONE (`11ed091`).** Shaun's 21 Sep disclosure correction to it: inline text-and-chevron disclosure with no card, the global tier accordion removed, and independent per-tier collapses that default to expanded on entry to By tier.
+5. **DONE (`55d2fa7`).** Predict a Matchup copy: predicted winner → expected share of games both sides → teams and ratings → rating-point edge → muted footer. `Expected performance score` and the 80/20 blend removed from the card. Admin-only confirmed and now guarded by a test. Browser coverage for every acceptance point. **Visual treatment deliberately unchanged.**
 
-5. **ACTIVE — Predict a Matchup simplification.** Keep the tool Admin-only.
-   Replace technical `Expected performance score` copy with predicted winner,
-   expected game-share percentages and rating-point advantage. **Do not implement
-   a new visual card/layout yet**; visual redesign waits for Shaun's approved
-   render. No calculation changes.
-6. Add browser regression coverage proving non-admin users cannot access the
-   feature and the plain result card shows winner / game share / rating edge
-   without engine terminology.
+### Waiting on Shaun
+
+6. **Predict a Matchup visual render.** The copy is delivered and the layout was
+   deliberately left alone. `docs/screenshots/19-admin-predict.png` shows the
+   current copy in the existing treatment, which should make the render easier
+   to specify against. Nothing will be invented here in the meantime.
 
 ### Needing a person, not an implementer
 
-5. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-6. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C. Whether Tier S is a real tier, a legacy artefact or a data error is a product call. Low urgency, but it should not stay unanswered before beta.
-7. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-8. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+7. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+8. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C. Whether Tier S is a real tier, a legacy artefact or a data error is a product call. Low urgency, but it should not stay unanswered before beta.
+9. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+10. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-9. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-10. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+11. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+12. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
 the tier in force on each match date; points never transfer between tiers;
 `All together` stays one row and shows the transition. Nothing is queued for
-CCode." Item 5 above is the one open question it carried forward.*
+CCode." Item 7 above is the one open question it carried forward.*
