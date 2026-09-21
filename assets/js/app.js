@@ -6344,6 +6344,8 @@ function renderSummary(){
   modeSel.value = summaryMode;
   modeSel.onchange = (e)=>{ summaryMode = e.target.value; renderSummary(); };
 
+  resetLeagueTierSections();
+
   const legacyExplainer = document.getElementById('explainerWrapper');
   if(legacyExplainer) legacyExplainer.style.display = (summaryMode === 'league') ? 'none' : '';
 
@@ -6355,12 +6357,24 @@ let leagueGrouped = true;
 let leagueSortKey = 'points';
 let leagueSortDesc = true;
 
-// Two disclosures on the League screen. Both start closed: the point of the
-// screen is the table, and on a phone the explanation plus four tier tables
-// put it below the fold. Not persisted -- the screen should open the same way
-// every time.
+// The explanation starts closed: the point of the screen is the table, and on
+// a phone the explanation was putting it below the fold. Not persisted -- the
+// screen should open the same way every time.
 let leagueExplainerOpen = false;
-let leagueTiersOpen = true;
+
+// Each tier collapses on its own. A single global `Tier tables` fold was the
+// first attempt and was wrong twice over: it added a control heavier than the
+// headings it hid, and it made the four tiers one thing when they are four
+// separate competitions -- there is no reason hiding Tier C should hide A.
+//
+// Open by default, and reset to open on entry to By tier: a reader arriving at
+// the screen wants the tables, not four collapsed rows to reopen.
+let leagueTierOpen = {};
+function resetLeagueTierSections(){
+  leagueTierOpen = {};
+  TIER_ORDER_LIST.forEach(t => { leagueTierOpen[t] = true; });
+}
+resetLeagueTierSections();
 
 // Last 10 is a third table alongside By tier / All together, not a mode of
 // either: it is not scoped to the selected month at all, so it cannot share
@@ -6554,12 +6568,23 @@ function buildLastTenTableHtml(rows){
   return html;
 }
 
-// A collapsible block. Closed by default where it is used, because the League
-// screen's job is to show a table and everything here sits above one.
-function leagueFold(id, label, open, body){
-  return `<button type="button" class="lg-fold-btn" id="${id}" aria-expanded="${open}" aria-controls="${id}Body">
-      <span>${label}</span><span class="lg-fold-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
-    </button>` + (open ? `<div class="lg-fold-body" id="${id}Body">${body}</div>` : '');
+// A quiet inline disclosure: text and a small chevron, no card, no border, no
+// background. It is a line of text you can tap, not a control competing with
+// the table underneath it.
+function leagueInlineFold(id, label, open, body){
+  return `<button type="button" class="lg-inline-fold" id="${id}" aria-expanded="${open}" aria-controls="${id}Body">
+      ${label}<span class="lg-inline-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
+    </button>` + (open ? `<div class="lg-inline-body" id="${id}Body">${body}</div>` : '');
+}
+
+// A tier heading that happens to be tappable. Deliberately still a
+// `.section-heading` -- same type, same weight, same spacing as every other
+// heading on the screen; the chevron is the only thing added.
+function leagueTierHeading(tier, open){
+  return `<button type="button" class="section-heading lg-tier-head" data-tier="${escapeHtml(tier)}"
+      id="leagueTier${escapeHtml(tier)}" aria-expanded="${open}" aria-controls="leagueTierBody${escapeHtml(tier)}">
+      Tier ${escapeHtml(tier)}<span class="lg-inline-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
+    </button>`;
 }
 
 // The tiers a player occupied across a month, as `B` or `B → A`. Built from
@@ -6622,7 +6647,7 @@ function renderSummaryLeagueTable(){
   // fall in, so the month in the heading would be a lie on that view.
   let html = `<div class="section-heading" style="margin-top:6px;">🏆 ${isLastTen ? 'Last 10' : label + ' League Table'}</div>`;
 
-  html += leagueFold('leagueExplainerToggle', 'How this table works', leagueExplainerOpen,
+  html += leagueInlineFold('leagueExplainerToggle', 'How this table works', leagueExplainerOpen,
     isLastTen
       ? `<div class="section-sub" style="margin:0;">Each player's own most recent ${LastTen.WINDOW} rated games, wherever they fall — this table is not scoped to the selected month, so two rows cover the same number of games rather than the same number of days. Same league scoring as everywhere else: 3 points for a win, 1 for a draw, tiebreak on game difference. Anyone with fewer than ${LastTen.WINDOW} games in the record shows the games they actually have, marked <span class="l10-short">of ${LastTen.WINDOW}</span> — the sample is never padded. "Last 5" is the run, newest first. Tap a column header to sort by it.</div>`
       : `<div class="section-sub" style="margin:0;">Updates live as the month's games are added — 3 points for a win, 1 for a draw, tiebreak on game difference. Tap a column header to sort by it. "Form" is each player's last 10 games overall, not scoped to this month. Tier S isn't shown — one player can't have a table.${leagueGrouped ? ' A player who changed tier mid-month appears in both tier tables, holding only the points they earned in each.' : ''}</div>`);
@@ -6639,27 +6664,18 @@ function renderSummaryLeagueTable(){
     else html += buildLastTenTableHtml(rows);
   } else if(leagueGrouped){
     // Every tier the club actually uses, so a Tier S player is not silently
-    // dropped from the grouped table.
-    let body = '';
+    // dropped from the grouped table. Each one collapses on its own: they are
+    // four separate competitions, not one block.
     let anyTierShown = false;
     TIER_ORDER_LIST.forEach(tier=>{
       const rows = splitRows.filter(s => s.tier === tier && s.games > 0);
       if(rows.length === 0) return;
       anyTierShown = true;
-      body += `<div class="section-heading">Tier ${tier}</div>`;
-      body += buildLeagueTableHtml(rows, false);
+      const open = leagueTierOpen[tier] !== false;
+      html += leagueTierHeading(tier, open);
+      if(open) html += `<div id="leagueTierBody${tier}">${buildLeagueTableHtml(rows, false)}</div>`;
     });
     if(!anyTierShown) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
-    // Four stacked tier tables is the longest thing on the screen. Collapsing
-    // them is presentation only: the By tier / All together choice above is
-    // untouched, and so is the split-month allocation inside them.
-    else {
-      const tiersShown = (body.match(/class="section-heading">Tier /g) || []).length;
-      const label = leagueTiersOpen
-        ? 'Tier tables'
-        : `Tier tables — ${tiersShown} hidden`;
-      html += leagueFold('leagueTiersToggle', label, leagueTiersOpen, body);
-    }
   } else {
     const rows = wholeRows.filter(s => s.tier !== 'S' && s.games > 0);
     if(rows.length === 0) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
@@ -6674,8 +6690,12 @@ function renderSummaryLeagueTable(){
     // must not survive onto the other -- it would leave the arriving table
     // sorted by a column it does not contain, which is to say not sorted.
     if(lastTen !== isLastTen) { leagueSortKey = 'points'; leagueSortDesc = true; }
+    const enteringByTier = !lastTen && grouped === true && (isLastTen || !leagueGrouped);
     leagueLastTen = lastTen;
     if(grouped !== undefined) leagueGrouped = grouped;
+    // Arriving at By tier shows the tables. Whatever was collapsed on a
+    // previous visit is not a preference worth restoring someone into.
+    if(enteringByTier) resetLeagueTierSections();
     renderSummaryLeagueTable();
   };
   document.getElementById('leagueGroupedBtn').onclick = ()=> setView(false, true);
@@ -6686,8 +6706,14 @@ function renderSummaryLeagueTable(){
 
   const explainerBtn = document.getElementById('leagueExplainerToggle');
   if(explainerBtn) explainerBtn.onclick = ()=>{ leagueExplainerOpen = !leagueExplainerOpen; renderSummaryLeagueTable(); };
-  const tiersBtn = document.getElementById('leagueTiersToggle');
-  if(tiersBtn) tiersBtn.onclick = ()=>{ leagueTiersOpen = !leagueTiersOpen; renderSummaryLeagueTable(); };
+  // One tier's chevron touches that tier and nothing else.
+  content.querySelectorAll('.lg-tier-head').forEach(btn=>{
+    btn.onclick = ()=>{
+      const t = btn.dataset.tier;
+      leagueTierOpen[t] = leagueTierOpen[t] === false;
+      renderSummaryLeagueTable();
+    };
+  });
 
   content.querySelectorAll('.league-sort-th').forEach(th=>{
     th.onclick = ()=>{

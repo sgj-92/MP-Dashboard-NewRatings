@@ -3445,7 +3445,7 @@ const openLeague = (app, opts = {}) => app.run((o) => {
   leagueLastTen = o.view === 'last10';
   leagueGrouped = o.view !== 'all';
   leagueExplainerOpen = !!o.explainerOpen;
-  leagueTiersOpen = o.tiersOpen !== false;
+  resetLeagueTierSections();
   leagueSortKey = 'points'; leagueSortDesc = true;
   renderSummary();
 }, opts);
@@ -3498,7 +3498,7 @@ test('the explanation opens and closes, and says what this table is', { skip }, 
       document.getElementById('leagueExplainerToggle').click();
       // Named, because the tier-tables fold is open on this view too.
       out.closed = !document.getElementById('leagueExplainerToggleBody');
-      out.tierFoldUntouched = !!document.getElementById('leagueTiersToggleBody');
+      out.tierSectionsUntouched = !!document.getElementById('leagueTierBodyA');
       // Opening the explanation must not disturb the table underneath it.
       out.rowsAfter = c().querySelectorAll('tbody tr').length;
       return out;
@@ -3506,36 +3506,162 @@ test('the explanation opens and closes, and says what this table is', { skip }, 
     assert.match(r.openText, /3 points for a win, 1 for a draw/);
     assert.strictEqual(r.openedAria, 'true');
     assert.strictEqual(r.closed, true, 'and folds away again');
-    assert.strictEqual(r.tierFoldUntouched, true, 'without disturbing the other fold');
+    assert.strictEqual(r.tierSectionsUntouched, true, 'without disturbing the tier sections');
     assert.ok(r.rowsAfter > 0, 'the table survives the disclosure');
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
 
-test('collapsing the tier tables hides them without changing the split', { skip }, async () => {
+// Shaun's 21 Sep correction. Each tier is its own competition, so each one
+// collapses on its own: there is no reason hiding Tier C should hide Tier A.
+// The single global `Tier tables` fold this replaces was both heavier than the
+// headings it hid and wrong about what the four tables are.
+test('each tier collapses on its own and leaves the others alone', { skip }, async () => {
   const app = await H.open();
   try {
     await openLeague(app, { month: '2026-09' });
     const r = await app.run(() => {
       const c = () => document.getElementById('summaryContent');
-      const snapshot = () => [...c().querySelectorAll('tbody tr')]
-        .map((tr) => [...tr.children].map((td) => td.innerText.trim()).join('|'));
-      const before = snapshot();
-      const headings = [...c().querySelectorAll('.section-heading')].map((e) => e.textContent);
-      document.getElementById('leagueTiersToggle').click();
-      const collapsed = { tables: c().querySelectorAll('table').length, label: document.getElementById('leagueTiersToggle').innerText };
-      document.getElementById('leagueTiersToggle').click();
+      // Which tiers currently have a table on screen.
+      const shown = () => [...c().querySelectorAll('.lg-tier-head')]
+        .filter((h) => document.getElementById(`leagueTierBody${h.dataset.tier}`))
+        .map((h) => h.dataset.tier);
+      const rowsOf = (tier) => [...(document.getElementById(`leagueTierBody${tier}`) || { querySelectorAll: () => [] })
+        .querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.innerText.trim()).join('|'));
+
+      const tiers = [...c().querySelectorAll('.lg-tier-head')].map((h) => h.dataset.tier);
+      const out = { tiers, openOnEntry: shown(), noGlobalFold: !document.getElementById('leagueTiersToggle') };
+      const target = tiers[0], other = tiers[1];
+      out.otherBefore = rowsOf(other);
+
+      c().querySelector(`.lg-tier-head[data-tier="${target}"]`).click();
+      out.afterCollapse = shown();
+      out.collapsedAria = c().querySelector(`.lg-tier-head[data-tier="${target}"]`).getAttribute('aria-expanded');
+      out.otherAfter = rowsOf(other);
+      // The heading itself must survive collapsing — otherwise there is
+      // nothing left to tap to get the table back.
+      out.headingStillThere = !!c().querySelector(`.lg-tier-head[data-tier="${target}"]`);
+
+      c().querySelector(`.lg-tier-head[data-tier="${target}"]`).click();
+      out.afterReopen = shown();
+      out.targetRows = rowsOf(target);
+      out.stillByTier = document.getElementById('leagueGroupedBtn').classList.contains('active');
+      return out;
+    });
+
+    assert.ok(r.tiers.length > 1, `the fixture needs more than one tier, got ${JSON.stringify(r.tiers)}`);
+    assert.strictEqual(r.noGlobalFold, true, 'the global Tier tables fold is gone');
+    assert.deepStrictEqual(r.openOnEntry, r.tiers, 'every tier is expanded on entry');
+    assert.deepStrictEqual(r.afterCollapse, r.tiers.slice(1), 'only the tapped tier collapses');
+    assert.strictEqual(r.collapsedAria, 'false');
+    assert.strictEqual(r.headingStillThere, true, 'the heading stays, so it can be reopened');
+    assert.deepStrictEqual(r.otherAfter, r.otherBefore, 'a neighbouring tier is untouched, rows and all');
+    assert.deepStrictEqual(r.afterReopen, r.tiers, 'and it comes back');
+    assert.ok(r.targetRows.length > 0, 'with its rows');
+    assert.strictEqual(r.stillByTier, true, 'By tier is still the selected mode');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('several tiers can be collapsed at once, each independently', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openLeague(app, { month: '2026-09' });
+    const r = await app.run(() => {
+      const c = () => document.getElementById('summaryContent');
+      const state = () => Object.fromEntries([...c().querySelectorAll('.lg-tier-head')]
+        .map((h) => [h.dataset.tier, h.getAttribute('aria-expanded') === 'true']));
+      const tap = (t) => c().querySelector(`.lg-tier-head[data-tier="${t}"]`).click();
+      const tiers = Object.keys(state());
+      const out = { tiers, start: state() };
+      tap(tiers[0]); tap(tiers[1]);
+      out.twoCollapsed = state();
+      out.tablesLeft = c().querySelectorAll('table').length;
+      tap(tiers[0]);
+      out.oneReopened = state();
+      return out;
+    });
+    assert.ok(r.tiers.length >= 2);
+    assert.ok(Object.values(r.start).every(Boolean), 'all expanded to begin with');
+    assert.strictEqual(r.twoCollapsed[r.tiers[0]], false);
+    assert.strictEqual(r.twoCollapsed[r.tiers[1]], false);
+    r.tiers.slice(2).forEach((t) => assert.strictEqual(r.twoCollapsed[t], true, `${t} must be untouched`));
+    assert.strictEqual(r.tablesLeft, r.tiers.length - 2, 'two fewer tables on screen');
+    assert.strictEqual(r.oneReopened[r.tiers[0]], true, 'reopening one');
+    assert.strictEqual(r.oneReopened[r.tiers[1]], false, 'leaves the other collapsed');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('returning to By tier restores the expanded default', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openLeague(app, { month: '2026-09' });
+    const r = await app.run(() => {
+      const c = () => document.getElementById('summaryContent');
+      const state = () => Object.fromEntries([...c().querySelectorAll('.lg-tier-head')]
+        .map((h) => [h.dataset.tier, h.getAttribute('aria-expanded') === 'true']));
+      const tiers = Object.keys(state());
+      c().querySelector(`.lg-tier-head[data-tier="${tiers[0]}"]`).click();
+      const out = { collapsed: state() };
+      // Away and back, both routes.
+      document.getElementById('leagueAllBtn').click();
+      document.getElementById('leagueGroupedBtn').click();
+      out.viaAllTogether = state();
+      c().querySelector(`.lg-tier-head[data-tier="${tiers[0]}"]`).click();
+      document.getElementById('leagueLastTenBtn').click();
+      document.getElementById('leagueGroupedBtn').click();
+      out.viaLastTen = state();
+      // And leaving the League screen entirely.
+      c().querySelector(`.lg-tier-head[data-tier="${tiers[0]}"]`).click();
+      document.querySelector('#tabrow .tab-btn[data-tab="power"]').click();
+      document.querySelector('#tabrow .tab-btn[data-tab="summary"]').click();
+      out.viaAnotherTab = state();
+      return out;
+    });
+    assert.strictEqual(Object.values(r.collapsed).filter((v) => !v).length, 1, 'one collapsed to set up');
+    assert.ok(Object.values(r.viaAllTogether).every(Boolean), 'All together and back → expanded');
+    assert.ok(Object.values(r.viaLastTen).every(Boolean), 'Last 10 and back → expanded');
+    assert.ok(Object.values(r.viaAnotherTab).every(Boolean), 'leaving the screen and back → expanded');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the disclosures carry no card, border or fill', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openLeague(app, { month: '2026-09' });
+    const r = await app.run(() => {
+      const weight = (el) => {
+        const s = getComputedStyle(el);
+        return {
+          border: s.borderTopWidth + ' ' + s.borderLeftWidth,
+          radius: s.borderTopLeftRadius,
+          // A transparent background is what "no card" means here.
+          filled: !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor),
+        };
+      };
+      const info = document.getElementById('leagueExplainerToggle');
+      const head = document.querySelector('#summaryContent .lg-tier-head');
       return {
-        before, headings, collapsed, after: snapshot(),
-        // The By tier / All together selector is untouched by collapsing.
-        stillByTier: document.getElementById('leagueGroupedBtn').classList.contains('active'),
+        info: weight(info), head: weight(head),
+        // The tier heading stays a heading, not a button that looks like one.
+        headIsHeading: head.classList.contains('section-heading'),
+        headTag: head.tagName,
+        infoText: info.innerText.replace(/\s+/g, ' ').trim(),
+        sameHeadingFont: getComputedStyle(head).fontSize
+          === getComputedStyle(document.querySelector('#summaryContent .section-heading')).fontSize,
       };
     });
-    assert.ok(r.before.length > 0 && r.headings.some((h) => /^Tier /.test(h)), 'the fixture has tier tables');
-    assert.strictEqual(r.collapsed.tables, 0, 'collapsed means no tier table on screen');
-    assert.match(r.collapsed.label, /hidden/, 'and the control says so');
-    assert.deepStrictEqual(r.after, r.before, 'reopening restores exactly the same rows');
-    assert.strictEqual(r.stillByTier, true, 'By tier is still the selected mode');
+    [['info', r.info], ['head', r.head]].forEach(([which, w]) => {
+      assert.match(w.border, /^0px 0px$/, `${which} must have no border, got ${w.border}`);
+      assert.strictEqual(w.filled, false, `${which} must have no fill`);
+      assert.match(w.radius, /^0px$/, `${which} must not be a rounded card, got ${w.radius}`);
+    });
+    assert.strictEqual(r.headIsHeading, true, 'a tier heading is still a section heading');
+    assert.strictEqual(r.headTag, 'BUTTON', 'and is tappable');
+    assert.strictEqual(r.sameHeadingFont, true, 'at the same weight as any other heading');
+    assert.match(r.infoText, /^How this table works/);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
@@ -3705,9 +3831,10 @@ test('the League view shows one explanation, not two', { skip }, async () => {
       };
       const out = { onLeague: legacy() };
       // Collapsing the tier tables is what exposed the duplicate.
-      leagueTiersOpen = false; renderSummaryLeagueTable();
+      const firstTier = document.querySelector('#summaryContent .lg-tier-head');
+      if (firstTier) firstTier.click();
       out.onLeagueCollapsed = legacy();
-      out.leagueControls = [...document.querySelectorAll('#summaryContent .lg-fold-btn')]
+      out.leagueControls = [...document.querySelectorAll('#summaryContent .lg-inline-fold')]
         .map((b) => b.innerText.replace(/\s+/g, ' ').trim());
       // Information still explains Doughnuts and Player of the Month, so it
       // keeps the legacy block.
@@ -3725,8 +3852,8 @@ test('the League view shows one explanation, not two', { skip }, async () => {
     assert.ok(r.leagueControls.some((t) => /How this table works/.test(t)));
     assert.strictEqual(r.leagueControls.filter((t) => /how this/i.test(t)).length, 1,
       `exactly one explanation control, got ${JSON.stringify(r.leagueControls)}`);
-    assert.match(r.leagueControls.find((t) => /Tier tables/.test(t)), /\d+ hidden/,
-      'a collapsed section says how much it is hiding');
+    assert.ok(!r.leagueControls.some((t) => /Tier tables/.test(t)),
+      'the global Tier tables fold is gone');
     assert.strictEqual(r.onInformation, true, 'Information keeps the block it needs');
     assert.match(r.informationText, /Doughnuts/);
     assert.strictEqual(r.onPower, true, 'and Power Rankings is unaffected');

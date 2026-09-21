@@ -1899,16 +1899,30 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
    tier tables both sat above one on a phone, so both fold away. Closed is the
    default for the explanation; the tier tables remember only within a session.
    ========================================================================== */
-.lg-fold-btn{
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  width: 100%; margin: 6px 0 0; padding: 9px 12px;
-  background: var(--surface-2); border: 1px solid var(--surface-border); border-radius: 10px;
+/* A line of text you can tap, not a control. No card, no border, no fill --
+   the first attempt used a bordered block for this and ended up heavier than
+   the heading above it and the table below. */
+.lg-inline-fold{
+  display: inline-flex; align-items: baseline; gap: 5px;
+  margin: 2px 0 0; padding: 4px 0;
+  background: none; border: none;
   color: var(--gold-soft); font-family: var(--font-interface); font-size: 12px;
   text-align: left; cursor: pointer;
 }
-.lg-fold-btn:active{ background: var(--surface-1); }
-.lg-fold-chev{ color: var(--text-dim); font-size: 13px; flex: none; }
-.lg-fold-body{ margin-top: 8px; }
+.lg-inline-fold:active{ opacity: .7; }
+.lg-inline-chev{ color: var(--text-dim); font-size: 11px; }
+.lg-inline-body{ margin: 2px 0 4px; }
+
+/* A tier heading that happens to be tappable. It keeps .section-heading, so it
+   is the same type and weight as every other heading on the screen; the
+   chevron is the only thing that marks it as a control. */
+.lg-tier-head{
+  display: flex; align-items: baseline; gap: 7px;
+  width: 100%; padding: 0; background: none; border: none;
+  text-align: left; cursor: pointer;
+}
+.lg-tier-head:active{ opacity: .7; }
+.lg-tier-head .lg-inline-chev{ font-size: 12px; }
 
 /* A sample shorter than the window, marked beside the P it qualifies.
    Quiet, because it is a caveat on the number rather than a number itself. */

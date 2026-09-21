@@ -100,13 +100,13 @@ One tap. Tier chips wrap rather than running off the right edge of a phone, and 
 
 ![League — the table is the screen](17-league-by-tier.png)
 
-Month and View side by side rather than stacked, and the explanation folded behind one line: 72px of a phone screen given back to the table. The By tier / All together choice and the split-month allocation inside the tables are untouched.
+Month and View side by side rather than stacked, and the explanation reduced to a quiet tappable line under the title — no card, no border, nothing competing with the table. Each tier heading carries its own chevron. The By tier / All together choice and the split-month allocation inside the tables are untouched.
 
-### League — tier tables collapsed
+### League — one tier collapsed
 
-![League — tier tables collapsed](17b-league-tiers-collapsed.png)
+![League — one tier collapsed](17b-league-tiers-collapsed.png)
 
-Four stacked tier tables are the longest thing on the screen. Collapsing them is presentation state only — the By tier selection and every match's tier allocation are unchanged underneath.
+Each tier collapses on its own: Tier A is folded away here and S, B and C are untouched. They are four separate competitions, so there was never a reason hiding one should hide the rest. Presentation state only — the By tier selection and every match's tier allocation are unchanged underneath, and entering By tier always arrives with every tier expanded.
 
 ### Last 10 — form as a league table
 
