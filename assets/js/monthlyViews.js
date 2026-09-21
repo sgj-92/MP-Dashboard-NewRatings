@@ -24,20 +24,53 @@
 
   const monthOf = (date) => date.slice(0, 7);
 
-  function chronological(events) {
-    return [...events].sort((a, b) => {
-      if (a.effectiveDate !== b.effectiveDate) return a.effectiveDate < b.effectiveDate ? -1 : 1;
-      // Initialisation precedes play on the same day; everything else keeps
-      // the order the engine produced.
-      const rank = (e) => (e.eventType === Engine.EVENT.PLAYER_INITIALISED ? 0 : 1);
-      return rank(a) - rank(b);
-    });
-  }
-
   // The rating an event leaves a player on. A tier change leaves it unmoved.
   function ratingAfter(event) {
     if (event.eventType === Engine.EVENT.MATCH_UPDATE) return event.postMatchRating;
     return event.newPowerRating;
+  }
+
+  // Where a day's events sit relative to one another. This is not a judgement
+  // call: `Engine.replay()` drains state events with `effectiveDate <= m.date`
+  // BEFORE processing that day's matches, so a club decision always precedes
+  // play on the same date, and a promotion precedes the rating decision the
+  // board is required to make alongside it.
+  //
+  // The same list already lives in journeyView.js, which is why a player's
+  // Rating Journey has always read correctly while this view did not. It is
+  // repeated rather than imported because these two modules have no dependency
+  // on one another and the browser loads this one first -- and a test asserts
+  // the two lists are identical, so they cannot drift apart quietly.
+  const SAME_DATE_ORDER = [
+    'PLAYER_INITIALISED',
+    'INITIAL_CLASSIFICATION_CORRECTION',
+    'INITIAL_CLASSIFICATION_CONFIRMED',
+    'PROMOTION',
+    'DEMOTION',
+    'TIER_RETAINED',
+    'CLUB_RATING_REASSESSMENT',
+    'MATCH_UPDATE',
+  ];
+
+  function sameDayRank(e) {
+    const i = SAME_DATE_ORDER.indexOf(e.eventType);
+    return i === -1 ? SAME_DATE_ORDER.length : i;
+  }
+
+  function chronological(events) {
+    // Firestore returns documents in no particular order, and Array#sort is
+    // stable on its INPUT -- so "keeps the order the engine produced", which
+    // this function used to claim, was only ever true by luck. It was not true
+    // for Rishi in September: his promotion came back last, so the month
+    // closed on his pre-reassessment rating of 1464 while his actual rating
+    // was 1641.6.
+    return [...events].sort((a, b) => {
+      if (a.effectiveDate !== b.effectiveDate) return a.effectiveDate < b.effectiveDate ? -1 : 1;
+      const ka = sameDayRank(a), kb = sameDayRank(b);
+      if (ka !== kb) return ka - kb;
+      // Match ids are `YYYY-MM-DD-N`, so they order a day's matches.
+      return String(a.matchId || '').localeCompare(String(b.matchId || ''));
+    });
   }
 
   // Walks the journey once and snapshots every player's rating at the close of
@@ -246,5 +279,5 @@
     return [...m.rows].sort((a, b) => b.ratingChange - a.ratingChange);
   }
 
-  return { build, buildSnapshots, monthEndRatings, performanceTable, ratingMovementTable, playerMonth, crossovers, monthOf };
+  return { SAME_DATE_ORDER, chronological, build, buildSnapshots, monthEndRatings, performanceTable, ratingMovementTable, playerMonth, crossovers, monthOf };
 });

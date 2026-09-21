@@ -1,6 +1,6 @@
 # Review screenshots
 
-Captured from the **live beta record** as it stood on 2026-09-20, by `scripts/screenshots.js`.
+Captured from the **live beta record** as it stood on 2026-09-21, by `scripts/screenshots.js`.
 Review aids for CGPT and Shaun, not release documentation. Regenerate rather than edit.
 
 Taken from the live record on purpose: the three board decisions of 18 Sep moved most of the club,
@@ -131,6 +131,12 @@ Admin-only by design: players agree a game in the group first, then send the fou
 ![Admin — renaming a player](20-admin-rename.png)
 
 A name is a label, not an identity. The confirmation names both, and says the thing that matters: the record does not move. Renaming writes one field on one document — no match, no rating journey event and no document id is touched, which is why it is safe to do twice or fifty times.
+
+### Rankings — Monthly Summary folded
+
+![Rankings — Monthly Summary folded](21-monthly-summary-collapsed.png)
+
+The whole summary folds as one — Key takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved without playing and Crossovers together. It defaults expanded, because unlike the League explanation this is content rather than an explanation of content. The heading keeps its own type, colour and spacing; the chevron is the only thing added, and it is not a card.
 
 ### Power Rating Guide — in short
 

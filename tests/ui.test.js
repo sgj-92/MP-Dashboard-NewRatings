@@ -4310,3 +4310,184 @@ test('renaming is admin-only', { skip }, async () => {
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ============ MONTHLY RANKINGS COHERENCE + MONTHLY SUMMARY ============
+// Shaun, 21 Sep: September's Power Rankings put Rishi in Tier A — his
+// post-reassessment tier — beside 1464, his pre-reassessment rating.
+//
+// The module tests in tests/monthlyCoherence.test.js pin the ordering. These
+// pin the thing Shaun actually saw: a rendered row whose tier and rating
+// disagree. The fixture has no reassessments of its own, so the scenario is
+// injected — a player promoted AND re-anchored mid-month, with the two
+// decisions supplied in the unhelpful order Firestore happened to return.
+
+test('a mid-month reassessment never shows the new tier beside the old rating', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const subject = [...PLAYERS].sort((a, b) => b.lifetimeMatches - a.lifetimeMatches)[0].name;
+      const sept = V3_JOURNEY.filter((e) => e.playerId === subject
+        && e.eventType === 'MATCH_UPDATE' && e.effectiveDate.slice(0, 7) === '2026-09');
+      if (!sept.length) return { skip: 'no September matches for the subject' };
+      const last = sept[sept.length - 1];
+      const oldRating = last.postMatchRating;     // where play left them
+      const newRating = oldRating + 180;          // where the board re-anchors them
+      const day = last.effectiveDate;
+
+      // Rishi's actual shape: promoted and re-anchored on the day, then a match
+      // played FROM the new rating. Supplied deliberately in the unhelpful
+      // order — match, then reassessment, then promotion — which is how
+      // Firestore returned his and what produced the bug.
+      const afterRating = newRating + 1.6;
+      const injected = [
+        { playerId: subject, eventType: 'MATCH_UPDATE', effectiveDate: day, matchId: day + '-9',
+          preMatchRating: newRating, postMatchRating: afterRating },
+        { playerId: subject, eventType: 'CLUB_RATING_REASSESSMENT', effectiveDate: day,
+          previousTier: 'A', newTier: 'A', previousPowerRating: oldRating, newPowerRating: newRating,
+          previousReliability: 0.5, newReliability: 0.2 },
+        { playerId: subject, eventType: 'PROMOTION', effectiveDate: day,
+          previousTier: 'B', newTier: 'A', previousPowerRating: oldRating, newPowerRating: oldRating },
+      ];
+      V3_JOURNEY = V3_JOURNEY.concat(injected);
+      // TierHistory refuses a history that ends anywhere but the player's
+      // current tier — correctly — so the injected promotion has to be
+      // reflected in current state too, exactly as a real one would be.
+      V3_STATE.players[subject].tier = 'A';
+      V3_TIER_HISTORY = TierHistory.create({
+        currentTiers: V3Bridge.tierMap(V3_STATE),
+        changes: TierHistory.changesFromJourney(V3_JOURNEY),
+      });
+      V3_TIER_AS_OF = V3_TIER_HISTORY.tierAsOf;
+      MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF });
+
+      selectedMonth = '2026-09'; activeTab = 'power'; activeTier = 'All';
+      minGames = 0; activeSortP = 'rating';
+      goToSection('rankings'); render();
+
+      const row = [...document.querySelectorAll('#list .row')]
+        .find((el) => (el.querySelector('.nm') || {}).textContent === subject);
+      const txt = row ? row.innerText.replace(/\s+/g, ' ') : '';
+      const big = row ? (row.querySelector('.rating-big') || {}).textContent : null;
+      const badge = row ? (row.querySelector('.tier-badge') || {}).textContent : null;
+      return {
+        subject, day, oldRating: Math.round(oldRating), newRating: Math.round(afterRating),
+        big: big ? Number(big) : null, badge, txt,
+        monthEnd: MonthlyViews.monthEndRatings(MONTHLY_VIEWS, '2026-09')[subject],
+      };
+    });
+
+    if (r.skip) { assert.ok(true, r.skip); return; }
+    assert.strictEqual(r.badge, 'A', `the row should show the post-promotion tier, got ${r.badge}`);
+    assert.strictEqual(Math.round(r.monthEnd), r.newRating,
+      'the month must close on the re-anchored rating');
+    // The defect, stated as the assertion that would have caught it.
+    assert.notStrictEqual(r.big, r.oldRating,
+      `Tier ${r.badge} must not be shown beside the pre-reassessment rating ${r.oldRating}: "${r.txt}"`);
+    assert.strictEqual(r.big, r.newRating,
+      `the month rating must be the post-reassessment one (${r.newRating}), got ${r.big}`);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Monthly Summary is expanded by default and folds as one', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });
+    await app.run(() => {
+      selectedMonth = '2026-08'; activeTab = 'power'; activeTier = 'All'; minGames = 0;
+      monthlySummaryOpen = true;
+      goToSection('rankings'); render();
+    });
+    await app.page.waitForTimeout(50);
+    const r = await app.run(() => {
+      const head = document.getElementById('monthlySummaryToggle');
+      const sections = () => {
+        const b = document.getElementById('monthlySummaryBody');
+        return b ? b.innerText.replace(/\s+/g, ' ') : null;
+      };
+      const open = { present: !!head, body: sections(), aria: head.getAttribute('aria-expanded') };
+      head.click();
+      const collapsed = {
+        body: sections(),
+        headStillThere: !!document.getElementById('monthlySummaryToggle'),
+        aria: document.getElementById('monthlySummaryToggle').getAttribute('aria-expanded'),
+        headText: document.getElementById('monthlySummaryToggle').innerText.replace(/\s+/g, ' ').trim(),
+      };
+      document.getElementById('monthlySummaryToggle').click();
+      const reopened = { body: sections() };
+      // Collapsed, it must not be a card: no border, no fill, no radius — the
+      // treatment Shaun rejected during the League refinement. Checked on the
+      // CONTAINER, not just the button: a plain button inside a bordered box
+      // still reads as a bordered dropdown, which is how this was first built.
+      const weigh = (el) => {
+        const cs = getComputedStyle(el);
+        return { border: cs.borderTopWidth + ' ' + cs.borderLeftWidth, radius: cs.borderTopLeftRadius,
+          filled: !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) };
+      };
+      document.getElementById('monthlySummaryToggle').click();   // collapse again
+      const weight = weigh(document.querySelector('.monthly-stories'));
+      const buttonWeight = weigh(document.getElementById('monthlySummaryToggle'));
+      document.getElementById('monthlySummaryToggle').click();   // and leave it open
+      // …and it is independent of the League disclosures.
+      return { open, collapsed, reopened, weight, buttonWeight,
+        keepsMsHead: document.getElementById('monthlySummaryToggle').classList.contains('ms-head') };
+    });
+
+    assert.strictEqual(r.open.present, true, 'the Monthly Summary heading is a control');
+    assert.strictEqual(r.open.aria, 'true', 'and defaults expanded');
+    // innerText, so CSS text-transform applies — compare case-insensitively.
+    const openBody = r.open.body.toLowerCase();
+    ['Key takeaways', 'Monthly Performance', 'Rating Movement', 'Ranking Movement',
+      'Moved without playing', 'Crossovers'].forEach((section) => {
+      assert.ok(openBody.includes(section.toLowerCase()), `${section} should be in the open summary`);
+    });
+    assert.strictEqual(r.collapsed.body, null, 'collapsing hides the whole summary together');
+    assert.strictEqual(r.collapsed.headStillThere, true, 'the heading stays, so it can be reopened');
+    assert.strictEqual(r.collapsed.aria, 'false');
+    assert.match(r.collapsed.headText, /monthly summary/i, 'and still says what it is');
+    assert.strictEqual(r.reopened.body, r.open.body, 'reopening restores the content unchanged');
+    assert.match(r.weight.border, /^0px 0px$/, 'collapsed, the container has no border — this is not a dropdown');
+    assert.strictEqual(r.weight.filled, false, 'and no fill');
+    assert.match(r.weight.radius, /^0px$/, 'and no rounded card edge');
+    assert.match(r.buttonWeight.border, /^0px 0px$/, 'nor does the heading itself');
+    assert.strictEqual(r.buttonWeight.filled, false);
+    assert.strictEqual(r.keepsMsHead, true, 'it keeps the existing heading type and spacing');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the Monthly Summary fold is independent of the League disclosures', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      selectedMonth = '2026-08'; activeTab = 'power'; activeTier = 'All'; minGames = 0;
+      monthlySummaryOpen = true;
+      goToSection('rankings'); render();
+      document.getElementById('monthlySummaryToggle').click();   // collapse the summary
+      const summaryCollapsed = !document.getElementById('monthlySummaryBody');
+
+      // Now go to the League screen: its own disclosures must be untouched.
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+      if (b) b.click();
+      summaryMode = 'league'; summaryMonth = '2026-09';
+      leagueLastTen = false; leagueGrouped = true;
+      leagueExplainerOpen = false; resetLeagueTierSections();
+      renderSummary();
+      const tiersOpen = [...document.querySelectorAll('#summaryContent .lg-tier-head')]
+        .every((h) => h.getAttribute('aria-expanded') === 'true');
+      const explainerFolded = !document.getElementById('leagueExplainerToggleBody');
+
+      // …and collapsing a tier does not reopen the summary.
+      const firstTier = document.querySelector('#summaryContent .lg-tier-head');
+      if (firstTier) firstTier.click();
+      activeTab = 'power'; goToSection('rankings'); render();
+      const summaryStillCollapsed = !document.getElementById('monthlySummaryBody');
+      return { summaryCollapsed, tiersOpen, explainerFolded, summaryStillCollapsed };
+    });
+    assert.strictEqual(r.summaryCollapsed, true);
+    assert.strictEqual(r.tiersOpen, true, 'League tiers still default expanded');
+    assert.strictEqual(r.explainerFolded, true, 'and the League explanation still defaults folded');
+    assert.strictEqual(r.summaryStillCollapsed, true, 'the two disclosures do not touch each other');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

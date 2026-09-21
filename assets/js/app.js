@@ -1345,6 +1345,11 @@ function monthlyMovementIndex(month){
 // The monthly stories panel. Four separate views, deliberately separated by
 // heading so Monthly Performance is never read as rating movement or vice
 // versa. League Table is untouched and stays on its own tab.
+// Independent of the League table disclosures: collapsing one says nothing
+// about the other. Not persisted -- the month should open the same way each
+// time it is chosen.
+let monthlySummaryOpen = true;
+
 function buildMonthlyStoriesHtml(month){
   if(month === 'all' || !MONTHLY_VIEWS || !MONTHLY_VIEWS.byMonth[month]) return '';
   const label = monthLabel(month);
@@ -1418,15 +1423,30 @@ function buildMonthlyStoriesHtml(month){
     </div>`).join('')}
   </div>` : '';
 
-  return `<div class="monthly-stories">
-    <div class="ms-head">${label} — monthly summary</div>
-    ${takeawaysHtml}
+  // The whole summary folds as one. It defaults OPEN -- unlike the League
+  // explanation, this is content rather than an explanation of content, and a
+  // reader arriving at the month wants it. The chevron is the only thing added
+  // to the heading: same type, same colour, same spacing, and deliberately not
+  // the bordered card treatment that was rejected during the League work.
+  const body = `${takeawaysHtml}
     ${block('Monthly Performance', 'Who most beat their pre-match expectation. Its own measure: the podium and Kings of Tiers rank on rating, not on this.', perfBody)}
     ${foldBlock('Rating Movement', 'How far the real Power Rating actually moved — risers and fallers. Not the same question as performance.', riseBody)}
     ${foldBlock('Ranking Movement', 'Overall rank at the start and end of the month — climbs and slides both.', climbBody)}
     ${foldBlock('Moved without playing', 'Rank can move while a player sits out, because others moved around them. Their rating did not change.', idleBody)}
     ${foldBlock('Crossovers', 'Who overtook whom during the month.', crossBody)}
-    <div class="ms-foot">League points are a separate record — see the League tab.</div>
+    <div class="ms-foot">League points are a separate record — see the League tab.</div>`;
+
+  // Expanded, this is a content card and stays one -- that treatment was never
+  // the objection. Collapsed, a card containing nothing but its own heading IS
+  // the bordered dropdown Shaun rejected during the League work, so the chrome
+  // comes off and it becomes a tappable line.
+  return `<div class="monthly-stories${monthlySummaryOpen ? '' : ' is-collapsed'}">
+    <button type="button" class="ms-head ms-head-toggle" id="monthlySummaryToggle"
+      aria-expanded="${monthlySummaryOpen}" aria-controls="monthlySummaryBody">
+      <span>${label} — monthly summary</span>
+      <span class="lg-inline-chev" aria-hidden="true">${monthlySummaryOpen ? '⌄' : '›'}</span>
+    </button>
+    ${monthlySummaryOpen ? `<div id="monthlySummaryBody">${body}</div>` : ''}
   </div>`;
 }
 
@@ -1886,6 +1906,8 @@ function render(){
         const wrap = document.createElement('div');
         wrap.innerHTML = stories;
         list.appendChild(wrap);
+        const msToggle = wrap.querySelector('#monthlySummaryToggle');
+        if(msToggle) msToggle.onclick = ()=>{ monthlySummaryOpen = !monthlySummaryOpen; render(); };
       }
     }
   }
@@ -1961,9 +1983,18 @@ function render(){
         }
       }
 
+      // The badge has to describe the SAME moment as the number beside it.
+      // It used to render today's tier against the selected month's closing
+      // rating, so a player promoted in September was shown as a Tier A player
+      // holding the rating they had while they were a B -- which is the
+      // complaint, in its general form. `tierInScope` is the month-aware
+      // answer the tier filter already uses; falling back to the current tier
+      // only where a month has no row for them.
+      const rowTier = tierInScope(p) || p.tier;
+
       row.innerHTML = `
         <div class="rank">${i+1}</div>
-        <span class="tier-badge tier-${p.tier.toLowerCase()}">${p.tier}</span>
+        <span class="tier-badge tier-${rowTier.toLowerCase()}">${rowTier}</span>
         <div class="namecol">
           <div class="nm">${p.name}</div>
           <div class="meta">${metaHtml}</div>

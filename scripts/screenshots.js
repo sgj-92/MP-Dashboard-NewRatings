@@ -86,6 +86,8 @@ const SHOTS = [
     note: 'Admin-only by design: players agree a game in the group first, then send the four names. The card answers the questions in the order they are asked — who should win, what share of the games, who is playing and at what rating, and how big the edge is. No engine terminology: the 80/20 blend and the phrase "Expected performance score" are gone. It says share of games, never a chance of winning, because no win-probability model has been validated. Visual treatment is deliberately unchanged pending Shaun\'s render.' },
   { file: '20-admin-rename.png', title: 'Admin — renaming a player',
     note: 'A name is a label, not an identity. The confirmation names both, and says the thing that matters: the record does not move. Renaming writes one field on one document — no match, no rating journey event and no document id is touched, which is why it is safe to do twice or fifty times.' },
+  { file: '21-monthly-summary-collapsed.png', title: 'Rankings — Monthly Summary folded',
+    note: 'The whole summary folds as one — Key takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved without playing and Crossovers together. It defaults expanded, because unlike the League explanation this is content rather than an explanation of content. The heading keeps its own type, colour and spacing; the chevron is the only thing added, and it is not a card.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -381,6 +383,22 @@ async function render(players, matches, journey, readAt) {
       document.querySelector(`.ptag-rename-ask[data-name="${subject}"]`).click();
     },
     () => { const el = document.querySelector('.ptag-rename'); if (el) el.scrollIntoView({ block: 'center' }); });
+
+  // The Monthly Summary disclosure, collapsed — the heading keeps its type and
+  // the chevron is the only addition.
+  await shot('21-monthly-summary-collapsed.png',
+    () => {
+      const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+      closeSheet();
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="power"]'); if (b) b.click();
+      selectedMonth = '2026-09'; minGames = 0; activeTier = 'All'; activeSortP = 'rating';
+      // Keep the visible month control in step with the month being rendered,
+      // or the capture shows one month selected and another summarised.
+      const sel = document.getElementById('monthSelect'); if (sel) sel.value = '2026-09';
+      monthlySummaryOpen = false;
+      goToSection('rankings'); render();
+    },
+    () => { const el = document.getElementById('monthlySummaryToggle'); if (el) el.scrollIntoView({ block: 'center' }); });
 
   const openGuide = () => {
     const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');

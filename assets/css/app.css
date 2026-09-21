@@ -1952,3 +1952,23 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   margin-top: 6px; line-height: 1.45;
 }
 .ptag-rename-note.is-bad{ color: var(--red); }
+
+/* The Monthly Summary heading, made tappable. It keeps .ms-head, so the type,
+   colour, letter-spacing and spacing are exactly as they were -- the chevron
+   is the only addition. Not a card, per the League Table decision. */
+.ms-head-toggle{
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 0; background: none; border: none;
+  text-align: left; cursor: pointer;
+  font-family: inherit;
+}
+.ms-head-toggle:active{ opacity: .7; }
+
+/* Collapsed, the card chrome comes off entirely: a heading inside a bordered,
+   filled, padded box with nothing under it is a dropdown, which is the thing
+   that was rejected. Expanded, the card is unchanged. */
+.monthly-stories.is-collapsed{
+  border: none; background: none; border-radius: 0;
+  padding: 0 2px; margin: 10px 2px 14px;
+}
+.monthly-stories.is-collapsed .ms-head{ margin-bottom: 0; }
