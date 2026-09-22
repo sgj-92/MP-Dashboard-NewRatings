@@ -60,8 +60,9 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`b864786`** |
-| Tests | **496 / 496 passing** (116 of them drive a real browser) |
+| Last verified implementation commit | **`459eb2f`** |
+| Tests | **503 / 503 passing** (122 of them drive a real browser) |
+| First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -283,6 +284,30 @@ are rated. Weighted, deliberately not strict zero-sum. Pre-match expectations
 are persisted and never recomputed in the browser. Initial tier informs the
 starting level but does not permanently anchor it.
 
+**Data loading and rendering (22 Sep).** Start-up issues every read it needs
+at once — three collections and eleven configuration documents, none of which
+is an input to any other — and waits for all of them together. Measured: one
+round trip instead of fourteen, first content 499ms instead of 3,779ms at
+250ms latency, of which under 40ms is computation. Two rules follow from it and
+are enforced by tests:
+
+1. **Nothing draws a screen before the record exists.** `DATA_READY` gates
+   every renderer; until it is set the app says it is loading. Start-up then
+   draws whichever screen the reader is actually on, not only the rankings
+   list. Start-up's two halves — the record arriving and the shell being built
+   — no longer finish in a fixed order, so whichever finishes second draws the
+   first screen (`drawFirstScreen`).
+2. **Every change to the record ends at `dataChanged()`**, which recomputes and
+   redraws the screen in front of the reader. A source-level test fails the
+   build if a mutation calls `recomputeAll()` without it.
+
+Nothing is cached on the device: every launch reads the record fresh, so no
+screen can show a rating from a stale copy. Repeat navigation is already
+instantaneous (0.2–6.3ms per screen, measured warm) and needs no cache.
+Development instrumentation lives behind `?perf=1` (`perfTrace.js`) and reports
+when the record arrived, when each screen was drawn and what each derived
+calculation cost; it compiles to nothing when off.
+
 **Four separate concepts, never conflated:** Power Rating (current estimate) ·
 Reliability (how established that estimate is) · Monthly Performance (versus
 pre-match expectation) · Tier (club classification). A tier change alone moves
@@ -415,6 +440,8 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Reassessment α ships at 0.25 | Below the best-performing 0.50, pending real reviews. |
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
+| The record is never cached on the device | CCode's 22 Sep audit found the cost was serialisation, not volume: fourteen independent reads taken one at a time. Reading them together removes 88% of the wait without introducing a copy of the record that could show an out-of-date rating. The desired `cached → render → refresh` shape was therefore implemented as `one round trip → render`, which reaches the same place with no staleness. **Caching the app shell (825KB of JS on every launch) is a separate question and is open for Shaun — it is a deployment change, not a code change.** |
+| A mutation redraws the screen, always | Every mutation now goes through one function rather than each button redrawing whatever it happened to sit on. The two admin dropdowns that name a narrower redraw do so explicitly, because redrawing the whole of Admin under a finger would take focus off the select in use. Nothing may redraw nothing. |
 | Monthly Rating is replaced, not monthly rating progress | Monthly Performance becomes the performance metric, while real Power Rating movement, rank movement/crossovers and League Table remain visible as separate monthly stories. No new monthly rating solver. |
 | Historical reassessments must record factual club decisions, not hindsight | Shaun: 1 Jul 2026 was an **INITIAL_CLASSIFICATION_CORRECTION**, because he entered C only as an unknown and the club then determined the initial estimate was wrong. The club's factual assessment was **normal B baseline = 1400**. Tom (1 Jul 2026 C→B) and Fatch (1 Aug 2026 C→B) were genuine promotions/development and should receive the same **statistical reassessment process** used for future promotions, not an automatic B re-seed. |
 | Historical Club Adjustment is a permanent Admin safety tool, not a one-off script | Build a narrow Admin UI over replay-forward for factual historical club-rating decisions/corrections. Separate it from Historical Match Correction. Require player, effective date, reason/attribution, old state, chosen decision, and replay blast-radius confirmation. Use a superseding/correction event rather than silent deletion. |
@@ -1796,6 +1823,66 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 22 Sep 2026 (data-loading audit, then its fixes)
+
+`459eb2f`. **503 / 503 tests (122 browser).**
+
+Shaun asked for the architecture to be profiled before anything was changed, and
+that instruction was worth following: the cause was not what the symptoms
+suggested. **Rendering was never slow.** Warm, with no network involved, every
+screen redraws in 0.2–6.3ms and `recomputeAll()` in 2–4ms. The whole of the
+wait was fourteen Firestore reads taken one at a time — 1,717ms of 1,924ms at
+120ms latency, 3,533ms of 3,779ms at 250ms — against 16ms of computation. None
+of the fourteen is an input to any other. They now go out together: **499ms to
+first content at 250ms, from 3,779ms.**
+
+**The blank screen was a wiring defect, not slowness.** `init()` ended with
+`render()`, which draws `#list` and nothing else. `renderActiveTab()` — the
+function that knows how to draw the other ten screens — was reached only from
+the tab-row click handler. So a screen tapped during the load was drawn once,
+from an empty club, and never drawn again: blank until the reader navigated
+away and back. Reproduced in a browser for Players, League, Merit, Call-Outs,
+Head-to-Head, Games and Wishlist before changing anything, and re-run after.
+
+**The stale-after-mutation problem was the same shape.** Every mutation
+rebuilt everything derived correctly and then redrew whichever screen its own
+button sat on. Submitting a result redrew nothing at all. Removing one rated
+match moved four players' ratings and changed nothing visible on six screens.
+
+Three things that came out of doing it rather than planning it:
+
+1. **Making start-up fast broke start-up's own ordering assumption.** With
+   everything read at once, `init()` can finish before `shell.js` has been
+   parsed — and the screen it wants to draw is built in there. All 105 browser
+   tests failed on `renderHomeDashboard is not defined`. The fix is
+   `drawFirstScreen()`: neither half draws the first screen, whichever finishes
+   second does. Worth knowing, because anything else that makes the boot faster
+   will meet the same edge.
+2. **The submit form is part of the screen it submits to**, so redrawing that
+   screen empties the form — which is what the six lines of by-hand field
+   clearing there were for. The set rows are module state and have to be reset
+   *before* the redraw, and the confirmation written *after* it.
+3. **`reviewSnapshotCache` was stale-able** and nobody had noticed: cleared by
+   the review commit alone, though a correction, an approval and a historical
+   adjustment all rewrite the journey it is built from. Now cleared by all of
+   them.
+
+**Deliberately not done: caching the record on the device.** Shaun's brief
+asked for `cached → render → refresh`, and the measurement says that shape
+solves a problem this app does not have. The cost was serialisation, not
+volume; removing it gets 88% of the wait back without ever holding a copy of
+the record that could show an out-of-date rating. Two questions that *are*
+worth his answer are in NEXT: caching the **app shell** (825KB of JS per
+launch, no risk to the record, but a deployment change) and whether live
+updates between devices matter.
+
+**Guard against the mutation defect returning:** a source-level test fails the
+build if `recomputeAll()` is called anywhere except `dataChanged()`,
+`applyDataRangeChange()` and `init()`. The browser tests prove the mechanism;
+that one proves nothing can go around it.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 22 Sep 2026 (Favoured beside Hard, with a drill-down)
 
@@ -4857,6 +4944,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `459eb2f` | Data-loading audit and its fixes: start-up's fourteen reads issued together (3,779ms → 499ms to first content at 250ms latency); no screen drawn before the record exists, and start-up draws the screen the reader is actually on; every mutation redraws that screen through one function, guarded by a source-level test; `perfTrace.js` instrumentation behind `?perf=1`; stale reassessment snapshot cleared by any change to the journey; one duplicate Merit build removed |
 | `b864786` | Merit gains a Favoured column beside Hard, both tappable, opening the qualifying matches with their fixture-date tiers, score, tier-step gap and points — carried on the row by the canonical calculation rather than reclassified |
 | `510c4cc` | Merit scoring refined to a 3-point baseline matching a standard League win, draws worth 0, and a floor of 0 on a win; copy updated and the history re-audited |
 | `1781ed5` | A tier section holding one player arrives collapsed, in both the League and Merit tables; resetting forgets what was touched rather than forcing everything open |
@@ -4918,8 +5006,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `767e0d3`,
-**483 / 483 tests (110 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `459eb2f`,
+**503 / 503 tests (122 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -4934,24 +5022,66 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 10. **DONE (`510c4cc`).** Merit scoring refined to a 3-point baseline, draws worth 0, a win floored at 0. The two tables now share a baseline, verified on the record: six players score identically in both.
 11. **DONE (`b864786`).** Merit shows Favoured beside Hard, both tappable, opening the matches behind the count with their fixture-date tiers, score, gap and points — derived from the canonical calculation, not reclassified. Fits 375px without sideways scroll.
 
+12. **DONE (`459eb2f`).** Performance / data-loading audit, profiled before anything
+   was changed. The findings, in the order they were asked for:
+   **(1)** Start-up was a sequential `await` chain: three collections, then
+   eleven configuration documents, then recompute, then `render()`.
+   **(2)** `render()` draws only the rankings list, and start-up never called
+   `renderActiveTab()` — so a screen tapped during the load was drawn once,
+   from nothing, and never drawn again. Reproduced for Players, League, Merit,
+   Call-Outs, Head-to-Head, Games and Wishlist.
+   **(3)** Of 1,924ms to first content at 120ms latency, 1,717ms was fourteen
+   round trips in series and 16ms was computation. At 250ms: 3,779ms.
+   **(4)** No duplicate reads on navigation; the only duplication was five
+   mutation sites re-reading all three collections serially, and one Merit
+   table rebuilt to count its own rows.
+   **(5)** Adopted: read everything at once, gate every renderer on the record,
+   end every mutation at one refresh function.
+   **(6)** Stale-data risks found: `reviewSnapshotCache` was cleared only by
+   the review commit, not by a correction, approval or adjustment that rewrites
+   the same journey — now cleared by all of them. No listeners, so a second
+   person's submission is still invisible until reload (below).
+   **(7)** Nothing derived is worth caching — every screen redraws in
+   single-digit milliseconds. The record is deliberately **not** cached; see
+   the Decisions Log.
+   **(8)** Repeat navigation was already instantaneous (0.2–6.3ms warm) and is
+   unchanged.
+   Acceptance test passes in a browser against the live record: a result
+   submitted while sitting on the Games screen appears there without
+   navigating, and it did not before this change.
+
 ### Waiting on Shaun
 
-12. **Predict a Matchup visual render.** The copy is delivered and the layout was
+13. **Cache the app shell?** Every launch downloads 825KB of JavaScript, 104KB
+   of CSS and the Firebase SDK, with no service worker. A service worker would
+   make repeat launches close to instant and carries **no risk to the record**
+   — it caches code, never data. It is a deployment change (cache
+   invalidation, an update path when a new version ships), which is why it is
+   here rather than done. Roughly a second saved per launch on a phone.
+
+14. **Live updates between devices?** There are no Firestore listeners, so if
+   one person submits or approves a game, another person's open app does not
+   see it until they reload. Nothing about this changed today, and it may well
+   be acceptable for a club of 34 — but it is now the only remaining way a
+   screen can hold an out-of-date number, so it should be an answered question
+   rather than an assumption.
+
+15. **Predict a Matchup visual render.** The copy is delivered and the layout was
    deliberately left alone. `docs/screenshots/19-admin-predict.png` shows the
    current copy in the existing treatment, which should make the render easier
    to specify against. Nothing will be invented here in the meantime.
 
 ### Needing a person, not an implementer
 
-13. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-14. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
-15. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-16. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+16. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+17. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
+18. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+19. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-17. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-18. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+20. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+21. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
