@@ -136,7 +136,10 @@ maybe('a submitted result appears on the screen it was submitted from', async ()
       const view = document.getElementById('gamesView');
       const names = PLAYERS.slice(0, 4).map(p => p.name);
       const set = (id, v) => { document.getElementById(id).value = v; };
-      set('gamesYourName', 'Tester');
+      // Who the submission is recorded against. The Games tab no longer carries
+      // a name field: identity comes from the chosen player, falling back to
+      // this. See submissionIdentity().
+      currentUserName = 'Tester';
       // A date nothing else in the record carries, so its presence on screen
       // can only come from this submission.
       set('agDate', '2026-12-31');

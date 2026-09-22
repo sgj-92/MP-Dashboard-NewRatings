@@ -578,6 +578,7 @@ test('Games reads partnerships stronger-first and orders the filter by strength'
       goToSection('play');
       document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
       gamesMonth = 'all'; gamesType = 'all'; selectedGamesPlayer = 'all';
+      gamesFiltersOpen = true;   // the filter panel arrives shut; this test reads its select
       renderGamesTab();
 
       // Every card's partnerships, read off the rendered title.
@@ -2196,6 +2197,8 @@ test('the Games view opens on All time', { skip }, async () => {
     const r = await app.run(() => {
       const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
       if (b) b.click();
+      const summaryWhileShut = document.getElementById('gamesFiltersToggle').textContent;
+      gamesFiltersOpen = true;   // the filter panel arrives shut; this test reads its select
       renderGamesTab();
       const sel = document.getElementById('gamesMonthSelect');
       const dates = [...document.querySelectorAll('#gamesView .section-heading')]
@@ -2206,11 +2209,14 @@ test('the Games view opens on All time', { skip }, async () => {
         // point: Games must not inherit it.
         rankingsMonth: selectedMonth,
         selectValue: sel ? sel.value : null,
+        summaryWhileShut,
         months: new Set(dates.map((d) => d.slice(-4))).size,
         cards: document.querySelectorAll('#gamesView .game-card-clickable').length,
       };
     });
     assert.strictEqual(r.gamesMonth, 'all', 'Games must open on All time');
+    assert.match(r.summaryWhileShut, /All time/,
+      'and the shut filter panel must say so on its own heading');
     assert.notStrictEqual(r.rankingsMonth, 'all',
       'this test is only meaningful while Rankings defaults to a month');
     assert.strictEqual(r.selectValue, 'all', 'and the month control must say so');
@@ -3042,6 +3048,7 @@ test('the game-type control offers only types the current selection contains', {
     const r = await app.run(() => {
       const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
       if (b) b.click();
+      gamesFiltersOpen = true;   // the filter panel arrives shut; this test reads its select
       const options = () => [...document.getElementById('gamesTypeSelect').querySelectorAll('option')]
         .map((o) => ({ value: o.value, text: o.textContent }));
 

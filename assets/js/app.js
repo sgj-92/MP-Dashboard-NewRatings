@@ -1185,6 +1185,12 @@ let gamesMonth = 'all';
 let gamesType = 'all';
 let selectedGamesPlayer = 'all';
 
+// The Games filters arrive shut. Three full-width selects sat above the match
+// log on every visit, and the log is what the screen is for. Not persisted:
+// the screen should open the same way every time. Whatever the filters are
+// set to is written on the closed heading, so shut is never silent.
+let gamesFiltersOpen = false;
+
 // ---- Data Range: app-wide dataset setting, not a per-screen filter --------
 // 'verified' -- June 2026 onwards only, cross-checked. The default, and the
 //               recommended experience.
@@ -1704,10 +1710,10 @@ document.querySelectorAll('#tabrow .tab-btn').forEach(b=>{
       callouts: 'Suggested matchups are full 2v2s — a wingman is added to each side, chosen to keep team strength balanced, so these are games you could actually go and organize. This spans every tier, not just the ones with the least data — S/A near-ties get surfaced the same way as small-sample C-tier players. Every player also has their own Easy / Balanced / Hard opponent suggestions on their profile page. The Data filter above changes which matches feed these ratings — defaults to June onwards only.',
       findgame: '"Within my tier" keeps every suggested player inside your own tier — easy always means the weakest pair actually in your tier, hard the strongest, never a reach into a different tier. "Any tier" opens it up and targets a rating roughly 150 points below/above your own. Every recommendation is a full four-player match: the ranked opponent pair, plus the partner who\'d make it an even match (a proven-chemistry partner is used automatically when one is just as close). The percentage split uses the same rating-based expected-outcome formula used everywhere else in the app. Alternatives are only labeled Fresh Matchup, Proven Chemistry or Tougher Test when the data actually supports that read — "See all recommendations" has the full ranked list underneath. This is computed live, not a fixed list, so try different scopes and difficulties freely. Players who\'ve gone inactive are excluded from every suggestion here, though their history stays visible elsewhere.',
       manage: 'This data is shared — anyone who opens this artifact sees the same games and tags. Ratings, tiers, and every suggestion above recompute from scratch the moment you add a game or change a tag.',
-      games: 'Editing or deleting a game recalculates every rating instantly. Your name is required for any change here so the group can see who touched what.',
+      games: 'Editing or deleting a game recalculates every rating instantly. Every change is recorded against whoever the app currently has you signed in as — the player shown in the header, which you can change from the Add a game panel.',
       h2h: 'Opponent record only counts matches where the two were on opposite teams; teammate record only counts matches where they played together.',
       wishlist: 'Anyone can propose a game. Each of the four named players confirms it themselves from their own player profile — once all four are in, it moves to the Upcoming tab automatically.',
-      upcoming: 'These four have all confirmed. Once the game is actually played, add the real result from the Games tab as normal.',
+      upcoming: 'A game arrives here either by all four players confirming a request, or by an admin agreeing it directly — from Requests, or straight off a prediction. Date, time and venue can stay TBC until they are known. Once it has been played, "Add result" carries the same players into the Games form so nobody types them twice, and submitting the result clears it from here: there is one record of the game, in Games, not two.',
       summary: 'Points: 3 for a win, 1 for a draw. "Hardest games" is average opponent strength that month, scaled down by 300 for a friendlier number. "Doughnuts" are sets lost 0-6 or similar. Player of the Month is whoever tops the points table.',
       players: '',
     };
@@ -3230,8 +3236,9 @@ function renderChallengesSection(){
   const active = challengesState.filter(c => c.state!=='confirmed').slice().sort((a,b)=>
     challengeRelevanceScore(b, viewer) - challengeRelevanceScore(a, viewer) || (a.createdAt < b.createdAt ? 1 : -1));
 
-  let html = `<div class="section-heading" style="margin-top:2px;">Challenges</div>`;
-  html += `<div class="section-sub">Call someone out — one side picks a partner first, then the other responds.</div>`;
+  // The heading is the fold above this (see renderWishlist); repeating it here
+  // would give the section two.
+  let html = `<div class="section-sub">Call someone out — one side picks a partner first, then the other responds.</div>`;
   html += chlCreateOpen ? renderChallengeCreateForm() : `<button class="chl-create-toggle" id="chlOpenCreate">+ Create Challenge</button>`;
 
   if(active.length === 0){
@@ -4148,10 +4155,20 @@ function navigateToGamesTabForResult(req){
 
   const a1 = document.getElementById('agA1');
   if(a1){
-    a1.value = req.players[0] || '';
-    document.getElementById('agA2').value = req.players[1] || '';
-    document.getElementById('agB1').value = req.players[2] || '';
-    document.getElementById('agB2').value = req.players[3] || '';
+    // The sides the game was agreed as, not the order four names happened to
+    // be typed in. A singles fixture put through the old flat split would have
+    // arrived as a single partnership with nobody to play.
+    const [sideA, sideB] = requestTeams(req);
+    a1.value = sideA[0] || '';
+    document.getElementById('agA2').value = sideA[1] || '';
+    document.getElementById('agB1').value = sideB[0] || '';
+    document.getElementById('agB2').value = sideB[1] || '';
+    const singlesBtn = document.querySelector('#agTypeToggle .fg-toggle-btn[data-type="singles"]');
+    if(singlesBtn && sideA.length === 1 && sideB.length === 1) singlesBtn.click();
+    if(req.preferredDate){
+      const dateEl = document.getElementById('agDate');
+      if(dateEl) dateEl.value = req.preferredDate;
+    }
     checkForNewPlayers();
     const anchor = document.getElementById('addGameBody');
     if(anchor){ try { anchor.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(e){ /* non-critical */ } }
@@ -5136,12 +5153,12 @@ function renderManage(){
     `<div class="section-sub">Pick up to two names per side and see what the current ratings expect — no game needs to exist yet. Leave a second name blank for singles.</div>`
     + `<div class="fg-controls">
     <div class="fg-row"><label class="fg-label">Team A</label>
-      <input id="predA1" list="playerNamesList" class="fg-select" placeholder="Player name" style="margin-bottom:6px;" />
-      <input id="predA2" list="playerNamesList" class="fg-select" placeholder="Partner (optional)" />
+      <input id="predA1" list="playerNamesList" class="fg-select" placeholder="Player name" style="margin-bottom:6px;" value="${predDraftName('teamA',0)}" />
+      <input id="predA2" list="playerNamesList" class="fg-select" placeholder="Partner (optional)" value="${predDraftName('teamA',1)}" />
     </div>
     <div class="fg-row"><label class="fg-label">Team B</label>
-      <input id="predB1" list="playerNamesList" class="fg-select" placeholder="Player name" style="margin-bottom:6px;" />
-      <input id="predB2" list="playerNamesList" class="fg-select" placeholder="Partner (optional)" />
+      <input id="predB1" list="playerNamesList" class="fg-select" placeholder="Player name" style="margin-bottom:6px;" value="${predDraftName('teamB',0)}" />
+      <input id="predB2" list="playerNamesList" class="fg-select" placeholder="Partner (optional)" value="${predDraftName('teamB',1)}" />
     </div>
     <div id="predResult"></div>
   </div>`);
@@ -5231,74 +5248,24 @@ function renderManage(){
 
   function renderPrediction(){
     const resultBox = document.getElementById('predResult');
-    const a1 = document.getElementById('predA1').value.trim();
-    const a2 = document.getElementById('predA2').value.trim();
-    const b1 = document.getElementById('predB1').value.trim();
-    const b2 = document.getElementById('predB2').value.trim();
+    if(!resultBox) return;
+    const val = (id) => (document.getElementById(id) || {}).value || '';
+    const teamA = [val('predA1').trim(), val('predA2').trim()].filter(Boolean);
+    const teamB = [val('predB1').trim(), val('predB2').trim()].filter(Boolean);
 
-    if(!a1 || !b1){ resultBox.innerHTML = ''; return; }
+    if(!teamA.length || !teamB.length){ resultBox.innerHTML = ''; predictionDraft = null; return; }
 
-    const teamA = [a1, a2].filter(Boolean);
-    const teamB = [b1, b2].filter(Boolean);
-    const allNames = [...teamA, ...teamB];
-    const missing = allNames.filter(n => !PLAYERS.find(p=>p.name.toLowerCase()===n.toLowerCase()));
-    if(missing.length){
-      resultBox.innerHTML = `<div class="section-sub" style="color:var(--red);">Unrecognized name${missing.length>1?'s':''}: ${missing.join(', ')}</div>`;
+    const pred = predictMatchup(teamA, teamB);
+    if(!pred.ok){
+      predictionDraft = null;
+      resultBox.innerHTML = `<div class="section-sub" style="color:var(--red);">${escapeHtml(pred.reason)}</div>`;
       return;
     }
-    if(new Set(allNames.map(n=>n.toLowerCase())).size !== allNames.length){
-      resultBox.innerHTML = `<div class="section-sub" style="color:var(--red);">The same name appears on both sides.</div>`;
-      return;
-    }
-
-    const getP = (n) => PLAYERS.find(p=>p.name.toLowerCase()===n.toLowerCase());
-    const ratingA = teamA.reduce((s,n)=>s+getP(n).rating,0) / teamA.length;
-    const ratingB = teamB.reduce((s,n)=>s+getP(n).rating,0) / teamB.length;
-    const gap = Math.abs(ratingA - ratingB);
-    const aFavored = ratingA > ratingB;
-
-    // Routed through the engine rather than re-derived, so a prediction can
-    // never drift from what the engine would actually expect.
-    //
-    // This single expectation is what the app has always shown players as
-    // "expected to win about X% of the games" -- the same phrasing the rating
-    // explainer uses, and the wording Shaun approved. What it must never be
-    // called is a chance of winning: it is a share of games, and no
-    // win-probability model has been validated. The 0.80/0.20 blend the
-    // engine compares it against is engine detail and does not belong on an
-    // Admin decision card.
-    const expectedA = RatingEngine.expectedScore(ratingA, ratingB);
-    const sharePctA = Math.round(expectedA * 100);
-    const sharePctB = 100 - sharePctA;
-
-    const nameList = (team) => team.map(n=>escapeHtml(n)).join(' & ');
-    const ratedList = (team) => team.map(n=>`${escapeHtml(n)} (${Math.round(getP(n).rating)})`).join(' & ');
-
-    const favTeam = aFavored ? teamA : teamB;
-    const favShare = aFavored ? sharePctA : sharePctB;
-    const againstShare = aFavored ? sharePctB : sharePctA;
-
-    // Naming a winner off a two-point gap would be overclaiming, and refusing
-    // to name one at all would make the card useless. So the verdict scales
-    // with the gap, and only a genuine tie gets no name.
-    const verdict = gap < 1
-      ? `Too close to call`
-      : (gap < 15
-        ? `<b>${nameList(favTeam)}</b> shade it`
-        : `<b>${nameList(favTeam)}</b> should win`);
-    const edgeLine = gap < 1
-      ? `Level on current ratings.`
-      : `Favoured by <b>${Math.round(gap)}</b> rating point${Math.round(gap)===1?'':'s'}.`;
-
-    // Order is the order the reader asks the questions in: who wins, by how
-    // much of the game, who is playing, and how strong the call is.
-    resultBox.innerHTML = `<div class="matchup-vs" style="margin-top:8px;">
-      <div style="font-size:13.5px; color:var(--text);">${verdict}</div>
-      <div style="margin-top:6px; font-size:12.5px;">Expected to win about <b>${favShare}%</b> of the games, against <b>${againstShare}%</b>.</div>
-      <div style="margin-top:8px; font-size:12.5px; color:var(--text-dim);">${ratedList(teamA)} vs ${ratedList(teamB)}</div>
-      <div style="margin-top:4px; font-size:12.5px; color:var(--text-dim);">${edgeLine}</div>
-      <div style="margin-top:8px; font-size:10.5px; color:var(--text-dim);">Based on current Power Ratings · Prediction only · Nothing is recorded.</div>
-    </div>`;
+    // Kept so "Add to Upcoming" carries these four players straight through
+    // rather than asking the admin to name them a second time.
+    predictionDraft = pred;
+    resultBox.innerHTML = matchPredictionHtml(pred) + buildPredictionToUpcomingHtml(pred);
+    wirePredictionToUpcoming(resultBox);
   }
   // Every wiring below has to tolerate its section being collapsed: the
   // markup for a closed accordion is not in the DOM at all. Before the
@@ -5309,6 +5276,9 @@ function renderManage(){
   ['predA1','predA2','predB1','predB2'].forEach(id=>{
     on(id, (el)=> el.addEventListener('input', renderPrediction));
   });
+  // The panel may have just been rebuilt around an existing draft -- after
+  // adding the matchup to Upcoming, for instance. Draw what it already holds.
+  if(predictionDraft) renderPrediction();
 
   on('npAdd', (btn)=>{ btn.onclick = async ()=>{
     const name = document.getElementById('npName').value.trim();
@@ -5561,11 +5531,15 @@ function checkForNewPlayers(){
 
 async function submitNewGame(){
   const msg = document.getElementById('agMessage');
-  currentUserName = document.getElementById('gamesYourName').value.trim();
-  if(!currentUserName){
-    msg.textContent = 'Enter your name at the top first — every submission needs one.'; return;
+  const submitter = submissionIdentity();
+  if(!submitter){
+    msg.textContent = 'Choose who you are first — every submission is recorded against someone.';
+    return;
   }
-  await saveMyName(currentUserName);
+  // Kept in step so a device that has chosen a player also has the typed
+  // fallback populated, and so nothing downstream that still reads
+  // currentUserName sees a different person from the one on screen.
+  if(currentUserName !== submitter){ currentUserName = submitter; await saveMyName(submitter); }
 
   const date = document.getElementById('agDate').value;
   const isSingles = document.querySelector('#agTypeToggle .fg-toggle-btn.active').dataset.type === 'singles';
@@ -5609,7 +5583,7 @@ async function submitNewGame(){
 
   const id = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
   const newMatch = {id, date, winners, losers, sets, type: isSingles?'singles':'doubles', note:'', isDraw,
-                     status:'pending', submittedBy: currentUserName, submittedAt: new Date().toISOString()};
+                     status:'pending', submittedBy: submitter, submittedAt: new Date().toISOString()};
   extraMatchesState.push(newMatch);
   const ok = await saveExtraMatches(extraMatchesState);
   if(!ok){ msg.textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage. Open the actual published/shared claude.ai link, not a downloaded file.`;; extraMatchesState.pop(); return; }
@@ -6207,17 +6181,55 @@ function fmtRelative(iso){
   return diffD + 'd ago';
 }
 
+// ===================== WHO IS DOING THIS =====================
+// The app already knows who you are. It should not keep asking.
+//
+// There were two identities. `currentUserName` is a free-text label typed into
+// a "Your name" box and kept on the device; the VIEWER is the player chosen in
+// the header, validated against the club's actual roster, and already used for
+// Home, Your Game and challenges. The Games tab carried a full-width card for
+// the first one on every visit -- a read-only field, above the filters, above
+// the match log, restating something the header had already established.
+//
+// The viewer wins where it exists, which is what the challenge code had
+// already concluded for itself (`viewerNow ? viewerNow.name : currentUserName`).
+// This is not a presentation change dressed up: a real player picked from the
+// roster is BETTER attribution than free text, and everything written to the
+// record -- `submittedBy`, the review actor, `seenBy` -- goes on being written
+// exactly as before, from whichever identity is the more reliable one.
+//
+// The typed name survives as the fallback for a device that has never chosen a
+// player, so nothing that worked before stops working.
+function submissionIdentity(){
+  const viewer = (typeof getCurrentViewer === 'function') ? getCurrentViewer() : null;
+  if(viewer && viewer.name) return viewer.name;
+  return (currentUserName && currentUserName.trim()) || '';
+}
+
+// Shown inside a flow that is about to record who did something, and nowhere
+// else. `change` opens the same player chooser the header uses -- one way to
+// say who you are, not two.
+function identityLineHtml(verb){
+  const who = submissionIdentity();
+  if(!who){
+    return `<div class="identity-line">Nobody chosen yet —
+      <button type="button" class="identity-change" data-identity-pick>choose who you are</button></div>`;
+  }
+  return `<div class="identity-line">${escapeHtml(verb)} as <b>${escapeHtml(who)}</b>
+    <button type="button" class="identity-change" data-identity-pick>change</button></div>`;
+}
+
+function wireIdentityLines(box){
+  (box || document).querySelectorAll('[data-identity-pick]').forEach(btn=>{
+    btn.onclick = ()=>{ if(typeof buildViewerSelector === 'function') buildViewerSelector(); };
+  });
+}
+
 function requireName(){
-  const el = document.getElementById('gamesYourName');
-  let name = el ? el.value.trim() : currentUserName;
+  let name = submissionIdentity();
   if(!name){
-    if(el){
-      // On the Games tab, the name field is visible -- show the inline message there.
-      const msg = document.getElementById('gamesMessage');
-      if(msg) msg.textContent = 'Enter your name at the top first.';
-      return null;
-    }
-    // Acting from somewhere without a name field (profile, H2H) -- ask directly.
+    // Nothing chosen and nothing typed, anywhere in the app. Ask directly
+    // rather than refusing -- this is the last resort, not the normal path.
     let typed = '';
     try { typed = (window.prompt('Enter your name so the group knows who made this change:') || '').trim(); } catch(e){ /* prompt unavailable */ }
     if(!typed) return null;
@@ -6447,22 +6459,239 @@ function fmtRequestConfirmations(req){
   </div>`;
 }
 
-function buildRequestCardHtml(req, showRemove, showAddResult){
-  const dateLine = req.preferredDate ? `${req.preferredDate} · ` : '';
-  const playerLinks = req.players.map(n=>`<span class="request-player-link" data-player="${n}" style="text-decoration:underline; cursor:pointer;">${n}</span>`).join(' &amp; ');
+// Which Upcoming cards have their prediction open. Not persisted, and keyed by
+// request id so opening one does not open the rest.
+let upcomingPredictionOpen = {};
+
+// Which sections of Requests and Upcoming are open. Both screens were a single
+// scroll of stacked forms with the actual content at the bottom, which on a
+// phone meant the list of open requests was below three form panels nobody had
+// asked for. The lists open; the forms that create them do not. Not persisted:
+// each screen should open the same way every time.
+let requestSectionOpen = { challenges: true, request: false, adminAdd: false, pending: true };
+let upcomingSectionOpen = { list: true };
+
+function buildRequestCardHtml(req, showRemove, showAddResult, opts){
+  const o = opts || {};
+  const link = (n) => `<span class="request-player-link" data-player="${escapeHtml(n)}" style="text-decoration:underline; cursor:pointer;">${escapeHtml(n)}</span>`;
+  // A predicted game knows its sides, so it is shown as a fixture rather than
+  // a list of four names in whatever order they were typed.
+  const [sideA, sideB] = requestTeams(req);
+  const title = (req.teams && sideA.length && sideB.length)
+    ? `${sideA.map(link).join(' &amp; ')} <span style="color:var(--text-dim);">v</span> ${sideB.map(link).join(' &amp; ')}`
+    : req.players.map(link).join(' &amp; ');
+
   let buttons = '';
   if(showAddResult || showRemove){
     buttons = `<div class="difficulty-row" style="margin-top:8px;">
-      ${showAddResult ? `<button class="preset-btn request-addresult-btn" data-request-id="${req.id}" style="flex:1; color:var(--green); border-color:var(--green);">Add result</button>` : ''}
-      ${showRemove ? `<button class="preset-btn request-remove-btn" data-request-id="${req.id}" style="flex:1;">Remove</button>` : ''}
+      ${showAddResult ? `<button class="preset-btn request-addresult-btn" data-request-id="${escapeHtml(req.id)}" style="flex:1; color:var(--green); border-color:var(--green);">Add result</button>` : ''}
+      ${showRemove ? `<button class="preset-btn request-remove-btn" data-request-id="${escapeHtml(req.id)}" style="flex:1;">Remove</button>` : ''}
     </div>`;
   }
+
+  // Admin-only, and gated on `isUnlocked` at the moment the card is built --
+  // a prediction is a view on how the club rates its players and is not for
+  // general circulation through the Upcoming list. Only an agreed fixture has
+  // one at all: a request nobody has confirmed is not a matchup yet.
+  let prediction = '';
+  if(o.agreed && isUnlocked){
+    const open = !!upcomingPredictionOpen[req.id];
+    const pred = predictMatchup(sideA, sideB);
+    if(pred.ok){
+      prediction = `<button type="button" class="lg-inline-fold request-pred-toggle" data-request-id="${escapeHtml(req.id)}"
+          aria-expanded="${open}" aria-controls="pred_${escapeHtml(req.id)}">
+          ${open ? 'Hide prediction' : 'Prediction available'}<span class="lg-inline-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
+        </button>`
+        + (open ? `<div class="lg-inline-body" id="pred_${escapeHtml(req.id)}">${
+            matchPredictionHtml(pred, { foot: 'Based on current Power Ratings · Admin only · Nothing is recorded.' })
+          }</div>` : '');
+    }
+  }
+
   return `<div class="callout-card">
-    <div class="cc-title">${playerLinks}</div>
-    <div class="cc-detail">${dateLine}requested by ${req.requestedBy} (${fmtRelative(req.requestedAt)})</div>
+    <div class="cc-title">${title}</div>
+    <div class="cc-detail">${requestWhenHtml(req, { tbc: !!o.agreed })}requested by ${escapeHtml(req.requestedBy)} (${fmtRelative(req.requestedAt)})</div>
     ${fmtRequestConfirmations(req)}
+    ${prediction}
     ${buttons}
   </div>`;
+}
+
+// One wiring for the prediction fold, wherever a card is drawn.
+function wireRequestPredictions(box){
+  box.querySelectorAll('.request-pred-toggle').forEach(btn=>{
+    btn.onclick = ()=>{
+      const id = btn.dataset.requestId;
+      upcomingPredictionOpen[id] = !upcomingPredictionOpen[id];
+      renderUpcoming();
+    };
+  });
+}
+
+// ===================== PREDICTION: THE ONE CALCULATION, THE ONE CARD =====
+// Both screens that show a prediction -- Admin's Predict a Matchup and an
+// agreed game in Upcoming -- go through these two functions. The calculation
+// is in `matchPrediction.js`; this is the application's side of it: finding a
+// player's rating, and saying the answer in the words the club agreed.
+
+// The prediction currently on screen in Admin, kept so it can be turned into
+// an Upcoming game without naming the same four players again.
+let predictionDraft = null;
+
+// How an Upcoming game's players divide into sides.
+//
+// `players` is a flat list of four and has been since the wishlist was
+// written, with everything downstream -- confirmations, the card, relevance --
+// built on that shape. Splitting it 0,1 vs 2,3 is the convention the Add
+// result bridge has always used, so it stays the fallback. `teams` is an
+// optional, additive field for a game whose sides are actually known, which is
+// every game created from a prediction: the whole point of predicting Manny &
+// Del against Kaz & Erf is that those are the pairs. It also makes a singles
+// game expressible, which the flat split silently could not -- two names would
+// have gone in as a single partnership.
+function requestTeams(req){
+  if(req && Array.isArray(req.teams) && req.teams.length === 2
+     && (req.teams[0] || []).length && (req.teams[1] || []).length){
+    return [req.teams[0].slice(), req.teams[1].slice()];
+  }
+  const p = (req && req.players) || [];
+  return [p.slice(0, 2).filter(Boolean), p.slice(2, 4).filter(Boolean)];
+}
+
+// Date, time and place, in a line.
+//
+// `tbc` is for a game that is AGREED and not yet scheduled -- most of them.
+// There, saying "Date TBC" is information: the game is on, the details are
+// not settled, and refusing to create one without a date would make Upcoming
+// describe a club that plans further ahead than it does. On a request that
+// nobody has confirmed yet, the same words are noise: of course it has no
+// venue, it is not a fixture.
+function requestWhenHtml(req, opts){
+  const tbc = !!(opts && opts.tbc);
+  const bits = [];
+  if(req.preferredDate) bits.push(escapeHtml(req.preferredDate));
+  else if(tbc) bits.push('Date TBC');
+  if(req.preferredTime) bits.push(escapeHtml(req.preferredTime));
+  if(req.location) bits.push(escapeHtml(req.location));
+  else if(tbc) bits.push('Venue TBC');
+  return bits.length ? bits.join(' · ') + ' · ' : '';
+}
+
+// The draft survives a re-render of the Admin screen, which is what makes
+// "Add to Upcoming" possible at all: adding one changes the record, the screen
+// is redrawn from the record, and without this the four names the admin had
+// just chosen would be gone along with the confirmation that it worked.
+function predDraftName(side, i){
+  const v = predictionDraft && predictionDraft.ok && predictionDraft[side] && predictionDraft[side][i];
+  return v ? escapeHtml(v) : '';
+}
+
+function predictMatchup(teamA, teamB){
+  const ratingOf = (n) => {
+    const p = PLAYERS.find(x => x.name.toLowerCase() === String(n).toLowerCase());
+    return p ? p.rating : null;
+  };
+  return MatchPrediction.build(teamA, teamB, ratingOf);
+}
+
+// The agreed presentation: expected winning side, expected share of games,
+// and a plain sentence of why. Deliberately NOT the technical version it
+// replaced -- no blend, no expected-score decimal, no reliability. If this
+// card ever needs to say more, it says more in both places at once, because
+// there is only one of it.
+function matchPredictionHtml(pred, opts){
+  const o = opts || {};
+  const ratingOf = (n) => {
+    const p = PLAYERS.find(x => x.name.toLowerCase() === String(n).toLowerCase());
+    return p ? Math.round(p.rating) : '?';
+  };
+  const nameList = (team) => team.map(n => escapeHtml(n)).join(' & ');
+  const ratedList = (team) => team.map(n => `${escapeHtml(n)} (${ratingOf(n)})`).join(' & ');
+  const gap = Math.round(pred.gap);
+
+  const verdict = pred.confidence === 'level'
+    ? 'Too close to call'
+    : `<b>${nameList(pred.favoured)}</b> ${pred.confidence === 'shade' ? 'shade it' : 'should win'}`;
+  const edgeLine = pred.confidence === 'level'
+    ? 'Level on current ratings.'
+    : `Favoured by <b>${gap}</b> rating point${gap === 1 ? '' : 's'}.`;
+  const shareLine = pred.confidence === 'level'
+    ? `Expected to take about <b>${pred.shareA}%</b> of the games each.`
+    : `Expected to win about <b>${pred.favouredShare}%</b> of the games, against <b>${pred.againstShare}%</b>.`;
+
+  // Order is the order the reader asks the questions in: who wins, by how much
+  // of the game, who is playing, and how strong the call is.
+  return `<div class="matchup-vs" style="margin-top:8px;">
+    <div style="font-size:13.5px; color:var(--text);">${verdict}</div>
+    <div style="margin-top:6px; font-size:12.5px;">${shareLine}</div>
+    <div style="margin-top:8px; font-size:12.5px; color:var(--text-dim);">${ratedList(pred.teamA)} vs ${ratedList(pred.teamB)}</div>
+    <div style="margin-top:4px; font-size:12.5px; color:var(--text-dim);">${edgeLine}</div>
+    <div style="margin-top:8px; font-size:10.5px; color:var(--text-dim);">${escapeHtml(o.foot || 'Based on current Power Ratings · Prediction only · Nothing is recorded.')}</div>
+  </div>`;
+}
+
+// Turning a prediction into an agreed game. Admin-only by construction: this
+// markup only ever appears inside the Admin screen's Predict a matchup panel.
+function buildPredictionToUpcomingHtml(pred){
+  const names = pred.teamA.concat(pred.teamB);
+  // Shown once, by whichever render follows the write, and then gone.
+  const message = predictionUpcomingMessage;
+  predictionUpcomingMessage = '';
+  return `<div class="fg-controls" style="margin-top:8px;">
+    <div class="section-sub">Add this matchup to Upcoming — the ${names.length} player${names.length===1?'':'s'} above carry straight over. Anything not settled yet can stay blank and shows as TBC.</div>
+    <div class="fg-row"><label class="fg-label">Date</label><input id="predUpDate" type="date" class="fg-select" /></div>
+    <div class="fg-row"><label class="fg-label">Time</label><input id="predUpTime" type="time" class="fg-select" /></div>
+    <div class="fg-row"><label class="fg-label">Where</label><input id="predUpPlace" class="fg-select" placeholder="Court or venue (optional)" /></div>
+    <div class="fg-row"><button class="preset-btn" id="predUpAdd" style="width:100%;">+ Add to Upcoming</button></div>
+    <div id="predUpMessage" class="section-sub">${escapeHtml(message || '')}</div>
+  </div>`;
+}
+
+let predictionUpcomingMessage = '';
+
+function wirePredictionToUpcoming(box){
+  const btn = box.querySelector('#predUpAdd');
+  if(!btn) return;
+  btn.onclick = async ()=>{
+    const msg = box.querySelector('#predUpMessage');
+    const pred = predictionDraft;
+    if(!pred || !pred.ok){ if(msg) msg.textContent = 'Fill in the matchup first.'; return; }
+    const who = requireName();
+    if(!who) return;
+
+    const players = pred.teamA.concat(pred.teamB);
+    // Agreed by an admin, exactly as "add straight to Upcoming" already works:
+    // there is nobody left to confirm it.
+    const confirmations = {};
+    players.forEach(n => confirmations[n] = true);
+
+    const req = {
+      id: 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      requestedBy: who, requestedAt: new Date().toISOString(),
+      players,
+      // The sides are the whole point of a predicted matchup, so they are
+      // recorded rather than re-derived from the order of the flat list.
+      teams: [pred.teamA.slice(), pred.teamB.slice()],
+      preferredDate: (box.querySelector('#predUpDate') || {}).value || '',
+      preferredTime: (box.querySelector('#predUpTime') || {}).value || '',
+      location: ((box.querySelector('#predUpPlace') || {}).value || '').trim(),
+      confirmations, status: 'confirmed',
+    };
+    gameRequestsState.push(req);
+    const ok = await saveGameRequests(gameRequestsState);
+    if(!ok){
+      gameRequestsState.pop();
+      if(msg) msg.textContent = storageAvailable()
+        ? `Save failed (${lastStorageError || 'unknown error'}) — try again.`
+        : `Save failed — this page can't reach shared storage.`;
+      return;
+    }
+    // The prediction itself is not stored. It is recomputed from these same
+    // players whenever the Upcoming card asks for it, so it can never go stale
+    // against a rating that has since moved.
+    predictionUpcomingMessage = `Added to Upcoming: ${pred.teamA.join(' & ')} v ${pred.teamB.join(' & ')}.`;
+    dataChanged();
+  };
 }
 
 function wireRequestPlayerLinks(box){
@@ -6484,14 +6713,19 @@ function renderWishlist(flashMessage, adminFlashMessage){
   const viewer = getCurrentViewer();
   const pending = gameRequestsState.filter(r=>r.status==='pending');
 
-  let html = renderChallengesSection();
+  const openChallenges = challengesState.filter(c => c.state !== 'confirmed').length;
+  let html = foldHeading('reqFoldChallenges', `🎯 Challenges (${openChallenges})`, requestSectionOpen.challenges);
+  if(requestSectionOpen.challenges){
+    html += `<div id="reqFoldChallengesBody">${renderChallengesSection()}</div>`;
+  }
   html += `<div class="mp-divider"></div>`;
-  html += `<div class="section-heading" style="margin-top:2px;">🙋 Request a game</div>`;
+  html += foldHeading('reqFoldRequest', '🙋 Request a game', requestSectionOpen.request,
+    { summary: 'name four players' });
+  if(requestSectionOpen.request){
+  html += `<div id="reqFoldRequestBody">`;
   html += `<div class="section-sub">Name four players. Once all four confirm from their own profile, it moves to Upcoming automatically.</div>`;
+  html += identityLineHtml('Requesting');
   html += `<div class="fg-controls">
-    <div class="fg-row"><label class="fg-label">Requested by</label>
-      <input id="reqYourName" class="fg-select" value="${currentUserName}" placeholder="Your name" />
-    </div>
     <div class="fg-row"><label class="fg-label">Players</label>
       <input id="reqP1" list="playerNamesList" class="fg-select" placeholder="Player 1" style="margin-bottom:6px;" />
       <input id="reqP2" list="playerNamesList" class="fg-select" placeholder="Player 2" style="margin-bottom:6px;" />
@@ -6503,9 +6737,14 @@ function renderWishlist(flashMessage, adminFlashMessage){
     <div class="fg-row"><button class="tab-btn active" id="reqSubmit" style="width:100%;">Request this game</button></div>
     <div id="reqMessage" class="section-sub">${flashMessage || ''}</div>
   </div>`;
+  html += `</div>`;
+  }
 
   if(isUnlocked){
-    html += `<div class="section-heading">⚡ Admin: add straight to Upcoming</div>`;
+    html += foldHeading('reqFoldAdmin', '⚡ Admin: add straight to Upcoming', requestSectionOpen.adminAdd,
+      { summary: 'already agreed' });
+    if(requestSectionOpen.adminAdd){
+    html += `<div id="reqFoldAdminBody">`;
     html += `<div class="section-sub">For a game already agreed in WhatsApp — skips the confirmation step entirely.</div>`;
     html += `<div class="fg-controls">
       <div class="fg-row"><label class="fg-label">Players</label>
@@ -6515,35 +6754,49 @@ function renderWishlist(flashMessage, adminFlashMessage){
         <input id="adminReqP4" list="playerNamesList" class="fg-select" placeholder="Player 4" />
       </div>
       <div class="fg-row"><label class="fg-label">Preferred date (optional)</label><input id="adminReqDate" type="date" class="fg-select" /></div>
+      <div class="fg-row"><label class="fg-label">Time (optional)</label><input id="adminReqTime" type="time" class="fg-select" /></div>
+      <div class="fg-row"><label class="fg-label">Where (optional)</label><input id="adminReqPlace" class="fg-select" placeholder="Court or venue" /></div>
       <div class="fg-row"><button class="preset-btn" id="adminReqSubmit" style="width:100%;">Add directly to Upcoming</button></div>
       <div id="adminReqMessage" class="section-sub">${adminFlashMessage || ''}</div>
     </div>`;
+    html += `</div>`;
+    }
   }
 
-  html += `<div class="section-heading">⏳ Pending (${pending.length})</div>`;
-  if(pending.length === 0){
-    html += `<div class="section-sub">No open requests right now.</div>`;
-  } else {
-    pending.slice().sort((a,b)=>
-      requestRelevanceScore(b, viewer) - requestRelevanceScore(a, viewer) || (a.requestedAt < b.requestedAt ? 1 : -1)
-    ).forEach(req=>{
-      html += buildRequestCardHtml(req, true, false);
-    });
+  html += foldHeading('reqFoldPending', `⏳ Pending (${pending.length})`, requestSectionOpen.pending);
+  if(requestSectionOpen.pending){
+    html += `<div id="reqFoldPendingBody">`;
+    if(pending.length === 0){
+      html += `<div class="section-sub">No open requests right now.</div>`;
+    } else {
+      pending.slice().sort((a,b)=>
+        requestRelevanceScore(b, viewer) - requestRelevanceScore(a, viewer) || (a.requestedAt < b.requestedAt ? 1 : -1)
+      ).forEach(req=>{
+        html += buildRequestCardHtml(req, true, false);
+      });
+    }
+    html += `</div>`;
   }
 
   box.innerHTML = html;
   wireRequestPlayerLinks(box);
+  wireIdentityLines(box);
   wireChallengeControls(box, flashMessage, adminFlashMessage);
 
-  document.getElementById('reqYourName').addEventListener('change', e=>{
-    currentUserName = e.target.value.trim();
-    saveMyName(currentUserName);
+  [['reqFoldChallenges','challenges'], ['reqFoldRequest','request'],
+   ['reqFoldAdmin','adminAdd'], ['reqFoldPending','pending']].forEach(([id, key])=>{
+    const el = document.getElementById(id);
+    if(el) el.onclick = ()=>{ requestSectionOpen[key] = !requestSectionOpen[key]; renderWishlist(); };
   });
 
-  document.getElementById('reqSubmit').onclick = async ()=>{
+  // Every control below belongs to a section that may be shut, so none of them
+  // can assume its element exists.
+  const on = (id, fn) => { const el = document.getElementById(id); if(el) fn(el); };
+
+  on('reqSubmit', (btn)=>{ btn.onclick = async ()=>{
     const msg = document.getElementById('reqMessage');
-    const requestedBy = document.getElementById('reqYourName').value.trim();
-    if(!requestedBy){ msg.textContent = 'Enter your name first.'; return; }
+    const requestedBy = submissionIdentity();
+    if(!requestedBy){ msg.textContent = 'Choose who you are first.'; return; }
     const names = ['reqP1','reqP2','reqP3','reqP4'].map(id=>document.getElementById(id).value.trim());
     if(names.some(n=>!n)){ msg.textContent = 'Enter all four players.'; return; }
     if(new Set(names.map(n=>n.toLowerCase())).size !== 4){ msg.textContent = 'The same name appears more than once.'; return; }
@@ -6573,11 +6826,10 @@ function renderWishlist(flashMessage, adminFlashMessage){
       msg.textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage.`;
       return;
     }
-    renderWishlist('Requested! Each player can confirm from their own profile.');
-  };
+    dataChanged({ redraw: ()=> renderWishlist('Requested! Each player can confirm from their own profile.') });
+  }; });
 
-  const adminReqSubmit = document.getElementById('adminReqSubmit');
-  if(adminReqSubmit){
+  on('adminReqSubmit', (adminReqSubmit)=>{
     adminReqSubmit.onclick = async ()=>{
       const msg = document.getElementById('adminReqMessage');
       const names = ['adminReqP1','adminReqP2','adminReqP3','adminReqP4'].map(id=>document.getElementById(id).value.trim());
@@ -6593,7 +6845,11 @@ function renderWishlist(flashMessage, adminFlashMessage){
       const req = {
         id: 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
         requestedBy: adminName, requestedAt: new Date().toISOString(),
-        players: names, preferredDate: document.getElementById('adminReqDate').value || '',
+        players: names,
+        teams: [names.slice(0,2), names.slice(2,4)],
+        preferredDate: document.getElementById('adminReqDate').value || '',
+        preferredTime: (document.getElementById('adminReqTime') || {}).value || '',
+        location: ((document.getElementById('adminReqPlace') || {}).value || '').trim(),
         confirmations, status: 'confirmed',
       };
       gameRequestsState.push(req);
@@ -6603,16 +6859,16 @@ function renderWishlist(flashMessage, adminFlashMessage){
         msg.textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage.`;
         return;
       }
-      renderWishlist(undefined, 'Added to Upcoming.');
+      dataChanged({ redraw: ()=> renderWishlist(undefined, 'Added to Upcoming.') });
     };
-  }
+  });
 
   box.querySelectorAll('.request-remove-btn').forEach(btn=>{
     btn.onclick = async ()=>{
       const id = btn.dataset.requestId;
       gameRequestsState = gameRequestsState.filter(r=>r.id!==id);
       await saveGameRequests(gameRequestsState);
-      renderWishlist();
+      dataChanged();
     };
   });
 }
@@ -6621,24 +6877,41 @@ function renderUpcoming(){
   const box = document.getElementById('upcomingView');
   const confirmed = gameRequestsState.filter(r=>r.status==='confirmed');
 
-  let html = `<div class="section-heading">📅 Upcoming (${confirmed.length})</div>`;
-  html += `<div class="section-sub">Once a game has actually been played, tap "Add result" to record it — that moves it into the Games tab and clears it from here.</div>`;
-  if(confirmed.length === 0){
-    html += `<div class="section-sub">Nothing fully confirmed yet — once all four players confirm a Wishlist request, it'll show up here.</div>`;
-  } else {
-    confirmed.slice().sort((a,b)=> a.requestedAt < b.requestedAt ? 1 : -1).forEach(req=>{
-      html += buildRequestCardHtml(req, true, true);
-    });
+  // The list is what the screen is for, so it opens. The explanation of how a
+  // game gets here and where it goes next is a paragraph the reader needs
+  // once, so it folds away.
+  let html = foldHeading('upFoldList', `📅 Upcoming (${confirmed.length})`, upcomingSectionOpen.list);
+  if(upcomingSectionOpen.list){
+    html += `<div id="upFoldListBody">`;
+    if(confirmed.length === 0){
+      html += `<div class="section-sub">Nothing agreed yet — a request becomes an Upcoming game once all four players confirm it, and an admin can add one straight here from Requests or from a prediction.</div>`;
+    } else {
+      confirmed.slice().sort((a,b)=> a.requestedAt < b.requestedAt ? 1 : -1).forEach(req=>{
+        // `agreed` is what an Upcoming game is: a fixture. It says the
+        // schedule in TBC terms rather than leaving it blank, and it offers
+        // the admin the prediction behind it.
+        html += buildRequestCardHtml(req, true, true, { agreed: true });
+      });
+    }
+    html += `</div>`;
   }
+
   box.innerHTML = html;
   wireRequestPlayerLinks(box);
+  wireRequestPredictions(box);
+
+  const fold = (id, key) => {
+    const el = document.getElementById(id);
+    if(el) el.onclick = ()=>{ upcomingSectionOpen[key] = !upcomingSectionOpen[key]; renderUpcoming(); };
+  };
+  fold('upFoldList', 'list');
 
   box.querySelectorAll('.request-remove-btn').forEach(btn=>{
     btn.onclick = async ()=>{
       const id = btn.dataset.requestId;
       gameRequestsState = gameRequestsState.filter(r=>r.id!==id);
       await saveGameRequests(gameRequestsState);
-      renderUpcoming();
+      dataChanged();
     };
   });
 
@@ -6941,14 +7214,28 @@ function leagueInlineFold(id, label, open, body){
     </button>` + (open ? `<div class="lg-inline-body" id="${id}Body">${body}</div>` : '');
 }
 
-// A tier heading that happens to be tappable. Deliberately still a
+// A heading that happens to be tappable. Deliberately still a
 // `.section-heading` -- same type, same weight, same spacing as every other
 // heading on the screen; the chevron is the only thing added.
-function leagueTierHeading(tier, open){
-  return `<button type="button" class="section-heading lg-tier-head" data-tier="${escapeHtml(tier)}"
-      id="leagueTier${escapeHtml(tier)}" aria-expanded="${open}" aria-controls="leagueTierBody${escapeHtml(tier)}">
-      Tier ${escapeHtml(tier)}<span class="lg-inline-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
+//
+// `summary` is what the section says about itself while it is shut. A fold
+// that hides its own state is worse than no fold: the Games filters could be
+// set to one player in August and the screen would simply show fewer games
+// with nothing to say why. Closed and silent is only safe when the heading
+// already names everything inside it.
+function foldHeading(id, label, open, opts){
+  const o = opts || {};
+  const tail = (!open && o.summary) ? ` <span class="fold-summary">${o.summary}</span>` : '';
+  const data = o.data ? Object.entries(o.data).map(([k,v])=>` data-${k}="${escapeHtml(v)}"`).join('') : '';
+  return `<button type="button" class="section-heading lg-tier-head" id="${id}"${data}
+      aria-expanded="${open}" aria-controls="${o.bodyId || (id + 'Body')}">
+      ${label}${tail}<span class="lg-inline-chev" aria-hidden="true">${open ? '⌄' : '›'}</span>
     </button>`;
+}
+
+function leagueTierHeading(tier, open){
+  return foldHeading(`leagueTier${escapeHtml(tier)}`, `Tier ${escapeHtml(tier)}`, open,
+    { data: { tier }, bodyId: `leagueTierBody${escapeHtml(tier)}` });
 }
 
 // The tiers a player occupied across a month, as `B` or `B → A`. Built from
@@ -7449,6 +7736,21 @@ function buildGameRequestsForPlayerSection(name){
   return html;
 }
 
+// What the filters are set to, in the words the controls themselves use. It
+// reads the same module state the selects are built from, so it cannot say one
+// thing while the list shows another.
+function gamesFilterSummary(typeOptions){
+  const monthPart = gamesMonth === 'all' ? 'All time' : monthLabel(gamesMonth);
+  const playerPart = selectedGamesPlayer === 'all' ? 'All players' : selectedGamesPlayer;
+  let typePart = 'All game types';
+  if(gamesType !== 'all' && typeOptions){
+    const found = (typeOptions.categories || []).concat(typeOptions.matchups || [])
+      .find(o => o.value === gamesType);
+    typePart = found ? found.label : gamesType;
+  }
+  return [monthPart, playerPart, typePart].map(escapeHtml).join(' · ');
+}
+
 function renderGamesTab(){
   const box = document.getElementById('gamesView');
   const pending = extraMatchesState.filter(m=>m.status==='pending' && !deletedIdsState.includes(m.id));
@@ -7463,6 +7765,15 @@ function renderGamesTab(){
   const gamesTypeOptions = (typeof GameType !== 'undefined')
     ? GameType.optionsFrom(typeScope.map(gameTypeOf).filter(Boolean))
     : { categories: [], matchups: [] };
+  // A game type that no longer exists under the current month/player selection
+  // falls back rather than filtering everything away. This used to live beside
+  // the select that offers the options, which meant the fallback happened one
+  // render too late -- the list was filtered to nothing first, and corrected
+  // only on the next draw. It also cannot live there at all now: a shut filter
+  // panel has no select to hang it off.
+  const gamesTypeAvailable = ['all'].concat(
+    gamesTypeOptions.categories.map(o=>o.value), gamesTypeOptions.matchups.map(o=>o.value));
+  if(!gamesTypeAvailable.includes(gamesType)) gamesType = 'all';
   if(gamesType !== 'all' && typeof GameType !== 'undefined'){
     display = display.filter(m => GameType.matches(gamesType, gameTypeOf(m)));
   }
@@ -7471,26 +7782,37 @@ function renderGamesTab(){
 
   let html = '';
 
-  html += `<div class="fg-controls">
-    <div class="fg-row"><label class="fg-label">Month</label>
-      <select id="gamesMonthSelect" class="fg-select"></select>
-    </div>
-    <div class="fg-row"><label class="fg-label">Player</label>
-      <select id="gamesPlayerSelect" class="fg-select"></select>
-    </div>
-    <div class="fg-row"><label class="fg-label">Game type</label>
-      <select id="gamesTypeSelect" class="fg-select"></select>
-    </div>
-  </div>`;
+  html += foldHeading('gamesFiltersToggle', 'Filters', gamesFiltersOpen,
+    { summary: gamesFilterSummary(gamesTypeOptions) });
+  if(gamesFiltersOpen){
+    html += `<div id="gamesFiltersToggleBody"><div class="fg-controls">
+      <div class="fg-row"><label class="fg-label">Month</label>
+        <select id="gamesMonthSelect" class="fg-select"></select>
+      </div>
+      <div class="fg-row"><label class="fg-label">Player</label>
+        <select id="gamesPlayerSelect" class="fg-select"></select>
+      </div>
+      <div class="fg-row"><label class="fg-label">Game type</label>
+        <select id="gamesTypeSelect" class="fg-select"></select>
+      </div>
+    </div></div>`;
+  }
 
-  html += `<div class="fg-controls">
-    <div class="fg-row"><label class="fg-label">Your name</label>
-      <input id="gamesYourName" class="fg-select" placeholder="So the group knows who added this" value="${currentUserName}" />
-    </div>
-  </div>`;
-
-  html += `<div class="section-heading" id="addGameToggle" style="cursor:pointer; display:flex; align-items:center; gap:6px;"><span id="addGameArrow">${addGameExpanded ? '▾' : '▸'}</span> ➕ Add a game</div>`;
+  html += foldHeading('addGameToggle', '➕ Add a game', addGameExpanded,
+    { bodyId: 'addGameBody', summary: linkedRequestId ? 'from Upcoming' : 'submit a result' });
   html += `<div id="addGameBody" style="display:${addGameExpanded ? 'block' : 'none'};">`;
+  html += identityLineHtml('Adding');
+  // The one place the lifecycle is visible to the person in it: this form is
+  // finishing a game that already exists in Upcoming, and submitting it will
+  // clear that entry rather than leave a second copy behind.
+  if(linkedRequestId){
+    const linked = gameRequestsState.find(r => r.id === linkedRequestId);
+    if(linked){
+      const [sideA, sideB] = requestTeams(linked);
+      html += `<div class="section-sub" style="color:var(--gold-bright);">Recording the agreed game
+        ${escapeHtml(sideA.join(' & '))} v ${escapeHtml(sideB.join(' & '))} — submitting it removes it from Upcoming.</div>`;
+    }
+  }
   html += `<div class="section-sub">Anyone can submit a result — it lands below as pending until an admin approves it. Paste a result in the usual WhatsApp shorthand and it'll fill in the form for you to check before submitting.</div>`;
   html += `<div class="fg-controls">
     <div class="fg-row"><label class="fg-label">Quick paste</label>
@@ -7699,6 +8021,14 @@ Player C &amp; Player D"></textarea>
     }
   }
 
+  document.getElementById('gamesFiltersToggle').onclick = ()=>{
+    gamesFiltersOpen = !gamesFiltersOpen;
+    renderGamesTab();
+  };
+
+  // A shut panel has no selects, so every one of these has to tolerate being
+  // absent. The values they read and write are module state, not DOM state,
+  // so nothing is lost while they are away.
   const typeSelect = document.getElementById('gamesTypeSelect');
   if(typeSelect){
     const opt = (v, label, count) => `<option value="${v}" ${v===gamesType?'selected':''}>${label}${count===undefined?'':` (${count})`}</option>`;
@@ -7710,10 +8040,6 @@ Player C &amp; Player D"></textarea>
       html += `<optgroup label="Matchup">` + gamesTypeOptions.matchups.map(o=>opt(o.value, o.label, o.count)).join('') + `</optgroup>`;
     }
     typeSelect.innerHTML = html;
-    // A type that no longer exists under the current month/player selection
-    // falls back rather than silently showing an empty list.
-    const available = ['all'].concat(gamesTypeOptions.categories.map(o=>o.value), gamesTypeOptions.matchups.map(o=>o.value));
-    if(!available.includes(gamesType)) gamesType = 'all';
     typeSelect.value = gamesType;
     typeSelect.addEventListener('change', e=>{
       gamesType = e.target.value;
@@ -7721,33 +8047,36 @@ Player C &amp; Player D"></textarea>
     });
   }
 
-  populateMonthSelect(document.getElementById('gamesMonthSelect'), gamesMonth);
-  document.getElementById('gamesMonthSelect').addEventListener('change', e=>{
-    gamesMonth = e.target.value;
-    renderGamesTab();
-  });
+  const gamesMonthSelect = document.getElementById('gamesMonthSelect');
+  if(gamesMonthSelect){
+    populateMonthSelect(gamesMonthSelect, gamesMonth);
+    gamesMonthSelect.addEventListener('change', e=>{
+      gamesMonth = e.target.value;
+      renderGamesTab();
+    });
+  }
 
   const gamesPlayerSelect = document.getElementById('gamesPlayerSelect');
-  const allNames = [...PLAYERS].map(p=>p.name).sort((a,b)=>a.localeCompare(b));
-  gamesPlayerSelect.innerHTML = `<option value="all">All players</option>` + allNames.map(n=>`<option value="${n}" ${n===selectedGamesPlayer?'selected':''}>${n}</option>`).join('');
-  gamesPlayerSelect.value = selectedGamesPlayer;
-  gamesPlayerSelect.addEventListener('change', e=>{
-    selectedGamesPlayer = e.target.value;
-    renderGamesTab();
-  });
+  if(gamesPlayerSelect){
+    const allNames = [...PLAYERS].map(p=>p.name).sort((a,b)=>a.localeCompare(b));
+    gamesPlayerSelect.innerHTML = `<option value="all">All players</option>` + allNames.map(n=>`<option value="${escapeHtml(n)}" ${n===selectedGamesPlayer?'selected':''}>${escapeHtml(n)}</option>`).join('');
+    gamesPlayerSelect.value = selectedGamesPlayer;
+    gamesPlayerSelect.addEventListener('change', e=>{
+      selectedGamesPlayer = e.target.value;
+      renderGamesTab();
+    });
+  }
 
   // ===== Add a game (always available, not gated by admin lock) =====
   document.getElementById('addGameToggle').onclick = ()=>{
     addGameExpanded = !addGameExpanded;
-    document.getElementById('addGameBody').style.display = addGameExpanded ? 'block' : 'none';
-    document.getElementById('addGameArrow').textContent = addGameExpanded ? '▾' : '▸';
     if(!addGameExpanded) linkedRequestId = null; // abandoning the form -- don't carry the link into an unrelated later submission
+    // Re-rendered rather than shown/hidden, so the heading's chevron and its
+    // summary are drawn from the same state as the body.
+    renderGamesTab();
   };
 
-  document.getElementById('gamesYourName').addEventListener('change', e=>{
-    currentUserName = e.target.value.trim();
-    saveMyName(currentUserName);
-  });
+  wireIdentityLines(box);
 
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('agDate').value = today;

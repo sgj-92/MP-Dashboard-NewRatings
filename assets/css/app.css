@@ -2044,3 +2044,30 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   padding: 28px 4px; text-align: center;
   color: var(--text-dim); font-size: 13px;
 }
+
+/* A folded section says what it is hiding. Quiet enough to read as a caption
+   on the heading rather than a second heading beside it -- a filter summary
+   that competed with "Filters" for attention would be worse than the panel it
+   replaced. */
+.fold-summary{
+  font-family: var(--font-interface); font-weight: 400;
+  font-size: 11px; color: var(--text-dim); letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Who the app thinks you are, inside a flow that is about to record it.
+   Small, contextual and only where identity actually matters -- it replaced a
+   full-width card that sat above every screen of the Games tab saying the
+   same thing. */
+.identity-line{
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  margin: 0 0 8px; font-family: var(--font-interface);
+  font-size: 11.5px; color: var(--text-dim);
+}
+.identity-line b{ color: var(--text); font-weight: 600; }
+.identity-line .identity-change{
+  background: none; border: none; padding: 0;
+  font-family: var(--font-interface); font-size: 11.5px;
+  color: var(--gold-soft); cursor: pointer; text-decoration: underline;
+}
+.identity-line .identity-change:active{ opacity: .7; }
