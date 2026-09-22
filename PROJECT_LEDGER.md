@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`1781ed5`** |
-| Tests | **485 / 485 passing** (112 of them drive a real browser) |
+| Last verified implementation commit | **`510c4cc`** |
+| Tests | **487 / 487 passing** (112 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -195,7 +195,15 @@ sides → teams and ratings → rating-point edge → a one-line muted footer. T
 **Visual treatment deliberately unchanged**, per Shaun's same-day deferral.
 Captured in `docs/screenshots/19-admin-predict.png`.
 
-**Merit Table — DONE (`767e0d3`).** A second league view over the same matches,
+**Merit scoring refined — DONE (`510c4cc`).** An even matchup is now worth
+**3**, exactly a standard League win, so the two tables share a baseline and
+Merit departs from League points only on fixture difficulty. Draws now earn
+**0**. Re-audited: win values range **1–4**, nothing outside 0–6, no negatives,
+and the floor never engages on real data. **Verified on the record:** six
+players have Merit exactly equal to their League points — each with no draws
+and only even wins, which is the property the change was made for.
+
+**Merit Table — DONE (`767e0d3`), refined by `510c4cc`.** A second league view over the same matches,
 scoring how hard the partnership you beat was. Derived on demand from canonical
 matches plus the canonical historical-tier resolver; nothing persisted, nothing
 in the engine touched. Audit of the full history found a **maximum gap of 2
@@ -469,7 +477,55 @@ Section 8.
 
 ---
 
-### Merit scoring refinement — ACTIVE (22 Sep 2026)
+### Merit scoring refinement — DELIVERED (`510c4cc`, 22 Sep 2026)
+
+**Implemented as a change of constants and one guard, not a rewrite.**
+`BASELINE` 4 → 3, `DRAW_POINTS` 1 → 0, and a new `MIN_WIN_POINTS` of 0 applied
+to the favourite side only — there is deliberately **no ceiling**, since an
+extreme matchup should be reported rather than clamped. Everything the brief
+listed as untouched is untouched: the UI, historical tier resolution,
+partnership-strength calculation, split-month treatment, month selection, tier
+sections, League scoring, Power Ratings, `ratingJourney`, expectations and
+reassessment. Partnership strength still uses each player's effective tier on
+the match date. The `How points work` copy was updated to match.
+
+**Historical re-audit after the change.**
+
+| | Before (4 / 1 / 0) | After (3 / 0 / 0) |
+|---|---|---|
+| Matches scored | 159 (153 decided, 6 draws) | unchanged |
+| Unresolved tiers | 0 | 0 |
+| Tier-step gaps | 93 even · 60 one-step · 6 two-step | **unchanged** — a property of the data, not the formula |
+| Win values occurring | 2 – 5 | **1 – 4** |
+| Outside the brief's range | none | **none** |
+| Negative wins | — | **none; the floor never engages**, since it needs a three-step favourite win and the widest gap on record is two |
+
+**The product property was checked against the record rather than assumed.**
+Six players — **Harry (16 W), Shaun, Tee, Del, Mulley, Tarique** — now have
+Merit **exactly equal** to their standard League points, each having no draws
+and only evenly-matched wins. Harry is the clearest case at **48 League / 48
+Merit**. The contrast is **Len at 65 League against 45 Merit**: 21 wins, none of
+them against a stronger pairing — which is precisely the signal the table
+exists to surface.
+
+Top of the all-time table after the change: Rishi 129, Max 56, PDM 51, Erf 50,
+Harry 48.
+
+**Tests.** The value cases move to **3 / 2 / 4 / 1 / 5 / 0 / 6** across zero to
+three tier-steps, draw 0 and loss 0, and gain two more: that a win is floored
+at 0 and never negative while the underdog side stays uncapped, and that the
+baseline *is* a standard League win. The regression cover the brief asked to
+retain — partnership ordering, historical tier changes, split-month
+reassessments, identical points for both winning partners, standard League
+unaffected — is kept with shifted expectations. **15 of the 23 module tests
+fail against the old formula**, as does the copy assertion. **487 / 487 (112
+browser).**
+
+---
+
+### The refinement as approved, kept
+
+#### Merit scoring refinement — the approved brief
 
 **The 4 / 1 / 0 model was implemented, reviewed and works.** Having seen the
 two tables side by side, Shaun chose to align Merit with the standard League's
@@ -1704,6 +1760,32 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 22 Sep 2026 (Merit scoring refinement delivered)
+
+`510c4cc`. **487 / 487 tests (112 browser).** A change of two constants and one
+guard, not a rewrite: `BASELINE` 4 → 3, `DRAW_POINTS` 1 → 0, and a floor of 0
+on the favourite side only — no ceiling, since an extreme matchup should be
+reported rather than clamped. Everything the brief listed as untouched is
+untouched, and the UI was not redesigned.
+
+**Re-audited over the full history.** Win values now range **1–4** (was 2–5),
+nothing outside the brief's 0–6, no negatives. The tier-step gaps are
+unchanged at 93 / 60 / 6 — they are a property of the data, not the formula.
+**The floor never engages on real data:** it needs a three-step favourite win
+and the widest gap on record is two.
+
+**The reason for the change was verified rather than assumed.** Six players —
+Harry (16 W), Shaun, Tee, Del, Mulley, Tarique — now score exactly the same in
+both tables, each having no draws and only even wins. Harry: 48 League, 48
+Merit. The contrast is Len at 65 League against 45 Merit — 21 wins, none of
+them hard — which is the signal the table was built to show.
+
+Recorded as a refinement of the original Merit decision rather than a second
+definition: the 4 / 1 / 0 model was implemented, reviewed and worked, and the
+Decisions Log row says so and points at what it supersedes.
+
+**Baton → Shaun / CGPT.**
 
 ### CGPT — 22 Sep 2026 (Merit scoring refinement approved)
 
@@ -4718,6 +4800,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `510c4cc` | Merit scoring refined to a 3-point baseline matching a standard League win, draws worth 0, and a floor of 0 on a win; copy updated and the history re-audited |
 | `1781ed5` | A tier section holding one player arrives collapsed, in both the League and Merit tables; resetting forgets what was touched rather than forcing everything open |
 | `767e0d3` | Merit Table: an alternative league view scoring the difficulty of each win from historical tiers only (`meritTable.js`), derived on demand and never persisted; behind the existing View select, reusing the League screen's month, tier-split and collapse machinery |
 | `2fdc169` | Monthly rankings coherence: same-date event ordering taken from the engine's own rule, tier badge moved to `tierInScope()` so badge and rating describe one moment; Monthly Summary made independently collapsible and stripped of card chrome when collapsed |
@@ -4790,28 +4873,29 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 8. **DONE (`767e0d3`).** Merit Table. Derived from canonical matches and the canonical historical-tier resolver, never persisted, not a rating. Audit found a maximum gap of 2 tier-steps and win values of 2–5, so **no cap is needed**. Placed behind the existing View select — **if Shaun wants it as a segmented button or its own tab instead, that is a one-line change.**
 
 9. **DONE (`1781ed5`).** A one-player tier section arrives collapsed, in both the League and Merit tables. Supersedes the 21 Sep default-expanded rule for one-player sections only.
+10. **DONE (`510c4cc`).** Merit scoring refined to a 3-point baseline, draws worth 0, a win floored at 0. The two tables now share a baseline, verified on the record: six players score identically in both.
 
 ### Waiting on Shaun
 
-10. **Predict a Matchup visual render.** The copy is delivered and the layout was
+11. **Predict a Matchup visual render.** The copy is delivered and the layout was
    deliberately left alone. `docs/screenshots/19-admin-predict.png` shows the
    current copy in the existing treatment, which should make the render easier
    to specify against. Nothing will be invented here in the meantime.
 
 ### Needing a person, not an implementer
 
-11. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-12. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
-13. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-14. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+12. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+13. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
+14. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+15. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-15. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-16. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+16. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+17. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
 the tier in force on each match date; points never transfer between tiers;
 `All together` stays one row and shows the transition. Nothing is queued for
-CCode." Item 11 above is the one open question it carried forward.*
+CCode." Item 12 above is the one open question it carried forward.*
