@@ -4771,3 +4771,174 @@ test('a collapsed single-player tier still opens when tapped', { skip }, async (
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// Shaun, 22 Sep: Favoured alongside Hard, both tappable, and the drill-down
+// must read the same classification the table does rather than working it out
+// again for itself.
+
+test('the Merit table shows Hard and Favoured, and fits a phone', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });
+    await openMerit(app, 'all');
+    await app.page.waitForTimeout(50);
+    const r = await app.run(() => {
+      const t = document.querySelector('#summaryContent table');
+      const card = t.closest('.callout-card');
+      const rows = [...t.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('merit-drill'));
+      const cells = (tr) => [...tr.children].map((x) => x.innerText.trim());
+      const truth = MeritTable.build(
+        getAllApprovedMatches().map((m) => ({ id: m.id, date: m.date, winners: m.winners,
+          losers: m.losers, isDraw: !!m.isDraw, sets: m.sets })),
+        (n, d) => historicalTierOf(n, d)).table;
+      return {
+        headers: [...t.querySelectorAll('thead th')].map((h) => h.textContent),
+        pageOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+        cardScrolls: card.scrollWidth > card.clientWidth + 1,
+        rows: rows.map((tr) => { const c = cells(tr); return { name: c[1], hard: c[7], fav: c[8] }; }),
+        truth: truth.map((x) => ({ name: x.playerId, hard: x.hardWins, fav: x.easyWins,
+          wins: x.wins, even: x.evenWins })),
+      };
+    });
+
+    assert.deepStrictEqual(r.headers, ['#', 'Player', 'P', 'W', 'D', 'L', 'Pts', 'Hard', 'Fav'],
+      'compact labels, and Favoured beside Hard');
+    assert.strictEqual(r.pageOverflow, false, 'nothing runs off a 375px screen');
+    assert.strictEqual(r.cardScrolls, false, 'and the table does not scroll sideways inside its card');
+
+    const byName = Object.fromEntries(r.truth.map((t) => [t.name, t]));
+    r.rows.forEach((row) => {
+      const t = byName[row.name];
+      assert.strictEqual(row.hard, t.hard ? String(t.hard) : '–', `${row.name}: Hard`);
+      assert.strictEqual(row.fav, t.fav ? String(t.fav) : '–', `${row.name}: Fav`);
+      // An equal-strength win counts toward neither column.
+      assert.strictEqual(t.hard + t.fav + t.even, t.wins, `${row.name}: every win is in exactly one bucket`);
+    });
+    assert.ok(r.truth.some((t) => t.even > 0), 'the fixture has even wins, which appear in neither column');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a zero count is not tappable; a real one opens its matches', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });
+    await openMerit(app, 'all');
+    const r = await app.run(() => {
+      const t = document.querySelector('#summaryContent table');
+      const rows = [...t.querySelectorAll('tbody tr')].filter((tr) => !tr.classList.contains('merit-drill'));
+      // Every cell showing a dash must have no control in it; every number must.
+      const cellsOk = rows.every((tr) => [7, 8].every((i) => {
+        const td = tr.children[i];
+        const hasButton = !!td.querySelector('.merit-count');
+        const isDash = td.innerText.trim() === '–';
+        return isDash ? !hasButton : hasButton;
+      }));
+
+      const btn = t.querySelector('.merit-count[data-kind="hard"]');
+      const who = btn.dataset.player;
+      const count = Number(btn.textContent);
+      btn.click();
+      const body = document.querySelector('#summaryContent .merit-drill-body');
+      const listed = body.querySelectorAll('.merit-drill-row').length;
+      const out = { cellsOk, who, count, listed,
+        head: body.querySelector('.merit-drill-head').innerText,
+        openBodies: document.querySelectorAll('#summaryContent .merit-drill-body').length,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1 };
+
+      // The same tap again closes it.
+      t.querySelector(`.merit-count[data-kind="hard"][data-player="${who}"]`).click();
+      out.closedAgain = !document.querySelector('#summaryContent .merit-drill-body');
+
+      // Opening Favoured for the same player replaces rather than adds.
+      t.querySelector(`.merit-count[data-kind="hard"][data-player="${who}"]`).click();
+      const fav = t.querySelector(`.merit-count[data-kind="favoured"][data-player="${who}"]`);
+      if (fav) { fav.click(); out.afterFav = document.querySelectorAll('#summaryContent .merit-drill-body').length; }
+      return out;
+    });
+
+    assert.strictEqual(r.cellsOk, true, 'a dash is not a control; a number is');
+    assert.ok(r.count > 0);
+    assert.strictEqual(r.listed, r.count, `${r.who}: the list must be exactly as long as the count`);
+    assert.match(r.head, new RegExp(`${r.who}`, 'i'));
+    assert.match(r.head, /stronger pairing/i);
+    assert.strictEqual(r.openBodies, 1, 'one drill-down at a time');
+    assert.strictEqual(r.overflow, false, 'and opening one does not push the page sideways');
+    assert.strictEqual(r.closedAgain, true, 'tapping the same count closes it');
+    assert.strictEqual(r.afterFav, 1, 'opening the other kind replaces rather than stacks');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the drill-down is the table\'s own classification, not a second opinion', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openMerit(app, 'all');
+    const r = await app.run(() => {
+      const t = document.querySelector('#summaryContent table');
+      const btn = t.querySelector('.merit-count[data-kind="hard"]');
+      const who = btn.dataset.player;
+      btn.click();
+      const shown = [...document.querySelectorAll('#summaryContent .merit-drill-row')].map((el) => ({
+        text: el.innerText.replace(/\s+/g, ' '),
+        date: el.querySelector('.merit-drill-date').textContent,
+        pts: Number(el.querySelector('.merit-drill-pts').textContent.replace(/[^0-9]/g, '')),
+      }));
+      // What the canonical calculation says those matches are.
+      const truth = MeritTable.build(
+        getAllApprovedMatches().map((m) => ({ id: m.id, date: m.date, winners: m.winners,
+          losers: m.losers, isDraw: !!m.isDraw, sets: m.sets })),
+        (n, d) => historicalTierOf(n, d)).table.find((x) => x.playerId === who);
+      return { who, shown, truth: truth.hard.map((d) => ({ date: d.date, pts: d.points,
+        steps: d.steps, tiers: d.winnerTiers.concat(d.loserTiers) })) };
+    });
+
+    assert.strictEqual(r.shown.length, r.truth.length);
+    const shownSorted = r.shown.map((s) => `${s.date}|${s.pts}`).sort();
+    const truthSorted = r.truth.map((s) => `${s.date}|${s.pts}`).sort();
+    assert.deepStrictEqual(shownSorted, truthSorted,
+      'every listed match, and its points, come from the canonical Merit calculation');
+    // Each row states the tiers used and the gap, so the reader can check it.
+    r.shown.forEach((s, i) => {
+      assert.match(s.text, /tier-step|even/, `row ${i} must state the gap: ${s.text}`);
+      assert.match(s.text, /beat/, 'and who beat whom');
+      assert.match(s.text, /pt/, 'and what it was worth');
+    });
+    r.truth.forEach((t) => {
+      const row = r.shown.find((s) => s.date === t.date && s.pts === t.pts);
+      t.tiers.forEach((tier) => assert.ok(row.text.includes(tier),
+        `the historical tier ${tier} used for ${t.date} must be shown: ${row.text}`));
+    });
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the drill-down respects the selected Merit period', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+      if (b) b.click();
+      const listFor = (month) => {
+        summaryMode = 'merit'; summaryMonth = month; leagueGrouped = false;
+        meritDrill = null; resetMeritTierSections(); renderSummary();
+        const btn = document.querySelector('#summaryContent .merit-count[data-kind="hard"]');
+        if (!btn) return null;
+        const who = btn.dataset.player;
+        btn.click();
+        const dates = [...document.querySelectorAll('#summaryContent .merit-drill-date')].map((e) => e.textContent);
+        return { who, dates, count: Number(btn.textContent) };
+      };
+      return { all: listFor('all'), september: listFor('2026-09') };
+    });
+
+    assert.ok(r.all.dates.length > 0);
+    assert.ok(r.september, 'September has qualifying matches in the fixture');
+    assert.strictEqual(r.september.dates.length, r.september.count);
+    r.september.dates.forEach((d) => assert.match(d, /^2026-09/,
+      'a month view must only list that month\'s matches'));
+    assert.ok(r.all.dates.some((d) => !/^2026-09/.test(d)),
+      'while All time reaches outside it');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

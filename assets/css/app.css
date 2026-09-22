@@ -1972,3 +1972,49 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   padding: 0 2px; margin: 10px 2px 14px;
 }
 .monthly-stories.is-collapsed .ms-head{ margin-bottom: 0; }
+
+
+/* ==========================================================================
+   MERIT TABLE — Hard / Favoured and the matches behind them
+   Nine columns on a phone, so the table is sized to fit rather than scroll:
+   the numeric columns take only what they need and the player name yields.
+   ========================================================================== */
+.merit-table{ table-layout: fixed; }
+.merit-table th, .merit-table td{ white-space: nowrap; }
+/* The one column that can afford to wrap or clip is the name. */
+.merit-table th:nth-child(2), .merit-table td:nth-child(2){
+  white-space: normal; word-break: break-word;
+}
+
+/* A count you can open. It reads as a number first and a control second. */
+.merit-count{
+  background: none; border: none; padding: 2px 4px; margin: -2px 0;
+  font: inherit; font-weight: 700; cursor: pointer;
+  border-bottom: 1px dotted currentColor; line-height: 1.1;
+}
+.merit-count:active{ opacity: .6; }
+.merit-count.is-open{ border-bottom-style: solid; }
+
+/* The matches behind a count, inline under the row they belong to. */
+.merit-drill-body{
+  background: var(--surface-2); border-top: 1px solid var(--surface-border);
+  padding: 9px 10px 10px;
+}
+.merit-drill-head{
+  font-family: var(--font-interface); font-size: 10.5px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--gold-soft); margin-bottom: 7px;
+}
+.merit-drill-row{ padding: 6px 0; border-top: 1px solid var(--line); }
+.merit-drill-row:first-of-type{ border-top: none; }
+.merit-drill-top{ display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.merit-drill-date{ font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); }
+.merit-drill-pts{ font-family: var(--font-interface); font-size: 11.5px; font-weight: 700; color: var(--gold-bright); }
+.merit-drill-teams{ font-size: 12px; margin-top: 2px; line-height: 1.4; }
+/* The tier each player held for THAT fixture, beside their name. */
+.merit-drill-tier{
+  font-family: var(--font-interface); font-size: 9px; color: var(--text-dim);
+  vertical-align: super; margin-left: 2px;
+}
+.merit-drill-meta{
+  font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); margin-top: 3px;
+}

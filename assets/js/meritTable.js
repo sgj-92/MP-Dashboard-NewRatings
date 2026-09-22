@@ -134,6 +134,25 @@
     };
   }
 
+  // One line of the "why" behind a Hard or Favoured count: everything a reader
+  // needs to check the classification for themselves, taken from the scored
+  // match rather than recomputed. `sets` rides along untouched if the caller
+  // supplied it -- this module has no opinion about how a score is written.
+  function detailOf(match, scored, points) {
+    return {
+      id: scored.id, date: scored.date,
+      winners: (match.winners || []).slice(), losers: (match.losers || []).slice(),
+      winnerTiers: scored.winnerTiers.slice(), loserTiers: scored.loserTiers.slice(),
+      winnerStrength: scored.winnerStrength, loserStrength: scored.loserStrength,
+      steps: scored.steps,
+      // Which side of the baseline this sat on, decided once, here.
+      kind: scored.steps === 0 ? 'even' : (scored.winnerWasFavourite ? 'favoured' : 'hard'),
+      points,
+      sets: match.sets || null,
+      type: match.type || null,
+    };
+  }
+
   // The table. One row per player who appears in the given matches.
   //
   // `tierForRow(name, date)` decides which tier SECTION a player's row belongs
@@ -161,14 +180,20 @@
           // 12 points off three hard wins is a different story from 12 off
           // four easy ones.
           hardWins: 0, evenWins: 0, easyWins: 0, bestWin: null,
+          // The qualifying matches themselves, kept beside the counts so that
+          // anything showing "why 10?" reads the SAME classification that
+          // produced the 10. A screen that re-derived hard-versus-favoured
+          // from the match would be a second opinion, and the two would
+          // eventually disagree about a fixture nobody had thought about.
+          hard: [], favoured: [],
         });
         row.played++;
         row.merit += points;
         if (won) {
           row.wins++;
           if (scored.steps === 0) row.evenWins++;
-          else if (scored.winnerWasFavourite) row.easyWins++;
-          else row.hardWins++;
+          else if (scored.winnerWasFavourite) { row.easyWins++; row.favoured.push(detailOf(m, scored, points)); }
+          else { row.hardWins++; row.hard.push(detailOf(m, scored, points)); }
           if (row.bestWin === null || points > row.bestWin) row.bestWin = points;
         }
         if (lost) row.losses++;
@@ -230,6 +255,6 @@
 
   return {
     TIER_LEVEL, BASELINE, DRAW_POINTS, LOSS_POINTS, MIN_WIN_POINTS,
-    levelOf, strengthOf, winPoints, scoreMatch, build, audit,
+    levelOf, strengthOf, winPoints, scoreMatch, detailOf, build, audit,
   };
 });

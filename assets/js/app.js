@@ -6948,41 +6948,96 @@ function resetMeritTierSections(){
 }
 resetMeritTierSections();
 let meritExplainerOpen = false;
+// One drill-down open at a time: two expanded lists on a phone is a wall.
+let meritDrill = null;
 
 // Every approved match in a shape MeritTable understands. One source, so Merit
 // and the League can never disagree about what a game was.
 function meritMatches(month){
   return getAllApprovedMatches()
     .filter(m => month === 'all' || m.date.slice(0,7) === month)
-    .map(m => ({ id: m.id, date: m.date, winners: m.winners, losers: m.losers, isDraw: !!m.isDraw }));
+    .map(m => ({ id: m.id, date: m.date, winners: m.winners, losers: m.losers,
+      isDraw: !!m.isDraw, sets: m.sets, type: m.type }));
+}
+
+// The two halves of the same story: Hard is a win over a stronger pairing,
+// Favoured a win over a weaker one. An even-strength win counts toward
+// neither -- it is the baseline both are measured from.
+//
+// Column labels are deliberately terse. A ninth column on a 375px screen is
+// the difference between a table and a horizontal scroll, and the drill-down
+// underneath says in full what the header cannot.
+function meritDrillKey(row, kind){ return `${row.playerId}\u0000${row.tier || ''}\u0000${kind}`; }
+
+function meritCountCell(row, kind){
+  const n = kind === 'hard' ? row.hardWins : row.easyWins;
+  if(!n) return `<span style="color:var(--text-dim);">–</span>`;
+  const open = meritDrill === meritDrillKey(row, kind);
+  const colour = kind === 'hard' ? 'var(--green)' : 'var(--text-dim)';
+  return `<button type="button" class="merit-count${open ? ' is-open' : ''}"
+    data-player="${escapeHtml(row.playerId)}" data-tier="${escapeHtml(row.tier || '')}" data-kind="${kind}"
+    style="color:${colour};" aria-expanded="${open}">${n}</button>`;
+}
+
+// One qualifying match, said plainly enough that a reader can check the
+// classification themselves: who played, at what tiers, how far apart those
+// pairings were, and what the win was therefore worth.
+function meritDrillRowHtml(d, subject){
+  const side = (names, tiers) => names.map((n,i)=>
+    `${escapeHtml(n)}<span class="merit-drill-tier">${escapeHtml(tiers[i] || '?')}</span>`).join(' & ');
+  const score = (d.sets && d.sets.length)
+    ? d.sets.map(([a,b])=>`${a}-${b}`).join(' ')
+    : '';
+  const gap = d.steps === 0 ? 'even' : `${d.steps} tier-step${d.steps===1?'':'s'}`;
+  return `<div class="merit-drill-row">
+    <div class="merit-drill-top">
+      <span class="merit-drill-date">${escapeHtml(d.date)}</span>
+      <span class="merit-drill-pts">${d.points} pt${d.points===1?'':'s'}</span>
+    </div>
+    <div class="merit-drill-teams"><b>${side(d.winners, d.winnerTiers)}</b> beat ${side(d.losers, d.loserTiers)}</div>
+    <div class="merit-drill-meta">${score ? escapeHtml(score) + ' · ' : ''}${gap} apart${d.kind === 'hard' ? ' · stronger pairing' : ' · weaker pairing'}</div>
+  </div>`;
 }
 
 function buildMeritTableHtml(rows, showTierColumn){
-  let html = `<div class="callout-card" style="padding:0; overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:11px; white-space:nowrap;">
+  let html = `<div class="callout-card" style="padding:0;">
+    <table class="merit-table" style="width:100%; border-collapse:collapse; font-size:11px;">
       <thead><tr style="background:var(--bg2); text-align:left;">
-      <th style="padding:7px 4px 7px 8px;">#</th>
-      <th style="padding:7px 4px;">Player</th>
-      ${showTierColumn ? `<th style="padding:7px 4px; text-align:center;">Tier</th>` : ''}
-      <th style="padding:7px 4px; text-align:center;">P</th>
-      <th style="padding:7px 4px; text-align:center;">W</th>
-      <th style="padding:7px 4px; text-align:center;">D</th>
-      <th style="padding:7px 4px; text-align:center;">L</th>
-      <th style="padding:7px 8px 7px 4px; text-align:right;">Merit</th>
-      <th class="league-context-col" style="padding:7px 4px; text-align:center;" title="Wins against a stronger pairing">Hard wins</th>
+      <th style="padding:7px 2px 7px 7px;">#</th>
+      <th style="padding:7px 2px;">Player</th>
+      ${showTierColumn ? `<th style="padding:7px 2px; text-align:center;">Tier</th>` : ''}
+      <th style="padding:7px 2px; text-align:center;">P</th>
+      <th style="padding:7px 2px; text-align:center;">W</th>
+      <th style="padding:7px 2px; text-align:center;">D</th>
+      <th style="padding:7px 2px; text-align:center;">L</th>
+      <th style="padding:7px 3px; text-align:right; color:var(--gold-bright);">Pts</th>
+      <th style="padding:7px 2px; text-align:center;" title="Wins against a stronger pairing">Hard</th>
+      <th style="padding:7px 7px 7px 2px; text-align:center;" title="Wins against a weaker pairing">Fav</th>
       </tr></thead><tbody>`;
+  const cols = showTierColumn ? 10 : 9;
   rows.forEach((r,i)=>{
     html += `<tr style="border-top:1px solid var(--line);">
-      <td style="padding:7px 4px 7px 8px; color:var(--text-dim);">${i+1}</td>
-      <td style="padding:7px 4px;"><span class="request-player-link" data-player="${escapeHtml(r.playerId)}" style="text-decoration:underline; cursor:pointer; font-weight:700;">${escapeHtml(r.playerId)}</span></td>
-      ${showTierColumn ? `<td style="padding:7px 4px; text-align:center;"><span class="badge ${r.tier}" style="display:inline-flex; width:20px; height:20px; font-size:10px;">${r.tier}</span></td>` : ''}
-      <td style="padding:7px 4px; text-align:center;">${r.played}</td>
-      <td style="padding:7px 4px; text-align:center; color:var(--green);">${r.wins}</td>
-      <td style="padding:7px 4px; text-align:center; color:var(--text-dim);">${r.draws}</td>
-      <td style="padding:7px 4px; text-align:center; color:var(--red);">${r.losses}</td>
-      <td style="padding:7px 8px 7px 4px; text-align:right; font-weight:700; color:var(--gold-bright);">${r.merit}</td>
-      <td class="league-context-col" style="padding:7px 4px; text-align:center;">${r.hardWins ? `<span style="color:var(--green);">${r.hardWins}</span>` : `<span style="color:var(--text-dim);">–</span>`}</td>
+      <td style="padding:7px 2px 7px 7px; color:var(--text-dim);">${i+1}</td>
+      <td style="padding:7px 2px;"><span class="request-player-link" data-player="${escapeHtml(r.playerId)}" style="text-decoration:underline; cursor:pointer; font-weight:700;">${escapeHtml(r.playerId)}</span></td>
+      ${showTierColumn ? `<td style="padding:7px 2px; text-align:center;"><span class="badge ${r.tier}" style="display:inline-flex; width:20px; height:20px; font-size:10px;">${r.tier}</span></td>` : ''}
+      <td style="padding:7px 2px; text-align:center;">${r.played}</td>
+      <td style="padding:7px 2px; text-align:center; color:var(--green);">${r.wins}</td>
+      <td style="padding:7px 2px; text-align:center; color:var(--text-dim);">${r.draws}</td>
+      <td style="padding:7px 2px; text-align:center; color:var(--red);">${r.losses}</td>
+      <td style="padding:7px 3px; text-align:right; font-weight:700; color:var(--gold-bright);">${r.merit}</td>
+      <td style="padding:7px 2px; text-align:center;">${meritCountCell(r, 'hard')}</td>
+      <td style="padding:7px 7px 7px 2px; text-align:center;">${meritCountCell(r, 'favoured')}</td>
     </tr>`;
+    ['hard','favoured'].forEach(kind=>{
+      if(meritDrill !== meritDrillKey(r, kind)) return;
+      const list = kind === 'hard' ? r.hard : r.favoured;
+      html += `<tr class="merit-drill"><td colspan="${cols}" style="padding:0;">
+        <div class="merit-drill-body">
+          <div class="merit-drill-head">${escapeHtml(r.playerId)} · ${list.length} ${kind === 'hard' ? 'win' : 'win'}${list.length===1?'':'s'} against a ${kind === 'hard' ? 'stronger' : 'weaker'} pairing</div>
+          ${list.slice().sort((a,b)=> a.date < b.date ? 1 : -1).map(d=>meritDrillRowHtml(d, r.playerId)).join('')}
+        </div>
+      </td></tr>`;
+    });
   });
   html += `</tbody></table></div>`;
   return html;
@@ -7042,6 +7097,15 @@ function renderMeritTable(){
       const rowsHere = (MeritTable.build(matches, tierAt, { tierForRow: tierAt }).table
         .filter(x => x.tier === t && x.played > 0)).length;
       meritTierOpen[t] = !tierSectionOpen(meritTierOpen, t, rowsHere);
+      renderMeritTable();
+    };
+  });
+  // Tapping a Hard or Favoured count opens the matches behind it; tapping the
+  // same one again closes it.
+  content.querySelectorAll('.merit-count').forEach(btn=>{
+    btn.onclick = ()=>{
+      const key = `${btn.dataset.player}\u0000${btn.dataset.tier}\u0000${btn.dataset.kind}`;
+      meritDrill = (meritDrill === key) ? null : key;
       renderMeritTable();
     };
   });

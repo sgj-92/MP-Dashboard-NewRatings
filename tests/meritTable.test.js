@@ -241,3 +241,91 @@ test('nothing in this module reads a rating', () => {
     assert.ok(!re.test(code), `Merit must not reference ${re} — it is not a rating system`);
   });
 });
+
+// ---- hard / favoured, and the matches behind them --------------------------
+
+test('a win is hard, favoured, or neither — never two of them', () => {
+  const matches = [
+    { id: '1', date: '2026-09-01', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false }, // hard
+    { id: '2', date: '2026-09-02', winners: ['Ben', 'Bob'], losers: ['Cal', 'Cat'], isDraw: false }, // favoured
+    { id: '3', date: '2026-09-03', winners: ['Ben', 'Bob'], losers: ['Ana', 'Cal'], isDraw: false }, // even
+    { id: '4', date: '2026-09-04', winners: ['Ana', 'Amy'], losers: ['Ben', 'Bob'], isDraw: false }, // a loss
+    { id: '5', date: '2026-09-05', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: true },  // a draw
+  ];
+  const row = Merit.build(matches, flat).table.find((r) => r.playerId === 'Ben');
+  assert.strictEqual(row.hardWins, 1);
+  assert.strictEqual(row.easyWins, 1, 'favoured');
+  assert.strictEqual(row.evenWins, 1);
+  assert.strictEqual(row.hardWins + row.evenWins + row.easyWins, row.wins,
+    'every win falls into exactly one of the three');
+  // An equal-strength win counts toward neither of the two shown columns.
+  assert.strictEqual(row.hard.length + row.favoured.length, row.wins - row.evenWins);
+});
+
+test('the counts and the matches behind them are the same thing', () => {
+  const matches = [
+    { id: '1', date: '2026-09-01', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false },
+    { id: '2', date: '2026-09-02', winners: ['Ben', 'Bob'], losers: ['Cal', 'Cat'], isDraw: false },
+    { id: '3', date: '2026-09-03', winners: ['Ben', 'Bob'], losers: ['Ana', 'Cal'], isDraw: false },
+  ];
+  const row = Merit.build(matches, flat).table.find((r) => r.playerId === 'Ben');
+  assert.strictEqual(row.hard.length, row.hardWins, 'a count is the length of its own list');
+  assert.strictEqual(row.favoured.length, row.easyWins);
+  // Every listed match is a win of the kind it was filed under…
+  row.hard.forEach((d) => {
+    assert.strictEqual(d.kind, 'hard');
+    assert.ok(d.winners.includes('Ben'), 'and one this player actually won');
+    assert.ok(d.points > Merit.BASELINE, 'a hard win pays above the baseline');
+  });
+  row.favoured.forEach((d) => {
+    assert.strictEqual(d.kind, 'favoured');
+    assert.ok(d.winners.includes('Ben'));
+    assert.ok(d.points < Merit.BASELINE, 'a favoured win pays below it');
+  });
+  // …and the two lists together account for the merit that is not even wins.
+  const listed = [...row.hard, ...row.favoured].reduce((a, d) => a + d.points, 0);
+  assert.strictEqual(listed + row.evenWins * Merit.BASELINE, row.merit);
+});
+
+test('each listed match carries what is needed to check it', () => {
+  const matches = [{ id: 'm9', date: '2026-09-01', type: 'doubles',
+    winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false, sets: [[6, 4], [3, 6], [7, 5]] }];
+  const d = Merit.build(matches, flat).table.find((r) => r.playerId === 'Ben').hard[0];
+  assert.strictEqual(d.id, 'm9');
+  assert.strictEqual(d.date, '2026-09-01');
+  assert.deepStrictEqual(d.winners, ['Ben', 'Bob']);
+  assert.deepStrictEqual(d.losers, ['Ana', 'Amy']);
+  assert.deepStrictEqual(d.winnerTiers, ['B', 'B'], 'the tiers used for THIS fixture');
+  assert.deepStrictEqual(d.loserTiers, ['A', 'A']);
+  assert.strictEqual(d.steps, 2);
+  assert.strictEqual(d.points, 5);
+  assert.deepStrictEqual(d.sets, [[6, 4], [3, 6], [7, 5]], 'the score rides along untouched');
+});
+
+test('a listed match shows the tier held on its own date, not the latest', () => {
+  const tierAt = history().tierAsOf;   // Rishi: B until 2026-09-20, A after
+  const matches = [
+    { id: 'before', date: '2026-09-13', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false },
+    { id: 'after', date: '2026-09-21', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false },
+  ];
+  const row = Merit.build(matches, tierAt).table.find((r) => r.playerId === 'Rishi');
+  const byId = Object.fromEntries(row.hard.map((d) => [d.id, d]));
+  assert.strictEqual(byId.before.winnerTiers[0], 'B', 'as a B on the 13th');
+  assert.strictEqual(byId.after.winnerTiers[0], 'A', 'and an A on the 21st');
+  assert.strictEqual(byId.before.steps, 2);
+  assert.strictEqual(byId.after.steps, 1, 'the same fixture is a different gap once he is an A');
+  assert.strictEqual(byId.before.points, 5);
+  assert.strictEqual(byId.after.points, 4);
+});
+
+test('a split row lists only the matches that row earned', () => {
+  const tierAt = history().tierAsOf;
+  const matches = [
+    { id: 'asB', date: '2026-09-13', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false },
+    { id: 'asA', date: '2026-09-21', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false },
+  ];
+  const rows = Merit.build(matches, tierAt, { tierForRow: tierAt }).table.filter((r) => r.playerId === 'Rishi');
+  const byTier = Object.fromEntries(rows.map((r) => [r.tier, r]));
+  assert.deepStrictEqual(byTier.B.hard.map((d) => d.id), ['asB']);
+  assert.deepStrictEqual(byTier.A.hard.map((d) => d.id), ['asA']);
+});

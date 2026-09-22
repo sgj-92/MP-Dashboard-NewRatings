@@ -144,6 +144,12 @@ The whole summary folds as one — Key takeaways, Monthly Performance, Rating Mo
 
 An alternative league view over the same matches, scored only on the tiers held on the day: an even matchup is worth 4 for a win, each tier-step of difference takes one off the favourite and adds one to the underdog. A pairing is the SUM of its two players, so AC and BB are equal — comparing the best player on each side would get a large share of the club's games wrong. It sits behind the existing View select rather than as a fourth segmented button, which would have crowded the mobile control. Not a rating: nothing here reads a Power Rating or an expectation.
 
+### Merit — the matches behind a count
+
+![Merit — the matches behind a count](22b-merit-drilldown.png)
+
+Hard and Favoured are the two halves of the same story: wins over a stronger pairing and over a weaker one, with equal-strength wins counting toward neither. Tapping a count opens the matches it was built from — teams with the tier each player held FOR THAT FIXTURE, the score, how far apart the pairings were, and what the win was worth. The list is the table's own classification, not a second calculation: a screen that re-derived hard from the match would eventually disagree with the number above it.
+
 ### Power Rating Guide — in short
 
 ![Power Rating Guide — in short](12-rating-guide-summary.png)

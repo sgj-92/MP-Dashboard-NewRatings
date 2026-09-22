@@ -90,6 +90,8 @@ const SHOTS = [
     note: 'The whole summary folds as one — Key takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved without playing and Crossovers together. It defaults expanded, because unlike the League explanation this is content rather than an explanation of content. The heading keeps its own type, colour and spacing; the chevron is the only thing added, and it is not a card.' },
   { file: '22-merit-table.png', title: 'Merit Table — harder wins earn more',
     note: 'An alternative league view over the same matches, scored only on the tiers held on the day: an even matchup is worth 4 for a win, each tier-step of difference takes one off the favourite and adds one to the underdog. A pairing is the SUM of its two players, so AC and BB are equal — comparing the best player on each side would get a large share of the club\'s games wrong. It sits behind the existing View select rather than as a fourth segmented button, which would have crowded the mobile control. Not a rating: nothing here reads a Power Rating or an expectation.' },
+  { file: '22b-merit-drilldown.png', title: 'Merit — the matches behind a count',
+    note: 'Hard and Favoured are the two halves of the same story: wins over a stronger pairing and over a weaker one, with equal-strength wins counting toward neither. Tapping a count opens the matches it was built from — teams with the tier each player held FOR THAT FIXTURE, the score, how far apart the pairings were, and what the win was worth. The list is the table\'s own classification, not a second calculation: a screen that re-derived hard from the match would eventually disagree with the number above it.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -411,10 +413,17 @@ async function render(players, matches, journey, readAt) {
       const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]'); if (b) b.click();
       summaryMode = 'merit'; summaryMonth = 'all';
       leagueGrouped = false; meritExplainerOpen = true;
-      resetMeritTierSections();
+      meritDrill = null; resetMeritTierSections();
       renderSummary();
     },
     () => window.scrollTo(0, 0));
+  // …and a Hard count opened, which is the whole point of making them tappable.
+  await shot('22b-merit-drilldown.png',
+    () => {
+      const btn = document.querySelector('#summaryContent .merit-count[data-kind="hard"]');
+      if (btn) btn.click();
+    },
+    () => { const el = document.querySelector('.merit-drill-body'); if (el) el.scrollIntoView({ block: 'center' }); });
 
   const openGuide = () => {
     const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
