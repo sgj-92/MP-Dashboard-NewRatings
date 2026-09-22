@@ -440,6 +440,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
+| Merit Table — an alternative league view scoring the difficulty of the win | Shaun, 22 Sep 2026. **Additional**, never replacing or altering the League Table. Scores how hard the partnership matchup was, from **tier at the time of the match only** — no Power Rating, expected performance, rating change or expectation engine. Tier levels `S > A > B > C`; a partnership's strength is the **sum of its two players' tier levels**, so `AC` and `BB` are equal and the highest-tier player alone never decides it. An even matchup is worth **4** for a win; each tier-step of difference takes one point off the favourite's win and adds one to the underdog's. Draw **1** each, loss **0**, integers only, **no cap** — if the history holds a more extreme matchup, apply the formula and report it. Merit Points are **not a rating**: they touch nothing in Power Rating, ratingJourney, reliability, reassessment, expected game share, tier or outcome, and are derived from canonical matches plus historical tiers rather than persisted as a second source of truth. |
 | Monthly Power Rankings must be chronologically coherent around a mid-month reassessment | Shaun, 21 Sep 2026. A monthly row must never combine a player's **post-change tier** with a **pre-change rating snapshot** merely because both fell inside the selected month. Before the effective date: old tier with the appropriate pre-change state. From the effective date onward: new tier with the post-reassessment state. General for every mid-month change — September's Rishi, Ant Slicer and Jams, and every future reassessment — never special-cased per player. The approved split-month League treatment is unchanged. **Do not alter Sequential-v1, reassessment mathematics or stored rating history to make a screen look right.** |
 | Monthly Summary is independently collapsible | Shaun, 21 Sep 2026. The whole `September 2026 — Monthly Summary` block gets its own subtle heading-and-chevron disclosure, **defaulting expanded**, collapsing Key Takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved Without Playing and Crossovers together. Independent of the Tier S/A/B/C League disclosures. Same lightweight treatment as the League refinement — **explicitly not another large bordered dropdown or card**, which Shaun rejected during that work. |
 | Player names can be edited by Admin with confirmation | **DONE `25e4624`.** Shaun, 21 Sep 2026, resolving the stop condition himself: *"I just need editable names with no consequences."* The identity is frozen (`playerId` never changes) and a `displayName` field carries the label, so a rename writes one field on one document and the record is untouched. Add an **Admin-only** rename action in player management. Renaming must change the player's display name while preserving the same underlying player identity and all historical match/rating/tier/statistics relationships. Before writing, show a confirmation such as **“Rename Shaun to Shaun J?”**. Block blank names and duplicate/conflicting names. If any historical data is keyed directly by display name rather than stable player id, CCode must stop and report the migration/blast radius before implementing. Preserve the old name in an audit/history field where practical. |
@@ -456,6 +457,86 @@ Tom/Fatch audit (`838ca66`), the Players Directory refresh (`43401f8`), the
 League refinement (`3e326e1`) and Shaun's disclosure correction to it
 (`11ed091`). **Nothing is queued for CCode.** The open product questions are in
 Section 8.
+
+---
+
+### Merit Table — ACTIVE (22 Sep 2026)
+
+A new, additional league view. **It must not replace or alter the existing
+League Table.** It is another way of reading the same recorded matches, for the
+fact that some players regularly take harder fixtures than others.
+
+**The question it answers:** how difficult was the partnership matchup you won?
+A win in an even fixture is the baseline; beating a stronger pairing earns more,
+beating a weaker one earns less.
+
+#### Scoring
+
+Tier hierarchy `S > A > B > C`. A partnership's strength is the **sum of its two
+players' tier levels**. The difference between the two partnership totals is
+that match's **tier-step difference**.
+
+| Tier-step difference | Favourite wins | Underdog wins |
+|---|---|---|
+| 0 (even) | **4** | **4** |
+| 1 | 3 | 5 |
+| 2 | 2 | 6 |
+| 3 | 1 | 7 |
+
+Draw: **1 point per player**, whatever the matchup. Loss: **0**. Integers only.
+**No artificial cap at this stage** — if the history contains a more extreme
+valid matchup, apply the formula consistently and report what was found.
+
+Both teammates always receive the same Merit Points: this scores the difficulty
+of the *partnership matchup*, not an individual's circumstances.
+
+**Worked examples, including the one that matters most:** `AA vs AA` → 4.
+`AB vs AB` → 4. **`AC vs BB` → 4** — also equal strength, which is why the
+highest-tier player on each side must never be compared alone. `AB vs BB`: AB
+wins → 3, BB wins → 5. `AA vs BB`: AA wins → 2, BB wins → 6.
+
+#### Historical tiers are critical
+
+Merit must use each player's **effective tier on the match date**, not their
+current tier, reusing the **canonical historical-tier resolver** rather than a
+second interpretation of tier history. Matches before a reassessment's effective
+date use the old tier; matches on or after it use the new one — Rishi's
+September B → A, Ant Slicer, Jams, and every future change.
+
+#### Presentation
+
+**Merit Table** · *Harder wins earn more.* Under a subtle `How points work ⌄`
+disclosure: *"An even matchup is worth 4 points for a win. Beat a stronger
+pairing and you earn an extra point for each tier-step difference. Beat a weaker
+pairing and you earn one point less per tier-step. Draws are worth 1 point.
+Losses are worth 0."* Concise and player-friendly; no numeric tier weights in
+player-facing copy.
+
+#### UI
+
+An alternative league view in the established Rankings/League design language,
+supporting month selection, Tier S/A/B/C views, independently collapsible tier
+sections, historical/split-month allocation, and the existing table and mobile
+behaviour. **Inspect the current post-refinement Rankings UI first and reuse its
+controls; do not overcrowd the mobile selector. If clean placement needs a UX
+choice, report the proposal rather than redesigning navigation independently.**
+
+**Unchanged:** standard League scoring, All together, Last 10, Power Rankings,
+Monthly Performance, Power Rating.
+
+#### Required tests
+
+`AA vs AA` → 4 · `AB vs AB` → 4 · `AC vs BB` → 4 · AB beats BB → 3 · BB beats
+AB → 5 · AA beats BB → 2 · BB beats AA → 6 · draw → 1 each · loss → 0. Also:
+reversed partnership/player ordering gives identical points; historical tier
+changes use the tier effective on the match date; a split-month reassessment
+changes Merit only from its effective date; both winning teammates always score
+the same; and standard League points are completely unchanged.
+
+**Run the calculation over the complete rated match history and report any
+unusual or extreme partnership gaps before finalising.**
+
+**Baton → CCode. Feature approved.**
 
 ---
 
@@ -1482,6 +1563,25 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 22 Sep 2026 (Merit Table approved)
+
+A new alternative league view, specified in full in Section 4. Additional, not
+a replacement. Scored from tier at the time of the match only — no Power Rating
+and no expectation engine anywhere near it. Partnership strength is the sum of
+both players' tier levels, so `AC` and `BB` are equal; comparing only the
+highest-tier player on each side would be wrong.
+
+Must reuse the canonical historical-tier resolver, respect the split-month
+treatment, and derive Merit from canonical matches rather than persisting a
+second source of truth. Merit Points are explicitly **not a rating** and must
+touch nothing the engine owns.
+
+Inspect the current Rankings UI before choosing placement, and report a proposed
+placement rather than redesigning navigation if a clean fit needs a UX decision.
+Audit the full history for extreme partnership gaps before finalising.
+
+**Baton → CCode. Feature approved.**
 
 ### CCode — 21 Sep 2026 (monthly coherence + Monthly Summary delivered)
 
