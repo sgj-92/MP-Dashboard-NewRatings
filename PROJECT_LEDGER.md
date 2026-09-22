@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`767e0d3`** |
-| Tests | **483 / 483 passing** (110 of them drive a real browser) |
+| Last verified implementation commit | **`1781ed5`** |
+| Tests | **485 / 485 passing** (112 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -447,6 +447,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
+| A one-player tier section arrives collapsed | Shaun, 22 Sep 2026: *"Tier S should be collapsed by default as there's only one player there."* **Supersedes "tier sections default expanded on entry to By tier" (21 Sep) for one-player sections only**; populated sections are unchanged. Implemented as the reason rather than as the letter S, so a section that gains a second player opens on its own and any tier that thins to one folds without the rule being revisited. The heading always renders, so collapsed is one tap from open, and an explicit tap always beats the default. Applies to both the League and Merit tier sections. **DONE `1781ed5`.** |
 | Merit Table — an alternative league view scoring the difficulty of the win | Shaun, 22 Sep 2026. **Additional**, never replacing or altering the League Table. Scores how hard the partnership matchup was, from **tier at the time of the match only** — no Power Rating, expected performance, rating change or expectation engine. Tier levels `S > A > B > C`; a partnership's strength is the **sum of its two players' tier levels**, so `AC` and `BB` are equal and the highest-tier player alone never decides it. An even matchup is worth **4** for a win; each tier-step of difference takes one point off the favourite's win and adds one to the underdog's. Draw **1** each, loss **0**, integers only, **no cap** — if the history holds a more extreme matchup, apply the formula and report it. Merit Points are **not a rating**: they touch nothing in Power Rating, ratingJourney, reliability, reassessment, expected game share, tier or outcome, and are derived from canonical matches plus historical tiers rather than persisted as a second source of truth. |
 | Monthly Power Rankings must be chronologically coherent around a mid-month reassessment | Shaun, 21 Sep 2026. A monthly row must never combine a player's **post-change tier** with a **pre-change rating snapshot** merely because both fell inside the selected month. Before the effective date: old tier with the appropriate pre-change state. From the effective date onward: new tier with the post-reassessment state. General for every mid-month change — September's Rishi, Ant Slicer and Jams, and every future reassessment — never special-cased per player. The approved split-month League treatment is unchanged. **Do not alter Sequential-v1, reassessment mathematics or stored rating history to make a screen look right.** |
 | Monthly Summary is independently collapsible | Shaun, 21 Sep 2026. The whole `September 2026 — Monthly Summary` block gets its own subtle heading-and-chevron disclosure, **defaulting expanded**, collapsing Key Takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved Without Playing and Crossovers together. Independent of the Tier S/A/B/C League disclosures. Same lightweight treatment as the League refinement — **explicitly not another large bordered dropdown or card**, which Shaun rejected during that work. |
@@ -1643,6 +1644,29 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 22 Sep 2026 (one-player tier sections collapse by default)
+
+`1781ed5`. **485 / 485 tests (112 browser).** Shaun asked for Tier S to arrive
+collapsed *"as there's only one player there"*. Implemented as that reason
+rather than as the letter S: a section holding one player is not a table, so
+any such section folds on arrival. Tier S folds today; it will open on its own
+if Manny is ever joined; and any other tier that thins to one player folds
+without this conversation needing to be remembered. Both the League and Merit
+tier sections share the one rule.
+
+The heading is always rendered, so collapsed is one tap from open, and an
+explicit tap always beats the default — resetting now *forgets* what the reader
+touched rather than forcing everything open.
+
+**One test failure was worth reading rather than patching.** The Merit test
+that sums the tier sections back to the `All together` totals broke, because a
+collapsed section's rows are not in the DOM at all and the sum silently lost a
+player. The invariant was always about the data, so the test now expands every
+section before summing. Nothing was wrong with the feature; the test had been
+measuring the screen when it meant to measure the numbers.
+
+**Baton → Shaun / CGPT.**
 
 ### CCode — 22 Sep 2026 (Merit Table delivered)
 
@@ -4616,6 +4640,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `1781ed5` | A tier section holding one player arrives collapsed, in both the League and Merit tables; resetting forgets what was touched rather than forcing everything open |
 | `767e0d3` | Merit Table: an alternative league view scoring the difficulty of each win from historical tiers only (`meritTable.js`), derived on demand and never persisted; behind the existing View select, reusing the League screen's month, tier-split and collapse machinery |
 | `2fdc169` | Monthly rankings coherence: same-date event ordering taken from the engine's own rule, tier badge moved to `tierInScope()` so badge and rating describe one moment; Monthly Summary made independently collapsible and stripped of card chrome when collapsed |
 | `25e4624` | Editable player names: identity frozen as `playerId`, label carried by `displayName`, translation at two edges (`playerNames.js`); a replay now preserves player-document fields it does not own, which a rename had quietly broken |
@@ -4686,27 +4711,29 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 7. **DONE (`2fdc169`).** Monthly rankings coherence and the Monthly Summary disclosure. The persisted record was correct; both faults were display-side.
 8. **DONE (`767e0d3`).** Merit Table. Derived from canonical matches and the canonical historical-tier resolver, never persisted, not a rating. Audit found a maximum gap of 2 tier-steps and win values of 2–5, so **no cap is needed**. Placed behind the existing View select — **if Shaun wants it as a segmented button or its own tab instead, that is a one-line change.**
 
+9. **DONE (`1781ed5`).** A one-player tier section arrives collapsed, in both the League and Merit tables. Supersedes the 21 Sep default-expanded rule for one-player sections only.
+
 ### Waiting on Shaun
 
-7. **Predict a Matchup visual render.** The copy is delivered and the layout was
+10. **Predict a Matchup visual render.** The copy is delivered and the layout was
    deliberately left alone. `docs/screenshots/19-admin-predict.png` shows the
    current copy in the existing treatment, which should make the render easier
    to specify against. Nothing will be invented here in the meantime.
 
 ### Needing a person, not an implementer
 
-8. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-9. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C. Whether Tier S is a real tier, a legacy artefact or a data error is a product call. Low urgency, but it should not stay unanswered before beta.
-10. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-11. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+11. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+12. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
+13. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+14. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-12. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-13. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+15. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+16. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
 the tier in force on each match date; points never transfer between tiers;
 `All together` stays one row and shows the transition. Nothing is queued for
-CCode." Item 8 above is the one open question it carried forward.*
+CCode." Item 11 above is the one open question it carried forward.*
