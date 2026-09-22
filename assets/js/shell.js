@@ -2326,6 +2326,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const _originalRender = window.render;
   window.render = function(){
     _originalRender.apply(this, arguments);
+    // render() declines to draw anything before the record has arrived (see
+    // DATA_READY in app.js), and everything below reads PLAYERS. A sort button
+    // pressed during those few hundred milliseconds would otherwise run the
+    // one-time set-up here -- the viewer, the Home dashboard -- against an
+    // empty club, which is the case the comment below was written to avoid and
+    // could not actually prevent.
+    if(typeof DATA_READY !== 'undefined' && !DATA_READY) return;
     applyRankingEligibility();
     renderRankingsPodium();
     renderKingsOfTiersPanel();
@@ -2381,4 +2388,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   updateBottomNavHighlight();
   renderSectionSubnav();
+
+  // The shell exists. If the record is already here, this is the half that
+  // finished second and the first screen is drawn now; if it is not, init()
+  // draws it when it arrives. See drawFirstScreen() in app.js.
+  SHELL_READY = true;
+  drawFirstScreen();
 });

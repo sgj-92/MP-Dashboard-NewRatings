@@ -356,10 +356,50 @@
     return written;
   }
 
+  // A backend that has already asked for everything it is going to be asked
+  // for.
+  //
+  // Loading v3 state reads three collections, and the code that reads them is
+  // three `await`s in a row inside v3Bridge -- correct, readable, and three
+  // round trips where the data allows one. None of the three reads is an input
+  // to any other: the alias map is applied to matches and journey events AFTER
+  // both have arrived, so only the mapping is ordered, never the fetching. On
+  // a phone at 250ms to Firestore that ordering cost 750ms of start-up for
+  // nothing.
+  //
+  // Rather than restructure v3Bridge (and every test that drives it) around a
+  // parallel fetch, the parallelism goes here, where it is invisible: the
+  // reads are started together, and `getAll` hands back the one already in
+  // flight. v3Bridge still awaits three collections in order and cannot tell
+  // the difference; it simply stops waiting for them.
+  //
+  // A collection nobody ends up asking for is still read, so this takes the
+  // list explicitly rather than guessing.
+  function prefetchedBackend(backend, collections) {
+    const started = {};
+    (collections || []).forEach((c) => {
+      const p = backend.getAll(c);
+      // A read whose consumer gives up early (v3Bridge returns as soon as
+      // `players` fails) would otherwise surface as an unhandled rejection,
+      // and in a browser as a console error for a failure already reported.
+      // This marks it handled without changing what `started[c]` resolves to.
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+      started[c] = p;
+    });
+    return Object.assign({}, backend, {
+      getAll(collection) {
+        return Object.prototype.hasOwnProperty.call(started, collection)
+          ? started[collection]
+          : backend.getAll(collection);
+      },
+    });
+  }
+
   return {
     COLLECTIONS, SCHEMA_VERSION, JOURNEY_FIELDS, MATCH_EVENT_FIELDS,
     eventId, toJourneyDoc, toMatchDoc, matchFromDoc, toPlayerDoc, assertFirestoreSafe,
     buildWritePlan, summarisePlan, writePlan, limitPlan,
-    memoryBackend, firestoreRestBackend, firestoreCompatBackend, toFirestoreFields, fromFirestoreFields,
+    memoryBackend, firestoreRestBackend, firestoreCompatBackend, prefetchedBackend,
+    toFirestoreFields, fromFirestoreFields,
   };
 });

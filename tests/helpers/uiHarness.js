@@ -88,9 +88,15 @@ async function open(options = {}) {
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
 
-  await page.addInitScript(({ data, failReads }) => {
+  await page.addInitScript(({ data, failReads, readLatency, tapDuringBoot }) => {
     window.__writes = [];
     window.__data = data;
+    // Every read, with the window it occupied. A test can then assert that
+    // start-up's reads overlapped rather than queued -- the difference between
+    // one round trip and fourteen, which is invisible to a stub that answers
+    // instantly.
+    window.__reads = [];
+    const held = readLatency ? (() => new Promise((r) => setTimeout(r, readLatency))) : null;
     // One entry per batched write actually committed, so a test can assert that
     // a replay went out in a couple of round trips rather than hundreds.
     window.__batches = [];
@@ -106,12 +112,20 @@ async function open(options = {}) {
                   // A batch collects refs and applies them later, so a ref has
                   // to carry what it points at.
                   _collection: name, _id: id,
-                  async get() { const v = (data[name] || {})[id]; return { exists: !!v, data: () => v }; },
+                  async get() {
+                    const started = Date.now();
+                    if (held) await held();
+                    window.__reads.push({ collection: name, id, started, ended: Date.now() });
+                    const v = (data[name] || {})[id]; return { exists: !!v, data: () => v };
+                  },
                   async set(v) { window.__writes.push({ collection: name, id, doc: v }); (data[name] = data[name] || {})[id] = v; },
                   async delete() { window.__writes.push({ collection: name, id, deleted: true }); delete (data[name] || {})[id]; },
                 };
               },
               async get() {
+                const started = Date.now();
+                if (held) await held();
+                window.__reads.push({ collection: name, started, ended: Date.now() });
                 if (failReads) fail();
                 return { docs: Object.values(data[name] || {}).map((v) => ({ data: () => v })) };
               },
@@ -143,6 +157,30 @@ async function open(options = {}) {
         };
       },
     };
+    // A reader who taps a tab while the record is still on its way. Installed
+    // here so it happens inside the loading window rather than after it: the
+    // whole class of defect this guards against is a screen drawn once, from
+    // nothing, and never drawn again.
+    if (tapDuringBoot) {
+      const tap = setInterval(() => {
+        const btn = document.querySelector(`#tabrow .tab-btn[data-tab="${tapDuringBoot}"]`);
+        if (!btn) return;
+        clearInterval(tap);
+        window.__tappedAt = Date.now();
+        btn.click();
+        // What the reader was actually looking at in that moment, kept so a
+        // test can check the loading window itself and not only its outcome.
+        const view = document.getElementById(
+          (typeof TAB_VIEW_ID !== 'undefined' && TAB_VIEW_ID[tapDuringBoot]) || 'list');
+        window.__atTap = {
+          ready: typeof DATA_READY === 'undefined' ? null : DATA_READY,
+          players: typeof PLAYERS === 'undefined' ? null : PLAYERS.length,
+          notice: !!document.getElementById('bootNotice'),
+          placeholder: !!(view && view.querySelector('.boot-placeholder')),
+          text: view ? view.textContent.replace(/\s+/g, ' ').trim() : null,
+        };
+      }, 10);
+    }
   }, {
     // `options.record` loads a different record than the seeded fixture -- what
     // the live beta actually holds, for instance, which is how a divergence
@@ -157,13 +195,19 @@ async function open(options = {}) {
       };
     })(),
     failReads: !!options.failReads,
+    readLatency: options.readLatency || 0,
+    tapDuringBoot: options.tapDuringBoot || null,
   });
 
   await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'domcontentloaded' });
+  // DATA_READY, not V3_STATE: the record arriving and the app being ready to
+  // draw are two different moments, and start-up now finishes by drawing
+  // whichever screen is active. Waiting on the earlier one meant waiting a
+  // fixed 400ms and hoping.
   await page.waitForFunction(
-    () => typeof V3_STATE !== 'undefined' && (V3_STATE.loaded || V3_STATE.error),
+    () => typeof DATA_READY !== 'undefined' && DATA_READY,
     null, { timeout: 20000 });
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(200);
 
   // The first-run player chooser is modal and covers the app. It is a real
   // feature, not a bug; it just has nothing to do with what is under test.

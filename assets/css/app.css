@@ -2018,3 +2018,29 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .merit-drill-meta{
   font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); margin-top: 3px;
 }
+
+/* ===================== WAITING FOR THE RECORD =====================
+   Shown only between the app opening and the record arriving. Before this
+   existed the app showed its own empty chrome for as long as that took, which
+   on a phone was several seconds of a screen that looked finished and wrong:
+   no players, no games, no table. Saying "loading" is not a flourish -- it is
+   the difference between a slow app and a broken one. */
+/* Above the bottom navigation, not below the header: the header is where the
+   app says which screen you are on, and covering it to say "loading" hides the
+   one thing already on screen that was true. */
+.boot-notice{
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 76px; z-index: 9000;
+  padding: 7px 16px; border-radius: 999px;
+  font-size: 12px; letter-spacing: .02em; white-space: nowrap;
+  color: var(--text-dim); background: var(--card, #15171c);
+  border: 1px solid var(--line, rgba(255,255,255,.10));
+  box-shadow: 0 6px 20px rgba(0,0,0,.45);
+}
+/* Deliberately not a spinner over the whole app. Navigation stays usable
+   while the record is on its way, and whichever screen is chosen in that
+   window is the one drawn the moment it arrives. */
+.boot-placeholder{
+  padding: 28px 4px; text-align: center;
+  color: var(--text-dim); font-size: 13px;
+}

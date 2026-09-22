@@ -105,6 +105,19 @@ async function fsSet(key, value){
   await db.collection(FS_COLLECTION).doc(key).set({ value, updatedAt: Date.now() });
 }
 
+// Read one stored document and parse it, falling back to `fallback` if it is
+// missing or unreadable. Every caller did exactly this; having it once is what
+// makes the reads safe to fire concurrently -- a rejected promise inside a
+// Promise.all would otherwise take the whole of start-up down with it, where
+// the sequential version quietly logged and carried on.
+async function fsGetJson(key, fallback, label){
+  try {
+    const v = await fsGet(key);
+    if(v) return JSON.parse(v);
+  } catch(e){ console.error('load ' + (label || key) + ' failed', e); }
+  return fallback;
+}
+
 const STORAGE_KEY_MATCHES = 'moneypadel_extra_matches';   // pending + approved submissions
 const STORAGE_KEY_TAGS = 'moneypadel_player_tags';
 const STORAGE_KEY_EDITS = 'moneypadel_match_edits';        // id -> override fields
@@ -262,15 +275,17 @@ function computeNorthSouthTable(){
   return table;
 }
 
+// Four independent documents. Read together rather than one after another:
+// none of them is an input to any of the others, so reading them in sequence
+// only ever bought four round trips where one would do. See init() for the
+// same argument applied to the whole of start-up.
 async function loadStoredData(){
-  let extraMatches = [];
-  let tagOverrides = {};
-  let matchEdits = {};
-  let deletedIds = [];
-  try { const v = await fsGet(STORAGE_KEY_MATCHES); if(v) extraMatches = JSON.parse(v); } catch(e){ console.error('load matches failed', e); }
-  try { const v = await fsGet(STORAGE_KEY_TAGS); if(v) tagOverrides = JSON.parse(v); } catch(e){ console.error('load tags failed', e); }
-  try { const v = await fsGet(STORAGE_KEY_EDITS); if(v) matchEdits = JSON.parse(v); } catch(e){ console.error('load edits failed', e); }
-  try { const v = await fsGet(STORAGE_KEY_DELETED); if(v) deletedIds = JSON.parse(v); } catch(e){ console.error('load deleted ids failed', e); }
+  const [extraMatches, tagOverrides, matchEdits, deletedIds] = await Promise.all([
+    fsGetJson(STORAGE_KEY_MATCHES, [], 'matches'),
+    fsGetJson(STORAGE_KEY_TAGS, {}, 'tags'),
+    fsGetJson(STORAGE_KEY_EDITS, {}, 'edits'),
+    fsGetJson(STORAGE_KEY_DELETED, [], 'deleted ids'),
+  ]);
   return {extraMatches, tagOverrides, matchEdits, deletedIds};
 }
 
@@ -994,16 +1009,19 @@ function displayNameFor(playerId){
 async function loadV3State(){
   if(!db){ V3_STATE = {loaded:false, error:'No database connection.', players:{}}; }
   else {
-    const backend = RatingStore.firestoreCompatBackend(db);
-    V3_STATE = await V3Bridge.load(backend);
+    // All three collections are asked for at once. v3Bridge still awaits them
+    // in order -- see RatingStore.prefetchedBackend for why that is now free.
+    const backend = RatingStore.prefetchedBackend(
+      RatingStore.firestoreCompatBackend(db), ['players', 'matches', 'ratingJourney']);
+    V3_STATE = await PerfTrace.timeAsync('read players', V3Bridge.load(backend));
     if(V3_STATE.loaded){
       try {
         const rawMatches = {};
         const rawJourney = {};
-        V3_MATCHES = await V3Bridge.loadMatches(backend, rawMatches, V3_STATE.alias);
+        V3_MATCHES = await PerfTrace.timeAsync('read matches', V3Bridge.loadMatches(backend, rawMatches, V3_STATE.alias));
         // Loaded at start-up rather than lazily because the app opens on a
         // monthly view, so a lazy read would fire immediately anyway.
-        V3_JOURNEY = await V3Bridge.loadJourney(backend, rawJourney, V3_STATE.alias);
+        V3_JOURNEY = await PerfTrace.timeAsync('read ratingJourney', V3Bridge.loadJourney(backend, rawJourney, V3_STATE.alias));
         // Tiers come from v3 state, NOT from TIER_MAP. TIER_MAP is still {} at
         // this point -- rebuildMapsFromState() has not run yet -- and an empty
         // map made tierAsOf() answer `undefined` for every player who was not
@@ -1013,7 +1031,7 @@ async function loadV3State(){
         // quietly, but the right source was always v3's own tiers.
         // What the engine did in each match, so no screen has to re-derive an
         // expectation, a pre-match rating or a rating change from today's state.
-        V3_MATCH_FACTS = MatchFacts.index(V3_JOURNEY);
+        V3_MATCH_FACTS = PerfTrace.time('MatchFacts.index', ()=> MatchFacts.index(V3_JOURNEY));
         // Tier changes come from the RECORD, not from the seed's frozen list.
         // With the list, the first real promotion the club records makes the
         // current tier disagree with the history and the consistency guard
@@ -1027,7 +1045,7 @@ async function loadV3State(){
           changes: TierHistory.changesFromJourney(V3_JOURNEY),
         });
         V3_TIER_AS_OF = V3_TIER_HISTORY.tierAsOf;
-        MONTHLY_VIEWS = MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF });
+        MONTHLY_VIEWS = PerfTrace.time('MonthlyViews.build', ()=> MonthlyViews.build(V3_JOURNEY, { tierAsOf: V3_TIER_AS_OF }));
         // The record in its stored form, which is what a replay is verified
         // against. Assembled from documents already read; it costs nothing.
         // The record in its STORED form -- ids, not labels. Everything above
@@ -1066,6 +1084,10 @@ function renderV3StatusBanner(){
 }
 
 function recomputeAll(){
+  return PerfTrace.time('recomputeAll', recomputeAllNow);
+}
+
+function recomputeAllNow(){
   rebuildMapsFromState();
   ALL_MATCHES = getEffectiveMatches();
 
@@ -1707,19 +1729,158 @@ document.querySelectorAll('#tabrow .tab-btn').forEach(b=>{
 // staged decision and each saved setting, and resetting there would slam a
 // section shut the moment it was opened.
 let lastRenderedTab = null;
+
+// ===================== WAITING FOR THE RECORD =====================
+// False until init() has the whole record. Nothing may draw a screen before
+// then.
+//
+// This is the difference between a slow screen and a permanently empty one.
+// Every renderer below reads PLAYERS, ALL_MATCHES and the v3 state; run before
+// those exist, they produce an empty screen and nothing ever runs them again,
+// because start-up's last act redraws only the rankings list. A reader who
+// tapped Players, League, Call-Outs or Head-to-Head during the second or two
+// the record takes to arrive got a screen that stayed blank until they
+// navigated away and came back. Measured, reproduced, and the reason this flag
+// exists: a screen is either drawn from the record or it says it is waiting
+// for it, and start-up draws whichever screen is in front of the reader the
+// moment the record lands.
+let DATA_READY = false;
+
+// Start-up has two halves, and they no longer finish in a predictable order.
+//
+// The record used to take fourteen round trips, so shell.js -- parsed straight
+// after app.js, and building the navigation shell, the Home dashboard and the
+// wrapped render() on DOMContentLoaded -- was always ready long first, and
+// init() could simply draw at the end of itself. Reading everything at once
+// removed that accident: against a fast database init() can now reach its last
+// line before shell.js has been parsed at all, and the screen it wants to draw
+// is built in there.
+//
+// So neither half draws the first screen. Whichever of them finishes second
+// does, exactly once.
+let SHELL_READY = false;
+let firstScreenDrawn = false;
+
+function drawFirstScreen(){
+  if(firstScreenDrawn || !DATA_READY || !SHELL_READY) return;
+  firstScreenDrawn = true;
+  clearBootNotice();
+  // render() draws #list, which serves Power Rating and Win/Loss and nothing
+  // else -- and it also triggers the shell's one-time first-render set-up (the
+  // podium, the viewer, the Home dashboard) that the rest of the app assumes
+  // has happened. So it always runs.
+  PerfTrace.time('render #list', render);
+  // And then whatever screen is actually in front of the reader. Start-up used
+  // to end at the line above, so anyone who tapped Players, League, Call-Outs
+  // or Head-to-Head while the record was still arriving got that screen drawn
+  // once, from nothing, and never drawn again: blank until they navigated away
+  // and back. See renderActiveTab, which now declines to draw a screen at all
+  // before there is anything to draw it from.
+  if(activeTab !== 'power' && activeTab !== 'wl') renderActiveTab();
+  renderHomeDashboard(); // no-ops until the dashboard exists
+  PerfTrace.mark('screen drawn');
+  if(PerfTrace.enabled) PerfTrace.report();
+}
+
+// Which element each tab owns. Only used while waiting -- the renderers
+// themselves know their own containers.
+const TAB_VIEW_ID = {
+  power: 'list', wl: 'list', summary: 'summaryView', players: 'playersView',
+  games: 'gamesView', h2h: 'h2hView', callouts: 'calloutsView',
+  wishlist: 'wishlistView', upcoming: 'upcomingView', manage: 'manageView',
+  findgame: 'findGameView',
+};
+
+function bootNoticeEl(){ return document.getElementById('bootNotice'); }
+
+function showBootNotice(){
+  if(bootNoticeEl() || !document.body) return;
+  const el = document.createElement('div');
+  el.id = 'bootNotice';
+  el.className = 'boot-notice';
+  el.textContent = 'Loading the club record…';
+  document.body.appendChild(el);
+  showBootPlaceholder();
+}
+
+function clearBootNotice(){
+  const el = bootNoticeEl();
+  if(el) el.remove();
+  // Any screen the reader landed on while waiting is about to be drawn
+  // properly; a screen they merely passed through would otherwise keep the
+  // placeholder until something redrew it.
+  document.querySelectorAll('.boot-placeholder').forEach(x => x.remove());
+}
+
+// A deliberately non-blocking wait. The reader may still choose a screen
+// while the record is arriving -- that choice is honoured, and that screen is
+// the one drawn when it lands.
+function showBootPlaceholder(){
+  const id = TAB_VIEW_ID[activeTab];
+  const box = id && document.getElementById(id);
+  // Only where the screen would otherwise be empty. Find a Game and Manage
+  // carry markup written into index.html, and replacing it would destroy the
+  // form the reader is looking at.
+  if(!box || box.firstElementChild) return;
+  const ph = document.createElement('div');
+  ph.className = 'boot-placeholder';
+  ph.textContent = 'Loading…';
+  box.appendChild(ph);
+}
+
 function renderActiveTab(){
+  // Before the record exists there is nothing to draw and no honest way to
+  // draw it. Start-up calls this again the moment there is.
+  if(!DATA_READY){ showBootPlaceholder(); return; }
   if(activeTab === 'manage' && lastRenderedTab !== 'manage') resetAdminSections();
   lastRenderedTab = activeTab;
-  if(activeTab === 'callouts') renderCallouts();
-  else if(activeTab === 'players') renderPlayersTab();
-  else if(activeTab === 'findgame') renderFindGame();
-  else if(activeTab === 'manage') renderManage();
-  else if(activeTab === 'games') renderGamesTab();
-  else if(activeTab === 'h2h') renderH2H();
-  else if(activeTab === 'wishlist') renderWishlist();
-  else if(activeTab === 'upcoming') renderUpcoming();
-  else if(activeTab === 'summary') renderSummary();
-  else render();
+  PerfTrace.time('draw ' + activeTab, ()=>{
+    if(activeTab === 'callouts') renderCallouts();
+    else if(activeTab === 'players') renderPlayersTab();
+    else if(activeTab === 'findgame') renderFindGame();
+    else if(activeTab === 'manage') renderManage();
+    else if(activeTab === 'games') renderGamesTab();
+    else if(activeTab === 'h2h') renderH2H();
+    else if(activeTab === 'wishlist') renderWishlist();
+    else if(activeTab === 'upcoming') renderUpcoming();
+    else if(activeTab === 'summary') renderSummary();
+    else render();
+  });
+}
+
+// ===================== ONE MUTATION, ONE REFRESH =====================
+// Everything that changes the record ends here.
+//
+// It used to end wherever the author of that particular button happened to
+// stop: approving a game redrew the Games tab, a tier override redrew the
+// admin list, submitting a result redrew nothing at all. Derived state was
+// rebuilt correctly every time -- `recomputeAll()` was never the problem --
+// but the screen in front of the reader was only redrawn if the mutation
+// happened to live on it. Removing one rated match from the record moved four
+// players' ratings and changed nothing visible on the League Table, the Merit
+// Table, the Players Directory, Call-Outs, Head-to-Head or the Wishlist. They
+// stayed wrong until the reader navigated away and back, which is exactly the
+// kind of wrongness nobody reports as a bug because it looks like a number
+// they misread.
+//
+// So the rule is now one line long: if the record changed, the screen in front
+// of the reader is redrawn from it.
+//
+// `redraw` names the exception rather than allowing one. Two controls are
+// operated in a rapid sequence -- the tier and starting-tier dropdowns in the
+// admin player list -- and redrawing the whole of Admin under the reader's
+// finger would take the focus off the select they are still using. They pass
+// the narrower redraw they want. Nothing may pass "none": a mutation that
+// redraws nothing is the defect this function exists to make impossible.
+function dataChanged(opts){
+  recomputeAll();
+  // Built from the journey, which a correction, an approval or an adjustment
+  // all rewrite. Keyed by date, so a stale one survives until the same date is
+  // reviewed again -- it was cleared by the review commit alone, and by
+  // nothing else that changes what it was built from.
+  reviewSnapshotCache = null;
+  ((opts && opts.redraw) || renderActiveTab)();
+  renderHomeDashboard(); // no-ops until the Home dashboard exists
 }
 
 document.querySelectorAll('#sortbar .sortbtn').forEach(b=>{
@@ -1833,6 +1994,11 @@ function sortRows(rows){
 }
 
 function render(){
+  // A sort button, a min-games preset or the search box can all be pressed
+  // while the record is still arriving. Drawing an empty rankings list and an
+  // "empty" message in answer is worse than saying nothing: it reads as a
+  // finished screen with no players in the club.
+  if(!DATA_READY){ showBootPlaceholder(); return; }
   const monthRatingBtn = document.getElementById('sortMonthRatingBtn');
   if(monthRatingBtn){
     const showIt = selectedMonth !== 'all';
@@ -4096,14 +4262,15 @@ async function histCommit(){
     const summary = histPlan.summary;
     histReset();
     await loadV3State();
-    recomputeAll();
     histMessage = 'Recorded and replayed. ' + summary;
   } catch(e){
     histMessage = 'Write failed: ' + e.message;
   }
   histBusy = false;
-  render();
-  renderManage();
+  // Admin is the screen this was done from, so redrawing the active screen
+  // shows the outcome message; everything derived from the record this has
+  // just rewritten is rebuilt with it.
+  dataChanged();
 }
 
 function buildHistoricalAdjustmentHtml(){
@@ -4929,13 +5096,11 @@ async function commitReviewDecision(){
     // Re-read rather than patch local state: the screen must show what is
     // actually stored, not what it believes it just stored.
     await loadV3State();
-    recomputeAll();
     reviewMessage = 'Recorded. ' + list.map(p=>p.summary).join(' ');
   } catch(e){
     reviewMessage = e.message;
   }
-  render();
-  renderManage();
+  dataChanged();
 }
 
 // Which admin sections are open right now. Deliberately NOT persisted: Shaun's
@@ -5449,8 +5614,6 @@ async function submitNewGame(){
   const ok = await saveExtraMatches(extraMatchesState);
   if(!ok){ msg.textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage. Open the actual published/shared claude.ai link, not a downloaded file.`;; extraMatchesState.pop(); return; }
 
-  recomputeAll();
-
   let linkedNote = '';
   if(linkedRequestId){
     gameRequestsState = gameRequestsState.filter(r=>r.id!==linkedRequestId);
@@ -5459,18 +5622,19 @@ async function submitNewGame(){
     linkedRequestId = null;
   }
 
-  msg.textContent = isDraw
+  const confirmation = isDraw
     ? `Submitted as a draw. ${winners.join(' & ')} vs ${losers.join(' & ')} — waiting for approval, won't affect any rating.${linkedNote}`
     : `Submitted. ${winners.join(' & ')} def ${losers.join(' & ')} — waiting for approval in the Games tab.${linkedNote}`;
-  document.getElementById('agA1').value=''; document.getElementById('agA2').value='';
-  document.getElementById('agB1').value=''; document.getElementById('agB2').value='';
-  document.querySelectorAll('#agOutcomeToggle .fg-toggle-btn').forEach(x=>x.classList.toggle('active', x.dataset.outcome==='decisive'));
-  document.getElementById('agTeamALabel').textContent = 'Team A (winners)';
-  document.getElementById('agTeamBLabel').textContent = 'Team B (losers)';
-  document.getElementById('agSetsLabel').textContent = 'Set scores (Team A – Team B)';
+
+  // The form is part of the Games screen, so redrawing that screen empties it
+  // -- which is what the six lines of by-hand field clearing here used to be
+  // for. The set rows are module state and have to be reset BEFORE the redraw
+  // rather than after it, or the screen is rebuilt around the old ones.
   addGameSets = [{w:'',l:''},{w:'',l:''}];
-  renderAddGameSets();
-  document.getElementById('agNewPlayerRow').style.display='none';
+  dataChanged();
+  // Into the freshly drawn screen, not the one that has just been replaced.
+  const freshMsg = document.getElementById('agMessage');
+  if(freshMsg) freshMsg.textContent = confirmation;
 }
 
 // Which player rows are expanded. Like the admin sections, this is not
@@ -5527,9 +5691,7 @@ async function commitRename(displayName){
     // Re-read so every screen picks up the new label from the record rather
     // than from an assumption about what was just written.
     await loadV3State();
-    recomputeAll();
-    renderPlayerTagsList();
-    renderManage();
+    dataChanged();
   } catch(e){
     renameOk = false;
     renameMessage = 'Could not rename: ' + (e && e.message ? e.message : String(e));
@@ -5634,8 +5796,7 @@ function renderPlayerTagsList(){
       const name = e.target.dataset.name;
       tagOverridesState[name] = {...(tagOverridesState[name]||{}), tier: e.target.value};
       await saveTagOverrides(tagOverridesState);
-      recomputeAll();
-      renderPlayerTagsList();
+      dataChanged({ redraw: renderPlayerTagsList });
     });
   });
   box.querySelectorAll('.ptag-starting').forEach(sel=>{
@@ -5646,8 +5807,7 @@ function renderPlayerTagsList(){
       if(val) cur.startingTier = val; else delete cur.startingTier;
       tagOverridesState[name] = cur;
       await saveTagOverrides(tagOverridesState);
-      recomputeAll();
-      renderPlayerTagsList();
+      dataChanged({ redraw: renderPlayerTagsList });
     });
   });
   box.querySelectorAll('.ptag-active').forEach(btn=>{
@@ -5658,8 +5818,7 @@ function renderPlayerTagsList(){
       tagOverridesState[name] = {...(tagOverridesState[name]||{}), active: newActive};
       const ok = await saveTagOverrides(tagOverridesState);
       if(!ok) return;
-      recomputeAll();
-      renderPlayerTagsList();
+      dataChanged({ redraw: renderPlayerTagsList });
     });
   });
 }
@@ -5802,8 +5961,8 @@ async function commitMatchCorrection(){
     editingMatchId = null;
     armedDeleteId = null;
     await loadV3State();
-    recomputeAll();
     matchFixMessage = (isRemoval ? 'Removed and replayed. ' : 'Corrected and replayed. ') + what;
+    dataChanged();
     showMatchFixOutcome(matchFixMessage, false);
   } catch(e){
     matchFixMessage = (isRemoval ? 'Removal failed: ' : 'Write failed: ') + e.message;
@@ -6864,7 +7023,7 @@ function renderSummaryLeagueTable(){
   </div>`;
 
   if(isLastTen){
-    const rows = LastTen.build(leagueAppearances()).filter(r => r.games > 0);
+    const rows = PerfTrace.time('LastTen.build', ()=> LastTen.build(leagueAppearances())).filter(r => r.games > 0);
     if(rows.length === 0) html += `<div class="section-sub">No rated games in the record yet.</div>`;
     else html += buildLastTenTableHtml(rows);
   } else if(leagueGrouped){
@@ -7063,8 +7222,15 @@ function renderMeritTable(){
   // holding only what they earned in each.
   const tierAt = (n, d) => historicalTierOf(n, d);
 
+  // Kept so the tier-heading handlers below can ask how many rows a section
+  // holds without building the whole table again to count them.
+  let meritRowsByTier = null;
+
   if(leagueGrouped){
-    const { table, unresolved } = MeritTable.build(matches, tierAt, { tierForRow: tierAt });
+    const { table, unresolved } = PerfTrace.time('MeritTable.build',
+      ()=> MeritTable.build(matches, tierAt, { tierForRow: tierAt }));
+    meritRowsByTier = {};
+    table.forEach(r => { if(r.played > 0) meritRowsByTier[r.tier] = (meritRowsByTier[r.tier] || 0) + 1; });
     let anyShown = false;
     TIER_ORDER_LIST.forEach(tier=>{
       const rows = table.filter(r => r.tier === tier && r.played > 0);
@@ -7077,7 +7243,7 @@ function renderMeritTable(){
     if(!anyShown) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
     if(unresolved.length) html += `<div class="section-sub">${unresolved.length} match${unresolved.length===1?'':'es'} could not be scored: a player's tier on that date is unknown.</div>`;
   } else {
-    const { table, unresolved } = MeritTable.build(matches, tierAt);
+    const { table, unresolved } = PerfTrace.time('MeritTable.build', ()=> MeritTable.build(matches, tierAt));
     const rows = table.filter(r => r.played > 0);
     if(rows.length === 0) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
     else html += buildMeritTableHtml(rows, false);
@@ -7094,8 +7260,7 @@ function renderMeritTable(){
   content.querySelectorAll('.lg-tier-head').forEach(btn=>{
     btn.onclick = ()=>{
       const t = btn.dataset.tier;
-      const rowsHere = (MeritTable.build(matches, tierAt, { tierForRow: tierAt }).table
-        .filter(x => x.tier === t && x.played > 0)).length;
+      const rowsHere = (meritRowsByTier && meritRowsByTier[t]) || 0;
       meritTierOpen[t] = !tierSectionOpen(meritTierOpen, t, rowsHere);
       renderMeritTable();
     };
@@ -7867,13 +8032,12 @@ async function commitApproval(){
     await saveExtraMatches(extraMatchesState);
     approvalPlan = null;
     await loadV3State();
-    recomputeAll();
     approvalMessage = `Rated as ${a.matchId}. ${a.planned.playersMoved.map(p=>`${p.playerId} ${p.delta>0?'+':''}${p.delta}`).join(', ')}.`;
   } catch(e){
     approvalMessage = 'Nothing was rated: ' + e.message;
   }
-  render();
-  renderGamesTab();
+  // After the message is composed, so the screen is drawn holding it.
+  dataChanged();
 }
 
 function buildApprovalConfirmHtml(){
@@ -7897,8 +8061,7 @@ async function rejectMatch(id){
   extraMatchesState = extraMatchesState.filter(x=>x.id!==id);
   const ok = await saveExtraMatches(extraMatchesState);
   if(!ok){ document.getElementById('gamesMessage').textContent = storageAvailable() ? `Save failed (${lastStorageError || 'unknown error'}) — try again.` : `Save failed — this page can't reach shared storage. Open the actual published/shared claude.ai link, not a downloaded file.`;; return; }
-  recomputeAll();
-  renderGamesTab();
+  dataChanged();
 }
 
 // Deleting a PENDING submission is real: it is not in the record, so removing
@@ -7920,8 +8083,7 @@ async function deleteMatch(id){
   extraMatchesState = extraMatchesState.filter(x=>x.id!==id);
   await saveExtraMatches(extraMatchesState);
   armedDeleteId = null;
-  recomputeAll();
-  if(document.getElementById('gamesView')) renderGamesTab();
+  dataChanged();
 }
 
 function findMatchById(id){
@@ -8065,30 +8227,54 @@ function wireEditForm(id){
       return;
     }
     editingMatchId = null;
-    recomputeAll();
-    renderGamesTab();
+    dataChanged();
   };
 }
 
 
 async function init(){
-  // v3 state must be in place before the first recomputeAll, because the
-  // application has no rating without it and will not invent one.
-  await loadV3State();
-  const stored = await loadStoredData();
+  PerfTrace.mark('boot starts');
+  showBootNotice();
+  // Everything start-up needs, asked for at once.
+  //
+  // These fourteen reads -- three collections and eleven single documents --
+  // have no dependency on one another at all, and start-up used to await them
+  // one after another. Measured against the live record, that was 14 round
+  // trips in series: 1.9s on a fast connection, 3.8s at a phone's 250ms, of
+  // which 16ms was computation. Fired together they cost one round trip.
+  //
+  // v3 state still has to be in place before the first recomputeAll, because
+  // the application has no rating without it and will not invent one -- and it
+  // is, because nothing below runs until every one of these has landed.
+  const [ , stored, myName, ownerHash, boardHash, unlocked,
+          visibility, requests, areas, challenges, northSouth ] =
+    await PerfTrace.timeAsync('load the record', Promise.all([
+      loadV3State(),
+      loadStoredData(),
+      loadMyName(),
+      loadPasswordHash(STORAGE_KEY_ADMIN_PW_OWNER),
+      loadPasswordHash(STORAGE_KEY_ADMIN_PW_BOARD),
+      loadMyUnlocked(),
+      loadVisibility(),
+      loadGameRequests(),
+      loadDevAreas(),
+      loadChallenges(),
+      loadNorthSouthResults(),
+    ]));
   extraMatchesState = stored.extraMatches;
   tagOverridesState = stored.tagOverrides;
   matchEditsState = stored.matchEdits;
   deletedIdsState = stored.deletedIds;
-  currentUserName = await loadMyName();
-  ownerPasswordHash = await loadPasswordHash(STORAGE_KEY_ADMIN_PW_OWNER);
-  boardPasswordHash = await loadPasswordHash(STORAGE_KEY_ADMIN_PW_BOARD);
-  isUnlocked = await loadMyUnlocked();
-  visibilityState = await loadVisibility();
-  gameRequestsState = await loadGameRequests();
-  devAreasState = await loadDevAreas();
-  challengesState = await loadChallenges();
-  northSouthResultsState = await loadNorthSouthResults();
+  currentUserName = myName;
+  ownerPasswordHash = ownerHash;
+  boardPasswordHash = boardHash;
+  isUnlocked = unlocked;
+  visibilityState = visibility;
+  gameRequestsState = requests;
+  devAreasState = areas;
+  challengesState = challenges;
+  northSouthResultsState = northSouth;
+  PerfTrace.mark('record ready');
   // Power Rankings opens on the most recently completed month rather than
   // All Time. getAvailableMonths() only needs the raw match state loaded
   // above (not recomputeAll()'s derived PLAYERS/ratings), so this runs
@@ -8101,7 +8287,10 @@ async function init(){
   if(selectedMonth !== 'all') setMinGames(5);
   recomputeAll();
   applyTabVisibility();
-  render();
+
+  // From here on there is a record to draw, and every screen may draw itself.
+  DATA_READY = true;
+  drawFirstScreen();
 
   // After the screen exists, never before it. Whoever opens the app finds the
   // problem, so a half-written record is noticed the same day rather than
