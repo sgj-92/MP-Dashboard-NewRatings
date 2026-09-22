@@ -448,6 +448,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
 | A one-player tier section arrives collapsed | Shaun, 22 Sep 2026: *"Tier S should be collapsed by default as there's only one player there."* **Supersedes "tier sections default expanded on entry to By tier" (21 Sep) for one-player sections only**; populated sections are unchanged. Implemented as the reason rather than as the letter S, so a section that gains a second player opens on its own and any tier that thins to one folds without the rule being revisited. The heading always renders, so collapsed is one tap from open, and an explicit tap always beats the default. Applies to both the League and Merit tier sections. **DONE `1781ed5`.** |
+| Merit scoring refined to a 3-point baseline, draws worth nothing | Shaun, 22 Sep 2026, **after reviewing the working 4 / 1 / 0 implementation**. **Supersedes only the point values in the Merit row below; everything else in that decision stands.** An even matchup is now worth **3** — the same as a standard League win — so the two tables share a baseline and Merit differs from the League *only* because of fixture difficulty: easier wins score below League points, equal wins the same, harder wins above. A player who only ever played balanced fixtures would finish both tables level. `Merit win = 3 ± tier-step difference`, with a **floor of 0** so a win can never be negative. **Draws drop from 1 to 0**: the six in the record ended early through injury or time, not as competitive draws, and should not earn anything. Loss stays 0. |
 | Merit Table — an alternative league view scoring the difficulty of the win | Shaun, 22 Sep 2026. **Additional**, never replacing or altering the League Table. Scores how hard the partnership matchup was, from **tier at the time of the match only** — no Power Rating, expected performance, rating change or expectation engine. Tier levels `S > A > B > C`; a partnership's strength is the **sum of its two players' tier levels**, so `AC` and `BB` are equal and the highest-tier player alone never decides it. An even matchup is worth **4** for a win; each tier-step of difference takes one point off the favourite's win and adds one to the underdog's. Draw **1** each, loss **0**, integers only, **no cap** — if the history holds a more extreme matchup, apply the formula and report it. Merit Points are **not a rating**: they touch nothing in Power Rating, ratingJourney, reliability, reassessment, expected game share, tier or outcome, and are derived from canonical matches plus historical tiers rather than persisted as a second source of truth. |
 | Monthly Power Rankings must be chronologically coherent around a mid-month reassessment | Shaun, 21 Sep 2026. A monthly row must never combine a player's **post-change tier** with a **pre-change rating snapshot** merely because both fell inside the selected month. Before the effective date: old tier with the appropriate pre-change state. From the effective date onward: new tier with the post-reassessment state. General for every mid-month change — September's Rishi, Ant Slicer and Jams, and every future reassessment — never special-cased per player. The approved split-month League treatment is unchanged. **Do not alter Sequential-v1, reassessment mathematics or stored rating history to make a screen look right.** |
 | Monthly Summary is independently collapsible | Shaun, 21 Sep 2026. The whole `September 2026 — Monthly Summary` block gets its own subtle heading-and-chevron disclosure, **defaulting expanded**, collapsing Key Takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved Without Playing and Crossovers together. Independent of the Tier S/A/B/C League disclosures. Same lightweight treatment as the League refinement — **explicitly not another large bordered dropdown or card**, which Shaun rejected during that work. |
@@ -465,6 +466,65 @@ Tom/Fatch audit (`838ca66`), the Players Directory refresh (`43401f8`), the
 League refinement (`3e326e1`) and Shaun's disclosure correction to it
 (`11ed091`). **Nothing is queued for CCode.** The open product questions are in
 Section 8.
+
+---
+
+### Merit scoring refinement — ACTIVE (22 Sep 2026)
+
+**The 4 / 1 / 0 model was implemented, reviewed and works.** Having seen the
+two tables side by side, Shaun chose to align Merit with the standard League's
+3-point baseline. This refines the scoring rule of the feature already built —
+**it is not a second, competing definition**, and the UI is not to be
+redesigned.
+
+| | Was | Now |
+|---|---|---|
+| Even matchup, win | 4 | **3** |
+| Draw | 1 | **0** |
+| Loss | 0 | 0 |
+
+`Merit win points = 3 ± partnership tier-step difference`, with a **floor of 0**
+— a win must never produce negative Merit Points.
+
+| Tier-step difference | Favourite wins | Underdog wins |
+|---|---|---|
+| 0 (even) | **3** | **3** |
+| 1 | 2 | 4 |
+| 2 | 1 | 5 |
+| 3 | **0** | 6 |
+
+**Why.** A standard League win is 3, so an even Merit win is now 3 too. The two
+tables share a mathematical baseline and Merit departs from League points
+*only* because of fixture difficulty: easier wins score lower, equal wins the
+same, harder wins higher. Ten balanced wins give 30 in both tables. That makes
+the relationship between them explicable to a player in one sentence.
+
+**Draws now earn nothing.** The six in the record ended early through injury or
+time constraints rather than as competitive draws, so they should not
+contribute. Merit therefore measures *the value of matches actually won,
+adjusted for matchup difficulty.*
+
+Both members of the winning partnership continue to receive the same points.
+
+**Explicitly unchanged:** the Merit visual design, historical tier resolution,
+partnership-strength calculation, split-month tier treatment, month selection,
+tier sections, standard League scoring, Power Ratings, `ratingJourney`,
+expectation calculations and reassessment logic. Partnership strength continues
+to use each player's effective tier on the match date.
+
+**Copy** becomes: *"An even matchup is worth 3 points for a win. Beat a stronger
+pairing and you earn an extra point for each tier-step difference. Beat a weaker
+pairing and you earn one point less per tier-step. Merit Points cannot fall
+below 0 for a win. Draws and losses earn 0."*
+
+**Tests** to cover 3 / 2 / 4 / 1 / 5 / 0 / 6 across zero to three tier-steps,
+draw 0 and loss 0, retaining the existing regression cover for partnership
+ordering, historical tier changes, split-month reassessments, identical points
+for both winning partners, and standard League scoring being unaffected.
+**Re-run the calculation across the historical dataset and report anything
+unexpected.**
+
+**Baton → CCode. Approved refinement.**
 
 ---
 
@@ -1644,6 +1704,24 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CGPT — 22 Sep 2026 (Merit scoring refinement approved)
+
+The Merit Table implementation was reviewed and works. After seeing it beside
+the League Table, Shaun refined the scoring so the two share a baseline: an
+even matchup win moves **4 → 3**, matching a standard League win, and draws
+move **1 → 0** because the six in the record ended early through injury or time
+rather than as competitive draws. A win is floored at 0.
+
+**This supersedes only the point values.** It is a refinement of the feature
+already built, recorded against the original decision rather than as a second
+definition. The UI is not to be redesigned and the architecture — historical
+tier resolution, partnership strength, split-month treatment, tier sections —
+is unchanged.
+
+Re-run the historical audit after the change and report anything unexpected.
+
+**Baton → CCode. Approved refinement.**
 
 ### CCode — 22 Sep 2026 (one-player tier sections collapse by default)
 
