@@ -4,7 +4,7 @@ const Merit = require('../assets/js/meritTable.js');
 const TierHistory = require('../assets/js/tierHistory.js');
 
 // A fixed tier map, so these tests are about the scoring and nothing else.
-const TIERS = { Sam: 'S', Ana: 'A', Amy: 'A', Aly: 'A', Abe: 'A',
+const TIERS = { Sam: 'S', Sal: 'S', Ana: 'A', Amy: 'A', Aly: 'A', Abe: 'A',
   Ben: 'B', Bob: 'B', Bea: 'B', Cal: 'C', Cat: 'C' };
 const flat = (name) => TIERS[name] || null;
 
@@ -14,50 +14,67 @@ const pointsFor = (winners, losers, extra) => Merit.scoreMatch(match(winners, lo
 
 // ---- the table of values the brief specifies -------------------------------
 
-test('AA vs AA → 4', () => {
-  // Ana & Amy are both A; Ben and Bob stand in for the other A pair by tier.
-  assert.strictEqual(pointsFor(['Ana', 'Amy'], ['Aly', 'Abe']).Ana, 4);
+test('AA vs AA → 3', () => {
+  assert.strictEqual(pointsFor(['Ana', 'Amy'], ['Aly', 'Abe']).Ana, 3);
 });
 
-test('AB vs AB → 4', () => {
+test('AB vs AB → 3', () => {
   const p = pointsFor(['Ana', 'Ben'], ['Amy', 'Bob']);
-  assert.strictEqual(p.Ana, 4);
-  assert.strictEqual(p.Ben, 4, 'both teammates score alike');
+  assert.strictEqual(p.Ana, 3);
+  assert.strictEqual(p.Ben, 3, 'both teammates score alike');
   assert.strictEqual(p.Amy, 0);
 });
 
-test('AC vs BB → 4, because a pairing is a sum and not its best player', () => {
+test('AC vs BB → 3, because a pairing is a sum and not its best player', () => {
   const p = pointsFor(['Ana', 'Cal'], ['Ben', 'Bob']);
-  assert.strictEqual(p.Ana, 4, 'A+C equals B+B');
-  assert.strictEqual(p.Cal, 4);
+  assert.strictEqual(p.Ana, 3, 'A+C equals B+B');
+  assert.strictEqual(p.Cal, 3);
   assert.strictEqual(p.Ben, 0);
-  // The same fixture the other way round is also even.
-  assert.strictEqual(pointsFor(['Ben', 'Bob'], ['Ana', 'Cal']).Ben, 4);
+  assert.strictEqual(pointsFor(['Ben', 'Bob'], ['Ana', 'Cal']).Ben, 3, 'and the other way round');
 });
 
-test('one tier-step: AB beats BB → 3, BB beats AB → 5', () => {
-  assert.strictEqual(pointsFor(['Ana', 'Ben'], ['Bob', 'Bea']).Ana, 3);
-  assert.strictEqual(pointsFor(['Bob', 'Bea'], ['Ana', 'Ben']).Bob, 5);
+test('an even win is worth exactly a standard League win', () => {
+  // The point of the 3-point baseline: the two tables share it, and Merit
+  // departs from League points only because of fixture difficulty.
+  const LEAGUE_WIN = 3;
+  assert.strictEqual(Merit.BASELINE, LEAGUE_WIN);
+  assert.strictEqual(pointsFor(['Ana', 'Ben'], ['Amy', 'Bob']).Ana, LEAGUE_WIN);
 });
 
-test('two tier-steps: the favourite earns 2, the underdog 6', () => {
-  assert.strictEqual(pointsFor(['Ana', 'Amy'], ['Ben', 'Bob']).Ana, 2, 'AA beats BB');
-  assert.strictEqual(pointsFor(['Ben', 'Bob'], ['Ana', 'Amy']).Ben, 6, 'BB beats AA');
+test('one tier-step: AB beats BB → 2, BB beats AB → 4', () => {
+  assert.strictEqual(pointsFor(['Ana', 'Ben'], ['Bob', 'Bea']).Ana, 2);
+  assert.strictEqual(pointsFor(['Bob', 'Bea'], ['Ana', 'Ben']).Bob, 4);
 });
 
-test('three tier-steps: the favourite earns 1, the underdog 7', () => {
-  // SA (4+3=7) vs BC (2+1=3) is a four-step gap; SS vs AA is two. SA vs CC is
-  // four. A three-step gap: AA (6) vs BC (3).
-  assert.strictEqual(pointsFor(['Ana', 'Amy'], ['Ben', 'Cal']).Ana, 1, 'AA beats BC');
-  assert.strictEqual(pointsFor(['Ben', 'Cal'], ['Ana', 'Amy']).Ben, 7, 'BC beats AA');
+test('two tier-steps: AA beats BB → 1, BB beats AA → 5', () => {
+  assert.strictEqual(pointsFor(['Ana', 'Amy'], ['Ben', 'Bob']).Ana, 1);
+  assert.strictEqual(pointsFor(['Ben', 'Bob'], ['Ana', 'Amy']).Ben, 5);
 });
 
-test('a draw is one point each, whatever the matchup', () => {
+test('three tier-steps: AA beats BC → 0, BC beats AA → 6', () => {
+  assert.strictEqual(pointsFor(['Ana', 'Amy'], ['Ben', 'Cal']).Ana, 0,
+    'beating a much weaker pairing can be worth nothing');
+  assert.strictEqual(pointsFor(['Ben', 'Cal'], ['Ana', 'Amy']).Ben, 6);
+});
+
+test('a win is floored at nothing and never goes negative', () => {
+  // Four steps: SS (8) over CC (2) is six steps; SA (7) over BB (4) is three.
+  // SS over BB is four.
+  const fourStep = pointsFor(['Sam', 'Sal'], ['Ben', 'Bob']);
+  assert.strictEqual(fourStep.Sam, 0, 'a four-step favourite win is 0, not -1');
+  const sixStep = pointsFor(['Sam', 'Sal'], ['Cal', 'Cat']);
+  assert.strictEqual(sixStep.Sam, 0, 'and a six-step one is still 0, not -3');
+  assert.strictEqual(Merit.MIN_WIN_POINTS, 0);
+  // The underdog side is deliberately NOT capped.
+  assert.strictEqual(pointsFor(['Cal', 'Cat'], ['Sam', 'Sal']).Cal, 9, 'six steps the other way is 3 + 6');
+});
+
+test('a draw is worth nothing, whatever the matchup', () => {
+  // These ended early through injury or time, not as competitive draws.
   const even = Merit.scoreMatch(match(['Ana', 'Amy'], ['Ben', 'Bob'], { isDraw: true }), flat);
-  assert.deepStrictEqual(even.points, { Ana: 1, Amy: 1, Ben: 1, Bob: 1 });
+  assert.deepStrictEqual(even.points, { Ana: 0, Amy: 0, Ben: 0, Bob: 0 });
   assert.strictEqual(even.steps, 2, 'even though this one was a two-step mismatch');
-  const level = Merit.scoreMatch(match(['Ana', 'Ben'], ['Amy', 'Bob'], { isDraw: true }), flat);
-  assert.deepStrictEqual(level.points, { Ana: 1, Ben: 1, Amy: 1, Bob: 1 });
+  assert.strictEqual(Merit.DRAW_POINTS, 0);
 });
 
 test('a loss is worth nothing', () => {
@@ -90,14 +107,15 @@ test('reversing the sides or the players changes nothing', () => {
   const otherWay = pointsFor(['Bob', 'Cal'], ['Ana', 'Ben']);
   assert.strictEqual(base.Ana + otherWay.Bob, Merit.BASELINE * 2,
     'favourite win and underdog win are symmetric about the baseline');
+  assert.strictEqual(Merit.BASELINE, 3, 'and the baseline is a standard League win');
 });
 
 test('it is the sum of the pairing, never its best player', () => {
   // Both sides contain an A, but the sums differ by one step.
   const p = pointsFor(['Ana', 'Ben'], ['Amy', 'Cal']);
-  assert.strictEqual(p.Ana, 3, 'AB over AC is a one-step favourite win');
+  assert.strictEqual(p.Ana, 2, 'AB over AC is a one-step favourite win');
   // Both sides contain a C, and the sums are equal.
-  assert.strictEqual(pointsFor(['Ana', 'Cal'], ['Ben', 'Bob']).Ana, 4);
+  assert.strictEqual(pointsFor(['Ana', 'Cal'], ['Ben', 'Bob']).Ana, 3);
 });
 
 test('an unknown tier is reported rather than guessed', () => {
@@ -133,14 +151,14 @@ test('a match uses the tier the player held on the day, not today\'s', () => {
   const before = Merit.scoreMatch(
     { id: 'a', date: '2026-09-13', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false }, tierAt);
   assert.strictEqual(before.winnerTiers[0], 'B');
-  assert.strictEqual(before.points.Rishi, 6, 'BB over AA is worth 6');
+  assert.strictEqual(before.points.Rishi, 5, 'BB over AA is worth 5');
 
   // The same fixture after the change is AB over AA — one step, favourite the
   // other way, so an underdog win worth 5.
   const after = Merit.scoreMatch(
     { id: 'b', date: '2026-09-21', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false }, tierAt);
   assert.strictEqual(after.winnerTiers[0], 'A');
-  assert.strictEqual(after.points.Rishi, 5, 'AB over AA is worth 5');
+  assert.strictEqual(after.points.Rishi, 4, 'AB over AA is worth 4');
 });
 
 test('a reassessment changes Merit only from its effective date', () => {
@@ -156,21 +174,21 @@ test('a reassessment changes Merit only from its effective date', () => {
 test('a mid-month mover appears in both tier sections, holding only what each earned', () => {
   const tierAt = history().tierAsOf;
   const matches = [
-    { id: '1', date: '2026-09-13', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false }, // as a B: 6
-    { id: '2', date: '2026-09-21', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false }, // as an A: 5
+    { id: '1', date: '2026-09-13', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false }, // as a B: 5
+    { id: '2', date: '2026-09-21', winners: ['Rishi', 'Ben'], losers: ['Ana', 'Amy'], isDraw: false }, // as an A: 4
   ];
   const { table } = Merit.build(matches, tierAt, { tierForRow: tierAt });
   const rishiRows = table.filter((r) => r.playerId === 'Rishi');
   assert.strictEqual(rishiRows.length, 2, 'one row per tier occupied');
   const byTier = Object.fromEntries(rishiRows.map((r) => [r.tier, r]));
-  assert.strictEqual(byTier.B.merit, 6);
-  assert.strictEqual(byTier.A.merit, 5);
+  assert.strictEqual(byTier.B.merit, 5);
+  assert.strictEqual(byTier.A.merit, 4);
   assert.strictEqual(byTier.B.played, 1);
   assert.strictEqual(byTier.A.played, 1);
 
   // All together is one row for the whole period.
   const whole = Merit.build(matches, tierAt).table.find((r) => r.playerId === 'Rishi');
-  assert.strictEqual(whole.merit, 11, 'and the two segments sum to the whole');
+  assert.strictEqual(whole.merit, 9, 'and the two segments sum to the whole');
   assert.strictEqual(whole.played, 2);
 });
 
@@ -178,28 +196,30 @@ test('a mid-month mover appears in both tier sections, holding only what each ea
 
 test('a table totals merit and counts how it was earned', () => {
   const matches = [
-    { id: '1', date: '2026-09-01', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false }, // hard, 6
-    { id: '2', date: '2026-09-02', winners: ['Ben', 'Bob'], losers: ['Cal', 'Cat'], isDraw: false }, // easy, 2
-    { id: '3', date: '2026-09-03', winners: ['Ben', 'Bob'], losers: ['Ana', 'Cal'], isDraw: false }, // even, 4
-    { id: '4', date: '2026-09-04', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: true },  // draw, 1
+    { id: '1', date: '2026-09-01', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false }, // hard, 5
+    { id: '2', date: '2026-09-02', winners: ['Ben', 'Bob'], losers: ['Cal', 'Cat'], isDraw: false }, // easy, 1
+    { id: '3', date: '2026-09-03', winners: ['Ben', 'Bob'], losers: ['Ana', 'Cal'], isDraw: false }, // even, 3
+    { id: '4', date: '2026-09-04', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: true },  // draw, 0
   ];
   const row = Merit.build(matches, flat).table.find((r) => r.playerId === 'Ben');
-  assert.strictEqual(row.merit, 6 + 2 + 4 + 1);
+  assert.strictEqual(row.merit, 5 + 1 + 3 + 0);
   assert.strictEqual(row.played, 4);
   assert.strictEqual(row.wins, 3);
   assert.strictEqual(row.draws, 1);
   assert.deepStrictEqual([row.hardWins, row.evenWins, row.easyWins], [1, 1, 1]);
-  assert.strictEqual(row.bestWin, 6);
+  assert.strictEqual(row.bestWin, 5);
+  // A draw is still a game played, it just pays nothing.
+  assert.strictEqual(row.played, 4);
 });
 
 test('the table ranks on merit, then on how hard the wins were', () => {
   const matches = [
-    { id: '1', date: '2026-09-01', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false },  // Ben 6
-    { id: '2', date: '2026-09-02', winners: ['Cal', 'Cat'], losers: ['Ana', 'Ben'], isDraw: false },  // Cal 7
+    { id: '1', date: '2026-09-01', winners: ['Ben', 'Bob'], losers: ['Ana', 'Amy'], isDraw: false },  // Ben 5
+    { id: '2', date: '2026-09-02', winners: ['Cal', 'Cat'], losers: ['Ana', 'Ben'], isDraw: false },  // Cal 6
   ];
   const table = Merit.build(matches, flat).table;
-  assert.strictEqual(table[0].playerId, 'Cal', '7 outranks 6');
-  assert.strictEqual(table[0].merit, 7);
+  assert.strictEqual(table[0].playerId, 'Cal', '6 outranks 5');
+  assert.strictEqual(table[0].merit, 6);
 });
 
 test('the audit reports the shape of the history rather than clipping it', () => {
@@ -211,7 +231,7 @@ test('the audit reports the shape of the history rather than clipping it', () =>
   assert.strictEqual(a.decided, 2);
   assert.strictEqual(a.maxSteps, 3);
   assert.deepStrictEqual(a.stepHistogram, { 0: 1, 3: 1 });
-  assert.deepStrictEqual(a.extremes, [], 'nothing here falls outside 1..7');
+  assert.deepStrictEqual(a.extremes, [], 'nothing here falls outside 0..6');
 });
 
 test('nothing in this module reads a rating', () => {

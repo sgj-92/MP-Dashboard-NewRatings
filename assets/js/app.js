@@ -6996,7 +6996,7 @@ function renderMeritTable(){
   let html = `<div class="section-heading" style="margin-top:6px;">🥇 ${label} Merit Table</div>`;
   html += `<div class="section-sub" style="margin:2px 0 0;">Harder wins earn more.</div>`;
   html += leagueInlineFold('meritExplainerToggle', 'How points work', meritExplainerOpen,
-    `<div class="section-sub" style="margin:0;">An even matchup is worth 4 points for a win. Beat a stronger pairing and you earn an extra point for each tier-step difference. Beat a weaker pairing and you earn one point less per tier-step. Draws are worth 1 point. Losses are worth 0.</div>`);
+    `<div class="section-sub" style="margin:0;">An even matchup is worth 3 points for a win. Beat a stronger pairing and you earn an extra point for each tier-step difference. Beat a weaker pairing and you earn one point less per tier-step. Merit Points cannot fall below 0 for a win. Draws and losses earn 0.</div>`);
 
   html += `<div class="fg-toggle" style="margin:8px 0 14px;">
     <button class="fg-toggle-btn ${leagueGrouped?'active':''}" id="meritGroupedBtn">By tier</button>

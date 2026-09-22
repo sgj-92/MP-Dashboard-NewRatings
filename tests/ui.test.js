@@ -4578,8 +4578,11 @@ test('the Merit explanation is a quiet disclosure, closed by default', { skip },
           filled: !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) } };
     });
     assert.strictEqual(r.closed, true, 'closed by default');
-    assert.match(r.text, /An even matchup is worth 4 points for a win/);
-    assert.match(r.text, /Draws are worth 1 point. Losses are worth 0/);
+    assert.match(r.text, /An even matchup is worth 3 points for a win/,
+      'the baseline is a standard League win, and the copy says so');
+    assert.match(r.text, /cannot fall below 0 for a win/);
+    assert.match(r.text, /Draws and losses earn 0/);
+    assert.doesNotMatch(r.text, /worth 4 points|Draws are worth 1/, 'no trace of the superseded model');
     // Player-friendly: no implementation terminology on this copy.
     assert.doesNotMatch(r.text, /tier level|weight|sum of|Power Rating|expected/i);
     assert.match(r.weight.border, /^0px$/, 'a line, not a card');

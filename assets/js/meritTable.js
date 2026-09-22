@@ -35,10 +35,22 @@
   // this table to the engine it must stay clear of.
   const TIER_LEVEL = { S: 4, A: 3, B: 2, C: 1 };
 
-  // An even matchup is worth this for a win.
-  const BASELINE = 4;
-  const DRAW_POINTS = 1;
+  // An even matchup is worth this for a win -- the same as a standard League
+  // win, deliberately. The two tables then share a baseline and Merit departs
+  // from League points ONLY because of fixture difficulty: easier wins score
+  // lower, equal wins the same, harder wins higher. Ten balanced wins give 30
+  // in both tables, which is the whole relationship in one sentence.
+  const BASELINE = 3;
+
+  // Nothing for a draw. The six in the record ended early through injury or a
+  // time constraint rather than as competitive draws, so they are not results
+  // Merit should pay for. Merit measures the value of matches actually WON,
+  // adjusted for how hard they were.
+  const DRAW_POINTS = 0;
   const LOSS_POINTS = 0;
+
+  // A win can be worth nothing, but never less than nothing.
+  const MIN_WIN_POINTS = 0;
 
   const levelOf = (tier) => (Object.prototype.hasOwnProperty.call(TIER_LEVEL, tier) ? TIER_LEVEL[tier] : null);
 
@@ -58,18 +70,19 @@
 
   // Merit for the winning side of one match.
   //
-  //   even            -> 4
-  //   favourite wins  -> 4 - steps
-  //   underdog wins   -> 4 + steps
+  //   even            -> 3
+  //   favourite wins  -> 3 - steps, floored at 0
+  //   underdog wins   -> 3 + steps
   //
-  // Deliberately uncapped, per the approved brief: a run of extreme matchups in
-  // the history should be reported, not silently clamped into looking ordinary.
-  // Note that a large enough favourite gap drives a win to zero or below, which
-  // is a real answer -- see `audit()`.
+  // No ceiling, per the approved brief: an extreme matchup in the history
+  // should be reported rather than silently clamped into looking ordinary. The
+  // floor is different in kind -- beating a much weaker pairing can be worth
+  // nothing, but it cannot be worth less than losing.
   function winPoints(winnerStrength, loserStrength) {
     if (winnerStrength === null || loserStrength === null) return null;
     const steps = Math.abs(winnerStrength - loserStrength);
-    return winnerStrength > loserStrength ? BASELINE - steps : BASELINE + steps;
+    if (winnerStrength > loserStrength) return Math.max(MIN_WIN_POINTS, BASELINE - steps);
+    return BASELINE + steps;
   }
 
   // What one match is worth to everyone in it.
@@ -196,7 +209,9 @@
       steps[scored.steps] = (steps[scored.steps] || 0) + 1;
       if (scored.isDraw) { draws++; return; }
       decided++;
-      if (scored.winPoints < 1 || scored.winPoints > 7) {
+      // The brief's worked examples run 0..6; anything outside that is worth
+      // showing a human before release.
+      if (scored.winPoints < 0 || scored.winPoints > 6) {
         extremes.push({
           id: scored.id, date: scored.date, steps: scored.steps, winPoints: scored.winPoints,
           winners: m.winners, winnerTiers: scored.winnerTiers,
@@ -214,7 +229,7 @@
   }
 
   return {
-    TIER_LEVEL, BASELINE, DRAW_POINTS, LOSS_POINTS,
+    TIER_LEVEL, BASELINE, DRAW_POINTS, LOSS_POINTS, MIN_WIN_POINTS,
     levelOf, strengthOf, winPoints, scoreMatch, build, audit,
   };
 });
