@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`2fdc169`** |
-| Tests | **457 / 457 passing** (105 of them drive a real browser) |
+| Last verified implementation commit | **`767e0d3`** |
+| Tests | **483 / 483 passing** (110 of them drive a real browser) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
 | Last import | production match-facts export, 18 Sep — 7 new matches, verified (`PRODUCTION_IMPORT.md`) |
@@ -194,6 +194,13 @@ sides → teams and ratings → rating-point edge → a one-line muted footer. T
 80/20 machinery and the phrase `Expected performance score` are gone from it.
 **Visual treatment deliberately unchanged**, per Shaun's same-day deferral.
 Captured in `docs/screenshots/19-admin-predict.png`.
+
+**Merit Table — DONE (`767e0d3`).** A second league view over the same matches,
+scoring how hard the partnership you beat was. Derived on demand from canonical
+matches plus the canonical historical-tier resolver; nothing persisted, nothing
+in the engine touched. Audit of the full history found a **maximum gap of 2
+tier-steps** and win values ranging **2–5**, so **no cap is needed**. Sits
+behind the existing View select. Full detail in Section 4.
 
 **Monthly rankings coherence — DONE (`2fdc169`). The persisted record was
 correct; both faults were in the display.** Rishi's Tier A beside `1464` was
@@ -460,7 +467,80 @@ Section 8.
 
 ---
 
-### Merit Table — ACTIVE (22 Sep 2026)
+### Merit Table — DELIVERED (`767e0d3`, 22 Sep 2026)
+
+**Implementation approach.** `assets/js/meritTable.js`, a pure module.
+Merit is **derived on demand** from canonical matches plus historical tiers and
+**never persisted** — there is no second source of truth to fall out of step.
+It is not a rating and is built so it cannot quietly become one: nothing in the
+module reads a Power Rating, an expectation, reliability, `ratingJourney` or
+even the engine's `TIER_SEED`, and a test greps the module source to keep it
+that way. Tier levels are `S4 A3 B2 C1` — only the *spacing* matters, since
+Merit counts tier-steps rather than rating distance, which is exactly why the
+engine's seeds were not reused.
+
+**Historical-tier resolver used.** `historicalTierOf(name, date)` →
+`V3_TIER_AS_OF` → `TierHistory.tierAsOf` — the same canonical resolver the
+League Table, the tier badge and the split-month treatment use. No second
+interpretation of tier history was created. The same resolver also decides
+which tier *section* a row belongs to, so a mid-month mover appears in both
+sections holding only what they earned in each, and the segments sum to the
+`All together` row (asserted by a browser test).
+
+**Where Merit sits in the Rankings UI** — reported rather than invented, as the
+brief asked. It is a third option in the existing **View** select, beside
+`League Table` and `Information`. That control already answers *"which table am
+I looking at"*, it costs no horizontal space, and a fourth segmented button
+would have crowded the 375px control the League refinement had just finished
+decluttering. Beneath it Merit reuses the League screen's own machinery: month
+selection, `By tier` / `All together`, independently collapsible tier sections,
+split-month allocation by match date, the same table presentation and mobile
+behaviour, and the same quiet inline `How points work` disclosure. The League
+segmented control is untouched at three buttons; Merit's is two.
+
+**Historical audit findings** (full rated history, live record):
+
+| | |
+|---|---|
+| Matches scored | **159** — 153 decided, 6 draws |
+| Unresolved tiers | **0** — every player's tier is known at every match date |
+| Tier-step gaps | **93 even · 60 one-step · 6 two-step** |
+| Maximum gap | **2 tier-steps** |
+| Win values occurring | **2 to 5** |
+| Outside the brief's 1–7 range | **none — so no cap is needed** |
+| Singles | **0** in the v3 record (all 159 are doubles) |
+| Underdog wins | 16, the best worth 5 |
+
+The six widest matchups, all 2 tier-steps: `Erf & Eli (AA)` beat
+`KC & Shaun (AC)`; `Osh & Eli (AA)` beat `PDM & Max (BB)`; `Len & Eli (AA)`
+beat `Rishi & PDM (BB)`; `Eli & Ant Slice (AA)` beat `Rishi & Max (BB)`;
+`Rocky & Tom (BB)` beat `Aubyn & Tee (CC)` — each worth **2** to the favourite;
+and `Max & Jams (BC)` v `Jords & Ant Slice (BA)`, a **draw**, worth 1 each
+whatever the gap. *Note for a future decision, not a blocker:* the module sums
+whatever players are on a side, so singles would score consistently if the club
+ever records one, but none exists today and the rule was written for
+partnerships.
+
+**Tests: 21 module + 5 browser.** Every value the brief specified —
+`AA v AA` 4, `AB v AB` 4, **`AC v BB` 4**, AB beats BB 3, BB beats AB 5, AA
+beats BB 2, BB beats AA 6, three-step 1 and 7, draw 1 each, loss 0, integers
+only — plus the invariants: teammates always score alike, reversing sides or
+player order changes nothing, strength is the sum and never the best player, an
+unknown tier is reported rather than guessed, a reassessment changes Merit only
+from its effective date, a mid-month mover's segments sum to the whole, and
+**standard League points are completely unchanged**. All five browser tests and
+all but one module test fail against the pre-change code. Rishi's row was also
+recomputed by hand from the live record (77 P, 41 W, 3 D, 33 L, **173 merit**,
+10 hard wins) and agrees with the module and the rendered table exactly.
+
+**Unchanged and asserted:** League scoring, All together, Last 10, Power
+Rankings, Monthly Performance, Power Rating. Screenshot `22-merit-table.png`.
+
+---
+
+### The brief as approved, kept
+
+#### Merit Table — the approved brief
 
 A new, additional league view. **It must not replace or alter the existing
 League Table.** It is another way of reading the same recorded matches, for the
@@ -1563,6 +1643,34 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 22 Sep 2026 (Merit Table delivered)
+
+`767e0d3`. **483 / 483 tests (110 browser).** Full detail in Section 4.
+
+**Derived, never persisted**, from canonical matches plus
+`historicalTierOf` → `V3_TIER_AS_OF` — the same canonical resolver the League
+Table and the tier badge use. No second interpretation of tier history exists.
+**Not a rating, and built so it cannot become one:** nothing in
+`meritTable.js` reads a Power Rating, expectation, reliability, `ratingJourney`
+or even `TIER_SEED`, and a test greps the module to hold that line.
+
+**Audit of the full rated history, as required before release.** 159 matches,
+0 unresolved tiers, gaps of 93 even / 60 one-step / 6 two-step, **maximum 2
+tier-steps**, win values **2–5**. **Nothing falls outside 1–7, so no cap is
+needed.** The six widest matchups are listed in Section 4. One thing worth
+knowing: the v3 record contains **no singles**, so the partnership rule never
+meets an odd case today; the module sums whatever is on a side, so a singles
+match would score consistently if one is ever recorded.
+
+**UI placement, proposed rather than imposed:** Merit is a third option in the
+existing **View** select. A fourth segmented button would have crowded the
+375px control the League refinement had just decluttered, and the View select
+already answers which table you are looking at. Everything beneath it is the
+League screen's own machinery, reused. If Shaun would rather it were a
+segmented button or its own tab, that is a one-line change.
+
+**Baton → Shaun / CGPT.**
 
 ### CGPT — 22 Sep 2026 (Merit Table approved)
 
@@ -4508,6 +4616,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `767e0d3` | Merit Table: an alternative league view scoring the difficulty of each win from historical tiers only (`meritTable.js`), derived on demand and never persisted; behind the existing View select, reusing the League screen's month, tier-split and collapse machinery |
 | `2fdc169` | Monthly rankings coherence: same-date event ordering taken from the engine's own rule, tier badge moved to `tierInScope()` so badge and rating describe one moment; Monthly Summary made independently collapsible and stripped of card chrome when collapsed |
 | `25e4624` | Editable player names: identity frozen as `playerId`, label carried by `displayName`, translation at two edges (`playerNames.js`); a replay now preserves player-document fields it does not own, which a rename had quietly broken |
 | `55d2fa7` | Predict a Matchup copy: predicted winner, expected game share both sides, rating-point edge and a muted footer, replacing `Expected performance score` and the 80/20 blend; visual treatment deferred |
@@ -4565,8 +4674,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `2fdc169`,
-**457 / 457 tests (105 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `767e0d3`,
+**483 / 483 tests (110 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -4574,7 +4683,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 4. **DONE (`11ed091`).** Disclosure correction: inline disclosure, independent per-tier collapses.
 5. **DONE (`55d2fa7`).** Predict a Matchup copy. Visual treatment deliberately unchanged.
 6. **DONE (`25e4624`).** Editable player names. Identity frozen, label free.
-7. **DONE (`2fdc169`).** Monthly rankings coherence and the Monthly Summary disclosure. **The persisted record was correct**; both faults were display-side and both general — same-date event ordering taken from the engine's own rule, and the tier badge moved to `tierInScope()` so it describes the same moment as the rating beside it.
+7. **DONE (`2fdc169`).** Monthly rankings coherence and the Monthly Summary disclosure. The persisted record was correct; both faults were display-side.
+8. **DONE (`767e0d3`).** Merit Table. Derived from canonical matches and the canonical historical-tier resolver, never persisted, not a rating. Audit found a maximum gap of 2 tier-steps and win values of 2–5, so **no cap is needed**. Placed behind the existing View select — **if Shaun wants it as a segmented button or its own tab instead, that is a one-line change.**
 
 ### Waiting on Shaun
 
