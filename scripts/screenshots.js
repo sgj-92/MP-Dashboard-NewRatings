@@ -88,6 +88,8 @@ const SHOTS = [
     note: 'A name is a label, not an identity. The confirmation names both, and says the thing that matters: the record does not move. Renaming writes one field on one document — no match, no rating journey event and no document id is touched, which is why it is safe to do twice or fifty times.' },
   { file: '21-monthly-summary-collapsed.png', title: 'Rankings — Monthly Summary folded',
     note: 'The whole summary folds as one — Key takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved without playing and Crossovers together. It defaults expanded, because unlike the League explanation this is content rather than an explanation of content. The heading keeps its own type, colour and spacing; the chevron is the only thing added, and it is not a card.' },
+  { file: '22-merit-table.png', title: 'Merit Table — harder wins earn more',
+    note: 'An alternative league view over the same matches, scored only on the tiers held on the day: an even matchup is worth 4 for a win, each tier-step of difference takes one off the favourite and adds one to the underdog. A pairing is the SUM of its two players, so AC and BB are equal — comparing the best player on each side would get a large share of the club\'s games wrong. It sits behind the existing View select rather than as a fourth segmented button, which would have crowded the mobile control. Not a rating: nothing here reads a Power Rating or an expectation.' },
   { file: '12-rating-guide-summary.png', title: 'Power Rating Guide — in short',
     note: 'Reachable from More. Leads with the idea, not the formula: the rating is not a reward for wins, it is an estimate of level. The five things that sound alike are separated explicitly.' },
   { file: '13-rating-guide-maths.png', title: 'Power Rating Guide — the actual calculation',
@@ -399,6 +401,20 @@ async function render(players, matches, journey, readAt) {
       goToSection('rankings'); render();
     },
     () => { const el = document.getElementById('monthlySummaryToggle'); if (el) el.scrollIntoView({ block: 'center' }); });
+
+  // The Merit Table: an alternative league view, reached from the same View
+  // select as the League Table rather than a fourth segmented button.
+  await shot('22-merit-table.png',
+    () => {
+      const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');
+      closeSheet();
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]'); if (b) b.click();
+      summaryMode = 'merit'; summaryMonth = 'all';
+      leagueGrouped = false; meritExplainerOpen = true;
+      resetMeritTierSections();
+      renderSummary();
+    },
+    () => window.scrollTo(0, 0));
 
   const openGuide = () => {
     const m = document.getElementById('monthlyRatingModal'); if (m) m.classList.remove('show');

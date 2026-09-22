@@ -4491,3 +4491,179 @@ test('the Monthly Summary fold is independent of the League disclosures', { skip
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// ===================== MERIT TABLE =====================
+// An alternative league view, approved 22 Sep. Not a replacement and not a
+// rating: it scores how hard the partnership you beat was, from tier on the
+// day and nothing else.
+
+const openMerit = (app, month) => app.run((m) => {
+  const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+  if (b) b.click();
+  summaryMode = 'merit'; summaryMonth = m || 'all';
+  leagueGrouped = false; meritExplainerOpen = false;
+  resetMeritTierSections();
+  renderSummary();
+}, month);
+
+test('Merit lives behind the View select, not a fourth segmented button', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await app.page.setViewportSize({ width: 375, height: 812 });
+    await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+      if (b) b.click();
+      summaryMode = 'league'; summaryMonth = 'all';
+      renderSummary();
+    });
+    await app.page.waitForTimeout(50);
+    const r = await app.run(() => {
+      const sel = document.getElementById('summaryModeSelect');
+      const before = [...document.querySelectorAll('#summaryContent .fg-toggle-btn')].map((b) => b.textContent);
+      sel.value = 'merit'; sel.dispatchEvent(new Event('change'));
+      const after = [...document.querySelectorAll('#summaryContent .fg-toggle-btn')].map((b) => b.textContent);
+      return {
+        options: [...sel.options].map((o) => o.value),
+        labels: [...sel.options].map((o) => o.text),
+        leagueButtons: before, meritButtons: after,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+        heading: document.querySelector('#summaryContent .section-heading').textContent,
+        tagline: document.querySelector('#summaryContent .section-sub').innerText,
+      };
+    });
+    assert.deepStrictEqual(r.options, ['league', 'merit', 'information']);
+    assert.ok(r.labels.includes('Merit Table'));
+    assert.deepStrictEqual(r.leagueButtons, ['By tier', 'All together', 'Last 10'],
+      'the League segmented control is untouched');
+    assert.deepStrictEqual(r.meritButtons, ['By tier', 'All together'],
+      'and Merit does not add a fourth button to it');
+    assert.strictEqual(r.overflow, false, 'nothing runs off a 375px screen');
+    assert.match(r.heading, /Merit Table/);
+    assert.match(r.tagline, /Harder wins earn more/);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the Merit explanation is a quiet disclosure, closed by default', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openMerit(app, 'all');
+    const r = await app.run(() => {
+      const head = document.getElementById('meritExplainerToggle');
+      const closed = !document.getElementById('meritExplainerToggleBody');
+      head.click();
+      const text = document.getElementById('meritExplainerToggleBody').innerText.replace(/\s+/g, ' ');
+      const cs = getComputedStyle(document.getElementById('meritExplainerToggle'));
+      return { closed, text,
+        weight: { border: cs.borderTopWidth, radius: cs.borderTopLeftRadius,
+          filled: !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) } };
+    });
+    assert.strictEqual(r.closed, true, 'closed by default');
+    assert.match(r.text, /An even matchup is worth 4 points for a win/);
+    assert.match(r.text, /Draws are worth 1 point. Losses are worth 0/);
+    // Player-friendly: no implementation terminology on this copy.
+    assert.doesNotMatch(r.text, /tier level|weight|sum of|Power Rating|expected/i);
+    assert.match(r.weight.border, /^0px$/, 'a line, not a card');
+    assert.strictEqual(r.weight.filled, false);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('the Merit table agrees with the module, match for match', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openMerit(app, 'all');
+    const r = await app.run(() => {
+      const rows = [...document.querySelectorAll('#summaryContent tbody tr')].map((tr) => {
+        const td = [...tr.children].map((x) => x.innerText.trim());
+        return { name: td[1], P: +td[2], W: +td[3], D: +td[4], L: +td[5], merit: +td[6] };
+      });
+      // Recompute independently from the canonical matches and resolver.
+      const matches = getAllApprovedMatches()
+        .map((m) => ({ id: m.id, date: m.date, winners: m.winners, losers: m.losers, isDraw: !!m.isDraw }));
+      const truth = MeritTable.build(matches, (n, d) => historicalTierOf(n, d)).table;
+      return { rows, truth: truth.map((t) => ({ name: t.playerId, P: t.played, W: t.wins, D: t.draws, L: t.losses, merit: t.merit })) };
+    });
+    assert.ok(r.rows.length > 10, 'the fixture produces a real table');
+    assert.deepStrictEqual(r.rows, r.truth, 'the rendered table is exactly what the module computes');
+    // Sanity: a table of integers, sorted by merit.
+    r.rows.forEach((x) => assert.strictEqual(x.merit, Math.trunc(x.merit)));
+    assert.deepStrictEqual(r.rows.map((x) => x.merit), r.rows.map((x) => x.merit).slice().sort((a, b) => b - a));
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Merit splits by tier on the match date and collapses per tier', { skip }, async () => {
+  const app = await H.open();
+  try {
+    await openMerit(app, 'all');
+    const r = await app.run(() => {
+      document.getElementById('meritGroupedBtn').click();
+      const heads = [...document.querySelectorAll('#summaryContent .lg-tier-head')];
+      const shown = () => heads.map((h) => h.dataset.tier)
+        .filter((t) => document.getElementById(`meritTierBody${t}`));
+      const out = { tiers: heads.map((h) => h.dataset.tier), openOnEntry: shown() };
+      const first = out.tiers[0];
+      document.querySelector(`#summaryContent .lg-tier-head[data-tier="${first}"]`).click();
+      out.afterCollapse = [...document.querySelectorAll('#summaryContent .lg-tier-head')]
+        .map((h) => h.dataset.tier).filter((t) => document.getElementById(`meritTierBody${t}`));
+      // The split must sum back to All together.
+      document.getElementById('meritAllBtn').click();
+      const whole = {};
+      [...document.querySelectorAll('#summaryContent tbody tr')].forEach((tr) => {
+        const td = [...tr.children].map((x) => x.innerText.trim());
+        whole[td[1]] = +td[6];
+      });
+      document.getElementById('meritGroupedBtn').click();
+      const split = {};
+      [...document.querySelectorAll('#summaryContent tbody tr')].forEach((tr) => {
+        const td = [...tr.children].map((x) => x.innerText.trim());
+        split[td[1]] = (split[td[1]] || 0) + (+td[6]);
+      });
+      return { ...out, whole, split };
+    });
+    assert.ok(r.tiers.length > 1, 'more than one tier section');
+    assert.deepStrictEqual(r.openOnEntry, r.tiers, 'all expanded on entry');
+    assert.deepStrictEqual(r.afterCollapse, r.tiers.slice(1), 'collapsing one leaves the rest alone');
+    assert.deepStrictEqual(r.split, r.whole,
+      'the tier sections must sum to the All together totals, player for player');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('Merit changes nothing about the League Table', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+      if (b) b.click();
+      const readLeague = () => {
+        summaryMode = 'league'; summaryMonth = '2026-08';
+        leagueLastTen = false; leagueGrouped = false;
+        leagueSortKey = 'points'; leagueSortDesc = true;
+        renderSummary();
+        return [...document.querySelectorAll('#summaryContent tbody tr')]
+          .map((tr) => [...tr.children].map((x) => x.innerText.trim()).join('|'));
+      };
+      const before = readLeague();
+      // Go to Merit and back.
+      summaryMode = 'merit'; renderSummary();
+      const meritRows = document.querySelectorAll('#summaryContent tbody tr').length;
+      const after = readLeague();
+      // And the rest of the app is where it was.
+      const power = (() => {
+        const pb = document.querySelector('#tabrow .tab-btn[data-tab="power"]');
+        if (pb) pb.click();
+        selectedMonth = 'all'; render();
+        return [...document.querySelectorAll('#list .row')].slice(0, 5)
+          .map((el) => (el.querySelector('.nm') || {}).textContent + ':' + (el.querySelector('.rating-big') || {}).textContent);
+      })();
+      return { before, after, meritRows, power };
+    });
+    assert.ok(r.before.length > 5, 'the League table has rows to compare');
+    assert.ok(r.meritRows > 5, 'and Merit rendered a real table in between');
+    assert.deepStrictEqual(r.after, r.before, 'League points are completely unchanged');
+    assert.ok(r.power.every((x) => /:\d+$/.test(x)), 'and Power Rankings still shows ratings');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

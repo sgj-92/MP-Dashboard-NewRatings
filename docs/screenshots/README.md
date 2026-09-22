@@ -138,6 +138,12 @@ A name is a label, not an identity. The confirmation names both, and says the th
 
 The whole summary folds as one — Key takeaways, Monthly Performance, Rating Movement, Ranking Movement, Moved without playing and Crossovers together. It defaults expanded, because unlike the League explanation this is content rather than an explanation of content. The heading keeps its own type, colour and spacing; the chevron is the only thing added, and it is not a card.
 
+### Merit Table — harder wins earn more
+
+![Merit Table — harder wins earn more](22-merit-table.png)
+
+An alternative league view over the same matches, scored only on the tiers held on the day: an even matchup is worth 4 for a win, each tier-step of difference takes one off the favourite and adds one to the underdog. A pairing is the SUM of its two players, so AC and BB are equal — comparing the best player on each side would get a large share of the club's games wrong. It sits behind the existing View select rather than as a fourth segmented button, which would have crowded the mobile control. Not a rating: nothing here reads a Power Rating or an expectation.
+
 ### Power Rating Guide — in short
 
 ![Power Rating Guide — in short](12-rating-guide-summary.png)

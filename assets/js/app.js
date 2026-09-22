@@ -6518,6 +6518,7 @@ function renderSummary(){
     <div class="fg-row"><label class="fg-label">View</label>
       <select id="summaryModeSelect" class="fg-select">
         <option value="league">League Table</option>
+        <option value="merit">Merit Table</option>
         <option value="information">Information</option>
       </select>
     </div>
@@ -6533,9 +6534,12 @@ function renderSummary(){
   resetLeagueTierSections();
 
   const legacyExplainer = document.getElementById('explainerWrapper');
-  if(legacyExplainer) legacyExplainer.style.display = (summaryMode === 'league') ? 'none' : '';
+  // Merit carries its own explanation too, so the legacy per-tab block would
+  // be a second one on that view as well.
+  if(legacyExplainer) legacyExplainer.style.display = (summaryMode === 'league' || summaryMode === 'merit') ? 'none' : '';
 
   if(summaryMode === 'league') renderSummaryLeagueTable();
+  else if(summaryMode === 'merit') renderMeritTable();
   else renderSummaryInformation();
 }
 
@@ -6907,6 +6911,121 @@ function renderSummaryLeagueTable(){
       if(leagueSortKey === key) leagueSortDesc = !leagueSortDesc;
       else { leagueSortKey = key; leagueSortDesc = true; }
       renderSummaryLeagueTable();
+    };
+  });
+}
+
+// ===================== MERIT TABLE =====================
+// An alternative league view, not a replacement and not a rating. The League
+// Table treats every win alike; this one asks how hard the partnership you beat
+// was, using ONLY the tiers held on the day of the match.
+//
+// It lives behind the existing View select rather than as a fourth segmented
+// button: that control already answers "which table am I looking at", and a
+// fourth button on a 375px screen is the overcrowding the brief warned about.
+// Everything below it -- month, By tier / All together, the independent tier
+// collapses -- is the League screen's own machinery, reused.
+
+let meritTierOpen = {};
+function resetMeritTierSections(){
+  meritTierOpen = {};
+  TIER_ORDER_LIST.forEach(t => { meritTierOpen[t] = true; });
+}
+resetMeritTierSections();
+let meritExplainerOpen = false;
+
+// Every approved match in a shape MeritTable understands. One source, so Merit
+// and the League can never disagree about what a game was.
+function meritMatches(month){
+  return getAllApprovedMatches()
+    .filter(m => month === 'all' || m.date.slice(0,7) === month)
+    .map(m => ({ id: m.id, date: m.date, winners: m.winners, losers: m.losers, isDraw: !!m.isDraw }));
+}
+
+function buildMeritTableHtml(rows, showTierColumn){
+  let html = `<div class="callout-card" style="padding:0; overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-size:11px; white-space:nowrap;">
+      <thead><tr style="background:var(--bg2); text-align:left;">
+      <th style="padding:7px 4px 7px 8px;">#</th>
+      <th style="padding:7px 4px;">Player</th>
+      ${showTierColumn ? `<th style="padding:7px 4px; text-align:center;">Tier</th>` : ''}
+      <th style="padding:7px 4px; text-align:center;">P</th>
+      <th style="padding:7px 4px; text-align:center;">W</th>
+      <th style="padding:7px 4px; text-align:center;">D</th>
+      <th style="padding:7px 4px; text-align:center;">L</th>
+      <th style="padding:7px 8px 7px 4px; text-align:right;">Merit</th>
+      <th class="league-context-col" style="padding:7px 4px; text-align:center;" title="Wins against a stronger pairing">Hard wins</th>
+      </tr></thead><tbody>`;
+  rows.forEach((r,i)=>{
+    html += `<tr style="border-top:1px solid var(--line);">
+      <td style="padding:7px 4px 7px 8px; color:var(--text-dim);">${i+1}</td>
+      <td style="padding:7px 4px;"><span class="request-player-link" data-player="${escapeHtml(r.playerId)}" style="text-decoration:underline; cursor:pointer; font-weight:700;">${escapeHtml(r.playerId)}</span></td>
+      ${showTierColumn ? `<td style="padding:7px 4px; text-align:center;"><span class="badge ${r.tier}" style="display:inline-flex; width:20px; height:20px; font-size:10px;">${r.tier}</span></td>` : ''}
+      <td style="padding:7px 4px; text-align:center;">${r.played}</td>
+      <td style="padding:7px 4px; text-align:center; color:var(--green);">${r.wins}</td>
+      <td style="padding:7px 4px; text-align:center; color:var(--text-dim);">${r.draws}</td>
+      <td style="padding:7px 4px; text-align:center; color:var(--red);">${r.losses}</td>
+      <td style="padding:7px 8px 7px 4px; text-align:right; font-weight:700; color:var(--gold-bright);">${r.merit}</td>
+      <td class="league-context-col" style="padding:7px 4px; text-align:center;">${r.hardWins ? `<span style="color:var(--green);">${r.hardWins}</span>` : `<span style="color:var(--text-dim);">–</span>`}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+function renderMeritTable(){
+  const content = document.getElementById('summaryContent');
+  const label = summaryMonth === 'all' ? 'All Time' : monthLabel(summaryMonth);
+  const matches = meritMatches(summaryMonth);
+
+  let html = `<div class="section-heading" style="margin-top:6px;">🥇 ${label} Merit Table</div>`;
+  html += `<div class="section-sub" style="margin:2px 0 0;">Harder wins earn more.</div>`;
+  html += leagueInlineFold('meritExplainerToggle', 'How points work', meritExplainerOpen,
+    `<div class="section-sub" style="margin:0;">An even matchup is worth 4 points for a win. Beat a stronger pairing and you earn an extra point for each tier-step difference. Beat a weaker pairing and you earn one point less per tier-step. Draws are worth 1 point. Losses are worth 0.</div>`);
+
+  html += `<div class="fg-toggle" style="margin:8px 0 14px;">
+    <button class="fg-toggle-btn ${leagueGrouped?'active':''}" id="meritGroupedBtn">By tier</button>
+    <button class="fg-toggle-btn ${!leagueGrouped?'active':''}" id="meritAllBtn">All together</button>
+  </div>`;
+
+  // Same temporal rule as the League Table: a match is filed under the tier the
+  // player held on its own date, so a mid-month mover appears in both sections
+  // holding only what they earned in each.
+  const tierAt = (n, d) => historicalTierOf(n, d);
+
+  if(leagueGrouped){
+    const { table, unresolved } = MeritTable.build(matches, tierAt, { tierForRow: tierAt });
+    let anyShown = false;
+    TIER_ORDER_LIST.forEach(tier=>{
+      const rows = table.filter(r => r.tier === tier && r.played > 0);
+      if(rows.length === 0) return;
+      anyShown = true;
+      const open = meritTierOpen[tier] !== false;
+      html += leagueTierHeading(tier, open).replace('leagueTier', 'meritTier');
+      if(open) html += `<div id="meritTierBody${tier}">${buildMeritTableHtml(rows, false)}</div>`;
+    });
+    if(!anyShown) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
+    if(unresolved.length) html += `<div class="section-sub">${unresolved.length} match${unresolved.length===1?'':'es'} could not be scored: a player's tier on that date is unknown.</div>`;
+  } else {
+    const { table, unresolved } = MeritTable.build(matches, tierAt);
+    const rows = table.filter(r => r.played > 0);
+    if(rows.length === 0) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
+    else html += buildMeritTableHtml(rows, false);
+    if(unresolved.length) html += `<div class="section-sub">${unresolved.length} match${unresolved.length===1?'':'es'} could not be scored: a player's tier on that date is unknown.</div>`;
+  }
+
+  content.innerHTML = html;
+  wireRequestPlayerLinks(content);
+
+  document.getElementById('meritGroupedBtn').onclick = ()=>{ leagueGrouped = true; resetMeritTierSections(); renderMeritTable(); };
+  document.getElementById('meritAllBtn').onclick = ()=>{ leagueGrouped = false; renderMeritTable(); };
+  const ex = document.getElementById('meritExplainerToggle');
+  if(ex) ex.onclick = ()=>{ meritExplainerOpen = !meritExplainerOpen; renderMeritTable(); };
+  content.querySelectorAll('.lg-tier-head').forEach(btn=>{
+    btn.onclick = ()=>{
+      const t = btn.dataset.tier;
+      meritTierOpen[t] = meritTierOpen[t] === false;
+      renderMeritTable();
     };
   });
 }
