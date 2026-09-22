@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`459eb2f`** |
-| Tests | **503 / 503 passing** (122 of them drive a real browser) |
+| Last verified implementation commit | **`4b53b77`** |
+| Tests | **515 / 515 passing** (130 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -308,6 +308,32 @@ Development instrumentation lives behind `?perf=1` (`perfTrace.js`) and reports
 when the record arrived, when each screen was drawn and what each derived
 calculation cost; it compiles to nothing when off.
 
+**Identity (22 Sep).** There were two. `currentUserName` is free text typed
+into a "Your name" box and kept on the device; the VIEWER is the player chosen
+in the header, validated against the roster. The viewer wins wherever it
+exists — which the challenge code had already concluded for itself — falling
+back to the typed name on a device that has never chosen a player.
+`submissionIdentity()` is the single entry point; nothing reads a name field
+any more. What is written to the record (`submittedBy`, the review actor,
+`seenBy`) is unchanged in kind and more reliable in fact.
+
+**One prediction, two screens (22 Sep).** `matchPrediction.js` holds the whole
+calculation; `matchPredictionHtml()` holds the whole presentation. Admin's
+Predict a Matchup and an agreed game in Upcoming both render what those
+return. A side's strength is the MEAN of its players (so Strong+Weak equals a
+mid pair), the figure is the engine's own expected score, and it is a share of
+games — never a probability of winning, which nothing here has validated.
+Predictions are never persisted and are admin-only wherever they appear.
+
+**Match lifecycle (22 Sep).** prediction → Upcoming → Add result → a rated
+game, with one record at each step. An Upcoming entry may carry an optional
+`teams: [[a],[b]]` beside its flat `players` list (the sides a predicted
+matchup was agreed as, which the old 0,1-vs-2,3 split could not express for
+singles), and optional `preferredTime` / `location`; all three are additive
+and absent on older records. Date, time and venue may stay TBC — a game is
+agreed long before it is scheduled. Submitting the result clears the Upcoming
+entry, so no game exists twice.
+
 **Four separate concepts, never conflated:** Power Rating (current estimate) ·
 Reliability (how established that estimate is) · Monthly Performance (versus
 pre-match expectation) · Tier (club classification). A tier change alone moves
@@ -440,6 +466,9 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Reassessment α ships at 0.25 | Below the best-performing 0.50, pending real reviews. |
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
+| The chosen player is the identity, not a typed name | Shaun, 22 Sep: the Games tab must not permanently spend screen space on a read-only name card when the app already knows who you are. The viewer wins; the typed name survives as the fallback. Attribution behaviour is unchanged — this is a better source for the same field, not a presentational shortcut. |
+| A prediction is calculated once and shown twice | Predict a Matchup and Upcoming share `matchPrediction.js` and one presentation function. Nothing about a prediction is stored: it is recomputed from the players whenever asked, so it cannot go stale against a rating that has since moved. Admin-only in both places. |
+| An Upcoming game may be created without a schedule | Date, time and venue are optional and show as TBC. Refusing to create a game without a date would make Upcoming describe a club that plans further ahead than it does. |
 | The record is never cached on the device | CCode's 22 Sep audit found the cost was serialisation, not volume: fourteen independent reads taken one at a time. Reading them together removes 88% of the wait without introducing a copy of the record that could show an out-of-date rating. The desired `cached → render → refresh` shape was therefore implemented as `one round trip → render`, which reaches the same place with no staleness. **Caching the app shell (825KB of JS on every launch) is a separate question and is open for Shaun — it is a deployment change, not a code change.** |
 | A mutation redraws the screen, always | Every mutation now goes through one function rather than each button redrawing whatever it happened to sit on. The two admin dropdowns that name a narrower redraw do so explicitly, because redrawing the whole of Admin under a finger would take focus off the select in use. Nothing may redraw nothing. |
 | Monthly Rating is replaced, not monthly rating progress | Monthly Performance becomes the performance metric, while real Power Rating movement, rank movement/crossovers and League Table remain visible as separate monthly stories. No new monthly rating solver. |
@@ -1823,6 +1852,56 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 22 Sep 2026 (Play / Upcoming / prediction UX)
+
+`4b53b77`. **515 / 515 tests (130 browser).**
+
+All six parts delivered. The interesting decisions and the things that were
+not obvious before starting:
+
+**The Your Name audit answered itself.** Shaun asked why the field was
+required. It was not: the app has had a second, better identity since the
+viewer was introduced, and the challenge code had already quietly decided the
+viewer should win (`viewerNow ? viewerNow.name : currentUserName`). So this
+was not "remove a card for space" — it was finishing a decision the codebase
+had already half-made. `submissionIdentity()` is now the only way anything
+asks who is acting, the typed name survives as the fallback for a device that
+has never chosen a player, and a browser probe confirms the behaviour change
+in the right direction: submitting a result as a chosen player with nothing
+typed was **refused** before and is now accepted and correctly attributed.
+
+**The prediction had to be extracted before it could be shown twice.** It
+lived as a closure inside `renderManage()`. `matchPrediction.js` now holds the
+calculation and `matchPredictionHtml()` the card; Admin and Upcoming render
+the same two functions. The module also fixed a latent ambiguity in the old
+code by stating it: a side's strength is the MEAN of its players, so
+Strong+Weak is level with a mid pair rather than a mismatch.
+
+**Upcoming needed a `teams` field, and it is worth knowing why.** Everything
+downstream of `players` assumed a flat list of four split 0,1 vs 2,3. A
+predicted matchup is *about* who partners whom, and a predicted singles game
+put through the flat split would have arrived as one partnership with nobody
+to play. `teams` is optional and additive; `requestTeams()` falls back to the
+old split, so every existing record reads correctly and nothing was migrated.
+
+**A latent defect fell out of folding the filters.** The game-type fallback
+("this type no longer matches anything, go back to All") sat beside the select
+that offers the options — so it ran *after* the list had already been filtered
+to nothing, and corrected itself one render late. A shut panel has no select
+to hang it off, which forced it to move ahead of the filtering, where it
+should always have been.
+
+**Two questions are now answerable and are in NEXT rather than decided here:**
+whether Requests and Upcoming should become one screen (Shaun deliberately
+held this until he could see the condensed design — it exists now, and CCode's
+reading is that they should stay two), and whether an ordinary request should
+carry time and venue as the prediction path does.
+
+Everything new goes through `dataChanged()`, so creating or removing an
+Upcoming game updates the screen in front of the reader without navigating.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 22 Sep 2026 (data-loading audit, then its fixes)
 
@@ -4944,6 +5023,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `4b53b77` | Play/Upcoming/prediction UX: Games filters fold away with their state on the shut heading; the Your Name card replaced by a contextual identity line inside Add a game; Requests and Upcoming sectioned into folds (both tabs kept separate); Predict a Matchup can add a matchup straight to Upcoming carrying players, sides and optional scheduling; an agreed game exposes the same prediction to admins only; the prediction/Upcoming/result lifecycle made continuous with one record per game |
 | `459eb2f` | Data-loading audit and its fixes: start-up's fourteen reads issued together (3,779ms → 499ms to first content at 250ms latency); no screen drawn before the record exists, and start-up draws the screen the reader is actually on; every mutation redraws that screen through one function, guarded by a source-level test; `perfTrace.js` instrumentation behind `?perf=1`; stale reassessment snapshot cleared by any change to the journey; one duplicate Merit build removed |
 | `b864786` | Merit gains a Favoured column beside Hard, both tappable, opening the qualifying matches with their fixture-date tiers, score, tier-step gap and points — carried on the row by the canonical calculation rather than reclassified |
 | `510c4cc` | Merit scoring refined to a 3-point baseline matching a standard League win, draws worth 0, and a floor of 0 on a win; copy updated and the history re-audited |
@@ -5006,8 +5086,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `459eb2f`,
-**503 / 503 tests (122 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `4b53b77`,
+**515 / 515 tests (130 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -5050,38 +5130,72 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    submitted while sitting on the Games screen appears there without
    navigating, and it did not before this change.
 
+13. **DONE (`4b53b77`).** Play / Upcoming / Prediction UX, all six parts.
+   **(1)** Games filters fold, arrive shut, and carry their own state on the
+   shut heading. Add a game joined the same chevron so the two controls above
+   the log read as one thing. A latent defect fell out: the game-type fallback
+   lived beside the select that offers the options, so it corrected itself one
+   render too late — moved ahead of the filtering.
+   **(2)** The Your Name card is gone; see the Decisions Log for the audit.
+   **(3)** Requests and Upcoming sectioned; **both kept as separate tabs**, as
+   instructed, pending a look at the condensed design.
+   **(4)** Predict a Matchup → Add to Upcoming, carrying players AND sides,
+   with date/time/venue optional.
+   **(5)** An agreed Upcoming game exposes the same prediction, folded,
+   admin-only, from the same module — verified in a browser that a
+   non-admin is offered neither the control nor the text.
+   **(6)** Lifecycle continuous, one record per game.
+   Verified with the same browser probe before and after: name card present →
+   gone; three filter selects on arrival → none; a result submitted by a
+   chosen player with nothing typed refused → accepted and attributed; no
+   prediction from Upcoming → one.
+
 ### Waiting on Shaun
 
-13. **Cache the app shell?** Every launch downloads 825KB of JavaScript, 104KB
+14. **Requests and Upcoming: one screen or two?** Held deliberately at Shaun's
+   instruction until the condensed design could be seen. It can now:
+   Requests is four folded sections (Challenges, Request a game, Admin add,
+   Pending) and Upcoming is one folded list. **CCode's reading is that they
+   should stay two:** Requests is where a game is proposed and negotiated,
+   Upcoming is a fixture list that an admin acts on, and folding has already
+   taken most of the length out of both. But this is his call, not an
+   implementation detail.
+
+15. **Should a plain request also carry time and venue?** The prediction path
+   and the admin add-straight-to-Upcoming path both do. The ordinary request
+   form still offers only a preferred date, on the reading that an unconfirmed
+   proposal is not a fixture. One line either way.
+
+16. **Cache the app shell?** Every launch downloads 825KB of JavaScript, 104KB
    of CSS and the Firebase SDK, with no service worker. A service worker would
    make repeat launches close to instant and carries **no risk to the record**
    — it caches code, never data. It is a deployment change (cache
    invalidation, an update path when a new version ships), which is why it is
    here rather than done. Roughly a second saved per launch on a phone.
 
-14. **Live updates between devices?** There are no Firestore listeners, so if
+17. **Live updates between devices?** There are no Firestore listeners, so if
    one person submits or approves a game, another person's open app does not
    see it until they reload. Nothing about this changed today, and it may well
    be acceptable for a club of 34 — but it is now the only remaining way a
    screen can hold an out-of-date number, so it should be an answered question
    rather than an assumption.
 
-15. **Predict a Matchup visual render.** The copy is delivered and the layout was
+18. **Predict a Matchup visual render.** The copy is delivered and the layout was
    deliberately left alone. `docs/screenshots/19-admin-predict.png` shows the
    current copy in the existing treatment, which should make the render easier
    to specify against. Nothing will be invented here in the meantime.
 
 ### Needing a person, not an implementer
 
-16. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-17. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
-18. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-19. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+19. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+20. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
+21. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+22. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-20. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-21. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+23. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+24. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
