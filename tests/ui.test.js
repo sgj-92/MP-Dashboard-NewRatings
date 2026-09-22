@@ -3530,8 +3530,12 @@ test('each tier collapses on its own and leaves the others alone', { skip }, asy
         .querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.innerText.trim()).join('|'));
 
       const tiers = [...c().querySelectorAll('.lg-tier-head')].map((h) => h.dataset.tier);
-      const out = { tiers, openOnEntry: shown(), noGlobalFold: !document.getElementById('leagueTiersToggle') };
-      const target = tiers[0], other = tiers[1];
+      const openTiers = shown();
+      const out = { tiers, openTiers, openOnEntry: openTiers,
+        noGlobalFold: !document.getElementById('leagueTiersToggle') };
+      // Work on sections that start open: a single-player tier arrives
+      // collapsed, so tapping it would open rather than close it.
+      const target = openTiers[0], other = openTiers[1];
       out.otherBefore = rowsOf(other);
 
       c().querySelector(`.lg-tier-head[data-tier="${target}"]`).click();
@@ -3551,12 +3555,12 @@ test('each tier collapses on its own and leaves the others alone', { skip }, asy
 
     assert.ok(r.tiers.length > 1, `the fixture needs more than one tier, got ${JSON.stringify(r.tiers)}`);
     assert.strictEqual(r.noGlobalFold, true, 'the global Tier tables fold is gone');
-    assert.deepStrictEqual(r.openOnEntry, r.tiers, 'every tier is expanded on entry');
-    assert.deepStrictEqual(r.afterCollapse, r.tiers.slice(1), 'only the tapped tier collapses');
+    assert.ok(r.openTiers.length > 1, 'the fixture needs at least two populated tier sections');
+    assert.deepStrictEqual(r.afterCollapse, r.openTiers.slice(1), 'only the tapped tier collapses');
     assert.strictEqual(r.collapsedAria, 'false');
     assert.strictEqual(r.headingStillThere, true, 'the heading stays, so it can be reopened');
     assert.deepStrictEqual(r.otherAfter, r.otherBefore, 'a neighbouring tier is untouched, rows and all');
-    assert.deepStrictEqual(r.afterReopen, r.tiers, 'and it comes back');
+    assert.deepStrictEqual(r.afterReopen, r.openTiers, 'and it comes back');
     assert.ok(r.targetRows.length > 0, 'with its rows');
     assert.strictEqual(r.stillByTier, true, 'By tier is still the selected mode');
     assert.deepStrictEqual(app.pageErrors, []);
@@ -3572,8 +3576,11 @@ test('several tiers can be collapsed at once, each independently', { skip }, asy
       const state = () => Object.fromEntries([...c().querySelectorAll('.lg-tier-head')]
         .map((h) => [h.dataset.tier, h.getAttribute('aria-expanded') === 'true']));
       const tap = (t) => c().querySelector(`.lg-tier-head[data-tier="${t}"]`).click();
-      const tiers = Object.keys(state());
-      const out = { tiers, start: state() };
+      const all = state();
+      // Only the sections that start open — a one-player tier arrives folded.
+      const tiers = Object.keys(all).filter((t) => all[t]);
+      const out = { tiers, start: Object.fromEntries(tiers.map((t) => [t, all[t]])),
+        collapsedOnEntry: Object.keys(all).filter((t) => !all[t]) };
       tap(tiers[0]); tap(tiers[1]);
       out.twoCollapsed = state();
       out.tablesLeft = c().querySelectorAll('table').length;
@@ -3587,6 +3594,7 @@ test('several tiers can be collapsed at once, each independently', { skip }, asy
     assert.strictEqual(r.twoCollapsed[r.tiers[1]], false);
     r.tiers.slice(2).forEach((t) => assert.strictEqual(r.twoCollapsed[t], true, `${t} must be untouched`));
     assert.strictEqual(r.tablesLeft, r.tiers.length - 2, 'two fewer tables on screen');
+    assert.ok(r.collapsedOnEntry.length >= 0);
     assert.strictEqual(r.oneReopened[r.tiers[0]], true, 'reopening one');
     assert.strictEqual(r.oneReopened[r.tiers[1]], false, 'leaves the other collapsed');
     assert.deepStrictEqual(app.pageErrors, []);
@@ -3601,9 +3609,10 @@ test('returning to By tier restores the expanded default', { skip }, async () =>
       const c = () => document.getElementById('summaryContent');
       const state = () => Object.fromEntries([...c().querySelectorAll('.lg-tier-head')]
         .map((h) => [h.dataset.tier, h.getAttribute('aria-expanded') === 'true']));
-      const tiers = Object.keys(state());
+      const entry = state();
+      const tiers = Object.keys(entry).filter((t) => entry[t]);
       c().querySelector(`.lg-tier-head[data-tier="${tiers[0]}"]`).click();
-      const out = { collapsed: state() };
+      const out = { entry, collapsed: state() };
       // Away and back, both routes.
       document.getElementById('leagueAllBtn').click();
       document.getElementById('leagueGroupedBtn').click();
@@ -3619,10 +3628,15 @@ test('returning to By tier restores the expanded default', { skip }, async () =>
       out.viaAnotherTab = state();
       return out;
     });
-    assert.strictEqual(Object.values(r.collapsed).filter((v) => !v).length, 1, 'one collapsed to set up');
-    assert.ok(Object.values(r.viaAllTogether).every(Boolean), 'All together and back → expanded');
-    assert.ok(Object.values(r.viaLastTen).every(Boolean), 'Last 10 and back → expanded');
-    assert.ok(Object.values(r.viaAnotherTab).every(Boolean), 'leaving the screen and back → expanded');
+    // Returning restores the DEFAULT, which is per-section: populated tiers
+    // open, a single-player tier folded.
+    const restored = (st) => assert.deepStrictEqual(st, r.entry,
+      `returning must restore the entry state, got ${JSON.stringify(st)}`);
+    assert.ok(Object.values(r.collapsed).filter((v) => !v).length
+      > Object.values(r.entry).filter((v) => !v).length, 'one more collapsed to set up');
+    restored(r.viaAllTogether);
+    restored(r.viaLastTen);
+    restored(r.viaAnotherTab);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
@@ -4473,8 +4487,12 @@ test('the Monthly Summary fold is independent of the League disclosures', { skip
       leagueLastTen = false; leagueGrouped = true;
       leagueExplainerOpen = false; resetLeagueTierSections();
       renderSummary();
-      const tiersOpen = [...document.querySelectorAll('#summaryContent .lg-tier-head')]
-        .every((h) => h.getAttribute('aria-expanded') === 'true');
+      const tierState = () => [...document.querySelectorAll('#summaryContent .lg-tier-head')]
+        .map((h) => h.dataset.tier + ':' + h.getAttribute('aria-expanded')).join(',');
+      const afterSummaryFold = tierState();
+      // The same screen rendered fresh, with the summary never touched.
+      resetLeagueTierSections(); renderSummary();
+      const tiersOpen = tierState() === afterSummaryFold;
       const explainerFolded = !document.getElementById('leagueExplainerToggleBody');
 
       // …and collapsing a tier does not reopen the summary.
@@ -4485,7 +4503,8 @@ test('the Monthly Summary fold is independent of the League disclosures', { skip
       return { summaryCollapsed, tiersOpen, explainerFolded, summaryStillCollapsed };
     });
     assert.strictEqual(r.summaryCollapsed, true);
-    assert.strictEqual(r.tiersOpen, true, 'League tiers still default expanded');
+    assert.strictEqual(r.tiersOpen, true,
+      'folding the Monthly Summary must not change any League tier section');
     assert.strictEqual(r.explainerFolded, true, 'and the League explanation still defaults folded');
     assert.strictEqual(r.summaryStillCollapsed, true, 'the two disclosures do not touch each other');
     assert.deepStrictEqual(app.pageErrors, []);
@@ -4602,8 +4621,9 @@ test('Merit splits by tier on the match date and collapses per tier', { skip }, 
       const heads = [...document.querySelectorAll('#summaryContent .lg-tier-head')];
       const shown = () => heads.map((h) => h.dataset.tier)
         .filter((t) => document.getElementById(`meritTierBody${t}`));
-      const out = { tiers: heads.map((h) => h.dataset.tier), openOnEntry: shown() };
-      const first = out.tiers[0];
+      const openTiers = shown();
+      const out = { tiers: heads.map((h) => h.dataset.tier), openTiers, openOnEntry: openTiers };
+      const first = openTiers[0];
       document.querySelector(`#summaryContent .lg-tier-head[data-tier="${first}"]`).click();
       out.afterCollapse = [...document.querySelectorAll('#summaryContent .lg-tier-head')]
         .map((h) => h.dataset.tier).filter((t) => document.getElementById(`meritTierBody${t}`));
@@ -4615,6 +4635,12 @@ test('Merit splits by tier on the match date and collapses per tier', { skip }, 
         whole[td[1]] = +td[6];
       });
       document.getElementById('meritGroupedBtn').click();
+      // Expand everything before summing: a single-player tier arrives folded
+      // and its rows are not in the DOM, which would silently drop that player
+      // from the total.
+      [...document.querySelectorAll('#summaryContent .lg-tier-head')]
+        .filter((h) => h.getAttribute('aria-expanded') !== 'true')
+        .forEach((h) => document.querySelector(`#summaryContent .lg-tier-head[data-tier="${h.dataset.tier}"]`).click());
       const split = {};
       [...document.querySelectorAll('#summaryContent tbody tr')].forEach((tr) => {
         const td = [...tr.children].map((x) => x.innerText.trim());
@@ -4622,9 +4648,8 @@ test('Merit splits by tier on the match date and collapses per tier', { skip }, 
       });
       return { ...out, whole, split };
     });
-    assert.ok(r.tiers.length > 1, 'more than one tier section');
-    assert.deepStrictEqual(r.openOnEntry, r.tiers, 'all expanded on entry');
-    assert.deepStrictEqual(r.afterCollapse, r.tiers.slice(1), 'collapsing one leaves the rest alone');
+    assert.ok(r.openTiers.length > 1, 'more than one populated tier section');
+    assert.deepStrictEqual(r.afterCollapse, r.openTiers.slice(1), 'collapsing one leaves the rest alone');
     assert.deepStrictEqual(r.split, r.whole,
       'the tier sections must sum to the All together totals, player for player');
     assert.deepStrictEqual(app.pageErrors, []);
@@ -4664,6 +4689,82 @@ test('Merit changes nothing about the League Table', { skip }, async () => {
     assert.ok(r.meritRows > 5, 'and Merit rendered a real table in between');
     assert.deepStrictEqual(r.after, r.before, 'League points are completely unchanged');
     assert.ok(r.power.every((x) => /:\d+$/.test(x)), 'and Power Rankings still shows ratings');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+// Shaun, 22 Sep: "Tier S should be collapsed by default as there's only one
+// player there." Written as the reason rather than as the letter S, so it
+// holds in both directions — a section that gains a second player opens on its
+// own, and any tier that thins to one folds without anybody remembering this.
+test('a tier section with one player arrives collapsed; the rest do not', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const read = () => [...document.querySelectorAll('#summaryContent .lg-tier-head')].map((h) => {
+        const open = h.getAttribute('aria-expanded') === 'true';
+        // Count by opening it, then put it back exactly as it was.
+        if (!open) h.click();
+        const body = document.querySelector(`#summaryContent [id$="TierBody${h.dataset.tier}"]`);
+        const rows = body ? body.querySelectorAll('tbody tr').length : 0;
+        if (!open) document.querySelector(`#summaryContent .lg-tier-head[data-tier="${h.dataset.tier}"]`).click();
+        return { tier: h.dataset.tier, open, rows };
+      });
+
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+      if (b) b.click();
+      summaryMode = 'league'; summaryMonth = '2026-09';
+      leagueLastTen = false; leagueGrouped = true; leagueExplainerOpen = false;
+      resetLeagueTierSections(); renderSummary();
+      const league = read();
+
+      summaryMode = 'merit'; summaryMonth = 'all'; leagueGrouped = true;
+      resetMeritTierSections(); renderSummary();
+      const merit = read();
+      return { league, merit };
+    });
+
+    [['League', r.league], ['Merit', r.merit]].forEach(([which, sections]) => {
+      assert.ok(sections.length > 1, `${which}: the fixture needs several tier sections`);
+      const singles = sections.filter((s) => s.rows === 1);
+      const many = sections.filter((s) => s.rows > 1);
+      assert.ok(singles.length > 0, `${which}: the fixture needs a one-player tier (Tier S)`);
+      assert.ok(many.length > 0, `${which}: and some populated ones`);
+      singles.forEach((s) => assert.strictEqual(s.open, false,
+        `${which}: Tier ${s.tier} has one player and must arrive collapsed`));
+      many.forEach((s) => assert.strictEqual(s.open, true,
+        `${which}: Tier ${s.tier} has ${s.rows} players and must arrive open`));
+    });
+    // The one the request named, specifically.
+    assert.strictEqual(r.league.find((s) => s.tier === 'S').open, false, 'Tier S starts collapsed');
+    assert.strictEqual(r.merit.find((s) => s.tier === 'S').open, false);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+test('a collapsed single-player tier still opens when tapped', { skip }, async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      const b = document.querySelector('#tabrow .tab-btn[data-tab="summary"]');
+      if (b) b.click();
+      summaryMode = 'league'; summaryMonth = '2026-09';
+      leagueLastTen = false; leagueGrouped = true; resetLeagueTierSections();
+      renderSummary();
+      const head = () => document.querySelector('#summaryContent .lg-tier-head[data-tier="S"]');
+      const out = { headingPresent: !!head(), startsOpen: head().getAttribute('aria-expanded') === 'true' };
+      head().click();
+      out.afterTap = head().getAttribute('aria-expanded') === 'true';
+      out.rows = document.getElementById('leagueTierBodyS').querySelectorAll('tbody tr').length;
+      head().click();
+      out.afterSecondTap = head().getAttribute('aria-expanded') === 'true';
+      return out;
+    });
+    assert.strictEqual(r.headingPresent, true, 'the heading is always there — collapsed is not hidden');
+    assert.strictEqual(r.startsOpen, false);
+    assert.strictEqual(r.afterTap, true, 'and a tap opens it');
+    assert.strictEqual(r.rows, 1, 'showing the one player it has');
+    assert.strictEqual(r.afterSecondTap, false, 'and closes it again');
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });

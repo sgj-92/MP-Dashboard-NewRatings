@@ -6560,9 +6560,24 @@ let leagueExplainerOpen = false;
 // Open by default, and reset to open on entry to By tier: a reader arriving at
 // the screen wants the tables, not four collapsed rows to reopen.
 let leagueTierOpen = {};
+// A tier section with a single player in it is not a table, it is a sentence.
+// Shaun, 22 Sep: Tier S should arrive collapsed, "as there's only one player
+// there". Expressed as the reason rather than as the letter S, so it stays
+// true in both directions -- if Manny is joined by somebody the section opens
+// on its own, and if any other tier ever thins to one player it folds without
+// anybody having to remember this conversation.
+//
+// A section the reader has actually touched keeps whatever they set: an
+// explicit true or false in the map always wins over the default.
+function tierSectionOpenByDefault(rowCount){ return rowCount > 1; }
+function tierSectionOpen(state, tier, rowCount){
+  return state[tier] === undefined ? tierSectionOpenByDefault(rowCount) : state[tier];
+}
+
+// Resetting means forgetting what was touched, not forcing everything open --
+// the defaults above then apply again.
 function resetLeagueTierSections(){
   leagueTierOpen = {};
-  TIER_ORDER_LIST.forEach(t => { leagueTierOpen[t] = true; });
 }
 resetLeagueTierSections();
 
@@ -6861,7 +6876,7 @@ function renderSummaryLeagueTable(){
       const rows = splitRows.filter(s => s.tier === tier && s.games > 0);
       if(rows.length === 0) return;
       anyTierShown = true;
-      const open = leagueTierOpen[tier] !== false;
+      const open = tierSectionOpen(leagueTierOpen, tier, rows.length);
       html += leagueTierHeading(tier, open);
       if(open) html += `<div id="leagueTierBody${tier}">${buildLeagueTableHtml(rows, false)}</div>`;
     });
@@ -6900,7 +6915,8 @@ function renderSummaryLeagueTable(){
   content.querySelectorAll('.lg-tier-head').forEach(btn=>{
     btn.onclick = ()=>{
       const t = btn.dataset.tier;
-      leagueTierOpen[t] = leagueTierOpen[t] === false;
+      const rowsHere = splitRows.filter(x => x.tier === t && x.games > 0).length;
+      leagueTierOpen[t] = !tierSectionOpen(leagueTierOpen, t, rowsHere);
       renderSummaryLeagueTable();
     };
   });
@@ -6929,7 +6945,6 @@ function renderSummaryLeagueTable(){
 let meritTierOpen = {};
 function resetMeritTierSections(){
   meritTierOpen = {};
-  TIER_ORDER_LIST.forEach(t => { meritTierOpen[t] = true; });
 }
 resetMeritTierSections();
 let meritExplainerOpen = false;
@@ -7000,7 +7015,7 @@ function renderMeritTable(){
       const rows = table.filter(r => r.tier === tier && r.played > 0);
       if(rows.length === 0) return;
       anyShown = true;
-      const open = meritTierOpen[tier] !== false;
+      const open = tierSectionOpen(meritTierOpen, tier, rows.length);
       html += leagueTierHeading(tier, open).replace('leagueTier', 'meritTier');
       if(open) html += `<div id="meritTierBody${tier}">${buildMeritTableHtml(rows, false)}</div>`;
     });
@@ -7024,7 +7039,9 @@ function renderMeritTable(){
   content.querySelectorAll('.lg-tier-head').forEach(btn=>{
     btn.onclick = ()=>{
       const t = btn.dataset.tier;
-      meritTierOpen[t] = meritTierOpen[t] === false;
+      const rowsHere = (MeritTable.build(matches, tierAt, { tierForRow: tierAt }).table
+        .filter(x => x.tier === t && x.played > 0)).length;
+      meritTierOpen[t] = !tierSectionOpen(meritTierOpen, t, rowsHere);
       renderMeritTable();
     };
   });
