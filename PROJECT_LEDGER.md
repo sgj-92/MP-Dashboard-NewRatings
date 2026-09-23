@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`04efe2c`** |
-| Tests | **536 / 536 passing** (136 of them drive a real browser) |
+| Last verified implementation commit | **`fc3706f`** |
+| Tests | **539 / 539 passing** (139 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -1880,6 +1880,34 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 23 Sep 2026 (clearing the player filter)
+
+`fc3706f`. **539 / 539 tests (139 browser).**
+
+Small and as specified. Two notes worth keeping:
+
+**The control is rendered conditionally rather than disabled.** Shaun asked
+for it to "disappear/disable"; absent is the better of the two on a phone,
+because a disabled control still occupies the row and still invites a tap. It
+cannot exist in a state where tapping it does nothing.
+
+**There was no natural per-field clear to retain, so one was added.** The
+brief said to keep any existing remove interaction. The fields are plain text
+inputs, and `type="text"` has no clear affordance on iOS — emptying one by
+hand works, and still does, but it means summoning a keyboard to delete a
+name. Each filled field now carries its own ×, which is what "remove one
+player without resetting all four" actually needs.
+
+**A test-harness race surfaced and is fixed.** The simulated tap-during-boot
+fired as soon as `#tabrow` had been parsed — static markup, present long
+before app.js runs — so on a loaded machine it landed before the app was
+booting and two data-flow tests failed intermittently while passing in
+isolation. It now waits for the boot to be in progress. Worth recording
+because the failure looked like a product bug and was not: an intermittently
+red suite is how people learn to ignore red.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 23 Sep 2026 (draws, and finding a game by who was in it)
 
@@ -5103,6 +5131,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `fc3706f` | Player filter clearing: a subtle Clear all on the Players in match heading, rendered only while something is selected and leaving Month and Game type untouched; a per-field remove so a four-player search can be corrected by one name; a harness race fixed that made two data-flow tests intermittent |
 | `04efe2c` | Four-player search in the Games filters (`playerFilter.js`): order-, side- and partnership-agnostic, one to four players, matching on canonical ids so a rename cannot break a historical search; compact group summary on the shut heading; the single Player select retired |
 | `b2c8544` | Draw classification fixed across every screen that describes a game (`matchOutcome.js`): the reported Doughnut "def" on a drawn match, head-to-head totals and cards, the profile summary row's latent `won ? WIN : LOSS`; head-to-head and the profile match log now read a display list that includes draws, leaving every calculation on the rated set |
 | `4b53b77` | Play/Upcoming/prediction UX: Games filters fold away with their state on the shut heading; the Your Name card replaced by a contextual identity line inside Add a game; Requests and Upcoming sectioned into folds (both tabs kept separate); Predict a Matchup can add a matchup straight to Upcoming carrying players, sides and optional scheduling; an agreed game exposes the same prediction to admins only; the prediction/Upcoming/result lifecycle made continuous with one record per game |
@@ -5168,8 +5197,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `04efe2c`,
-**536 / 536 tests (136 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `fc3706f`,
+**539 / 539 tests (139 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -5239,6 +5268,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    had drawn once and never otherwise met were told they had never played each
    other. Tests use the six real recorded draws, and one checks the stored
    documents come back unchanged with no write attempted.
+
+15a. **DONE (`fc3706f`).** Clearing the player filter: Clear all on the heading,
+   appearing and disappearing with the selection, plus a remove on each filled
+   field. Month and Game type are explicitly out of its scope.
 
 15. **DONE (`04efe2c`).** Four-player search. Verified against the record: Eli,
    Erf, Len and Max have played all three possible pairings of themselves, and
