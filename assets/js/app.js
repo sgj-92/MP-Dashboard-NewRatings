@@ -7879,16 +7879,23 @@ function renderGamesTab(){
       <div class="fg-row"><label class="fg-label">Month</label>
         <select id="gamesMonthSelect" class="fg-select"></select>
       </div>
-      <div class="fg-row"><label class="fg-label">Players in match</label>
-        <div class="section-sub" style="margin:0 0 6px; font-size:10.5px;">Any combination — partnerships and sides are ignored. One name finds their games; four finds that exact group.</div>
-        ${[0,1,2,3].map(i=>`<input id="gamesPlayer${i}" list="gamesPlayerNamesList" class="fg-select gp-field"
-            placeholder="Player ${i+1}" value="${escapeHtml(gamesPlayerLabels()[i] || '')}"
-            style="margin-bottom:6px;" />`).join('')}
-        <datalist id="gamesPlayerNamesList">${allPlayerNames().map(n=>`<option value="${escapeHtml(n)}">`).join('')}</datalist>
-        <div style="display:flex; align-items:baseline; gap:10px;">
-          <button type="button" class="preset-btn" id="gamesPlayersClear" style="flex:0 0 auto;">Clear</button>
-          <span id="gamesPlayersMessage" class="section-sub" style="margin:0; font-size:10.5px; color:var(--gold-bright);">${escapeHtml(gamesPlayersNote)}</span>
+      <div class="fg-row">
+        <div class="gp-head">
+          <label class="fg-label" style="margin:0;">Players in match</label>
+          ${gamesPlayerIds.length ? `<button type="button" class="gp-clear-all" id="gamesPlayersClear">Clear all</button>` : ''}
         </div>
+        <div class="section-sub" style="margin:0 0 6px; font-size:10.5px;">Any combination — partnerships and sides are ignored. One name finds their games; four finds that exact group.</div>
+        ${[0,1,2,3].map(i=>{
+          const value = gamesPlayerLabels()[i] || '';
+          return `<div class="gp-slot">
+            <input id="gamesPlayer${i}" list="gamesPlayerNamesList" class="fg-select gp-field"
+              placeholder="Player ${i+1}" value="${escapeHtml(value)}" />
+            ${value ? `<button type="button" class="gp-remove" data-remove-player="${i}"
+              aria-label="Remove ${escapeHtml(value)}">×</button>` : ''}
+          </div>`;
+        }).join('')}
+        <datalist id="gamesPlayerNamesList">${allPlayerNames().map(n=>`<option value="${escapeHtml(n)}">`).join('')}</datalist>
+        <div id="gamesPlayersMessage" class="section-sub" style="margin:2px 0 0; font-size:10.5px; color:var(--gold-bright);">${escapeHtml(gamesPlayersNote)}</div>
       </div>
       <div class="fg-row"><label class="fg-label">Game type</label>
         <select id="gamesTypeSelect" class="fg-select"></select>
@@ -8195,8 +8202,27 @@ Player C &amp; Player D"></textarea>
       // panel re-render does not steal focus) on every keystroke.
       el.addEventListener('change', ()=>{ applyFields(); renderGamesTab(); });
     });
+    // Clear all. Only rendered while something is selected, so tapping it
+    // always does something -- and it leaves Month and Game type exactly
+    // where they were: this clears the player selection, not the filters.
     const clearBtn = document.getElementById('gamesPlayersClear');
-    if(clearBtn) clearBtn.onclick = ()=>{ gamesPlayerIds = []; gamesPlayersNote = ''; renderGamesTab(); };
+    if(clearBtn) clearBtn.onclick = ()=>{
+      gamesPlayerIds = [];
+      gamesPlayersNote = '';
+      renderGamesTab();
+    };
+
+    // And one at a time. A four-player search is usually wrong by one name,
+    // and emptying a text field by hand on a phone to fix that is not a
+    // remove affordance -- it is a chore with a keyboard in the way.
+    document.querySelectorAll('[data-remove-player]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const i = Number(btn.dataset.removePlayer);
+        const kept = gamesPlayerLabels().filter((_, idx) => idx !== i);
+        setGamesPlayerFilter(kept);
+        renderGamesTab();
+      };
+    });
   }
 
   // ===== Add a game (always available, not gated by admin lock) =====

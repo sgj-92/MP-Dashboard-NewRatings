@@ -264,3 +264,128 @@ maybe('the filter is stored as canonical ids, not as what is on screen', async (
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
+
+// --- clearing the selection ----------------------------------------------
+// A four-player search is usually wrong by one name, so removing one has to
+// be as easy as removing all four. And "clear the players" must mean exactly
+// that: Month and Game type belong to the reader, not to this control.
+
+maybe('Clear all appears only while players are selected, and clears all four', async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
+      gamesMonth = 'all'; gamesType = 'all'; gamesFiltersOpen = true;
+      setGamesPlayerFilter([]); renderGamesTab();
+      const clearAll = () => document.getElementById('gamesPlayersClear');
+      const count = () => document.querySelectorAll('#gamesView .game-card-clickable').length;
+
+      const empty = { present: !!clearAll(), games: count() };
+
+      const four = PLAYERS.slice(0, 4).map((p) => p.name);
+      setGamesPlayerFilter(four); renderGamesTab();
+      const selected = { present: !!clearAll(), label: clearAll().textContent.trim(), ids: gamesPlayerIds.length };
+
+      clearAll().click();
+      const cleared = {
+        present: !!clearAll(),
+        ids: gamesPlayerIds.slice(),
+        games: count(),
+        fields: [0, 1, 2, 3].map((i) => document.getElementById(`gamesPlayer${i}`).value),
+      };
+      return { empty, selected, cleared, four };
+    });
+    assert.strictEqual(r.empty.present, false, 'nothing selected: no Clear all to tap');
+    assert.strictEqual(r.selected.present, true);
+    assert.strictEqual(r.selected.label, 'Clear all');
+    assert.strictEqual(r.selected.ids, 4);
+    assert.deepStrictEqual(r.cleared.ids, [], 'one tap clears all four');
+    assert.deepStrictEqual(r.cleared.fields, ['', '', '', ''], 'and empties the fields with them');
+    assert.strictEqual(r.cleared.present, false, 'and takes itself away again');
+    assert.strictEqual(r.cleared.games, r.empty.games,
+      'the list returns to what the remaining filters say, with no Apply step');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+maybe('Clear all clears the players and nothing else', async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
+      gamesMonth = 'all'; gamesType = 'all'; gamesFiltersOpen = true;
+      setGamesPlayerFilter([]); renderGamesTab();
+
+      // A real game type, chosen from what the control actually offers.
+      const typeSel = document.getElementById('gamesTypeSelect');
+      const someType = [...typeSel.querySelectorAll('option')].map((o) => o.value).find((v) => v !== 'all');
+      gamesType = someType;
+      const month = getAvailableMonths()[0];
+      gamesMonth = month;
+      // One player only, so the month and type still leave games to show.
+      const busiest = PLAYERS.slice().sort((a, b) => b.total - a.total)[0].name;
+      setGamesPlayerFilter([busiest]); renderGamesTab();
+
+      const before = { month: gamesMonth, type: gamesType };
+      document.getElementById('gamesPlayersClear').click();
+      return {
+        before,
+        after: { month: gamesMonth, type: gamesType, ids: gamesPlayerIds.slice() },
+        summary: document.getElementById('gamesFiltersToggle').textContent.replace(/\s+/g, ' '),
+      };
+    });
+    assert.strictEqual(r.after.month, r.before.month, 'Month must survive a player clear');
+    assert.strictEqual(r.after.type, r.before.type, 'and so must Game type');
+    assert.deepStrictEqual(r.after.ids, []);
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+maybe('one player can be removed without resetting the other three', async () => {
+  const app = await H.open();
+  try {
+    const r = await app.run(() => {
+      document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
+      gamesMonth = 'all'; gamesType = 'all'; gamesFiltersOpen = true;
+      const four = PLAYERS.slice(0, 4).map((p) => p.name);
+      setGamesPlayerFilter(four); renderGamesTab();
+      const removes = () => document.querySelectorAll('[data-remove-player]').length;
+      const count = () => document.querySelectorAll('#gamesView .game-card-clickable').length;
+
+      const withFour = { removes: removes(), games: count() };
+      // Take out the second name only.
+      document.querySelector('[data-remove-player="1"]').click();
+      const withThree = {
+        ids: gamesPlayerIds.slice(), removes: removes(), games: count(),
+        clearAll: !!document.getElementById('gamesPlayersClear'),
+      };
+
+      // Down to the last one, then past it: Clear all goes with it.
+      document.querySelector('[data-remove-player="0"]').click();
+      document.querySelector('[data-remove-player="0"]').click();
+      const withOne = { ids: gamesPlayerIds.slice(), clearAll: !!document.getElementById('gamesPlayersClear') };
+      document.querySelector('[data-remove-player="0"]').click();
+      const withNone = { ids: gamesPlayerIds.slice(), clearAll: !!document.getElementById('gamesPlayersClear'), games: count() };
+
+      // Emptying a field by hand goes on working too.
+      setGamesPlayerFilter(four); renderGamesTab();
+      const field = document.getElementById('gamesPlayer2');
+      field.value = ''; field.dispatchEvent(new Event('change', { bubbles: true }));
+      const typedOut = gamesPlayerIds.slice();
+
+      return { four, withFour, withThree, withOne, withNone, typedOut };
+    });
+    assert.strictEqual(r.withFour.removes, 4, 'every filled field carries its own remove');
+    assert.strictEqual(r.withThree.ids.length, 3, 'removing one leaves the other three alone');
+    assert.deepStrictEqual(r.withThree.ids, [r.four[0], r.four[2], r.four[3]],
+      'and it is the one that was tapped that goes');
+    assert.strictEqual(r.withThree.removes, 3);
+    assert.ok(r.withThree.games >= r.withFour.games, 'a narrower search cannot return fewer games');
+    assert.strictEqual(r.withOne.clearAll, true, 'still there while one remains');
+    assert.strictEqual(r.withNone.clearAll, false, 'gone once the last is removed');
+    assert.deepStrictEqual(r.withNone.ids, []);
+    assert.deepStrictEqual(r.typedOut, [r.four[0], r.four[1], r.four[3]],
+      'emptying a field by hand still removes just that player');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});

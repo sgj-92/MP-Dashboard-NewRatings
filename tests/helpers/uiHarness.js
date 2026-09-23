@@ -165,6 +165,15 @@ async function open(options = {}) {
       const tap = setInterval(() => {
         const btn = document.querySelector(`#tabrow .tab-btn[data-tab="${tapDuringBoot}"]`);
         if (!btn) return;
+        // Wait for the app to be BOOTING, not merely for the button to have
+        // been parsed. `#tabrow` is static markup and exists long before
+        // app.js runs, so tapping on sight raced the scripts: on a loaded
+        // machine the tap landed before DATA_READY existed at all, and the
+        // test that checks what the reader saw mid-load saw `undefined`
+        // instead of `false`. This is also what a person does -- they tap
+        // once the app is on screen, not while it is still parsing.
+        if (typeof DATA_READY === 'undefined') return;
+        if (DATA_READY) { clearInterval(tap); return; }   // too late; nothing to observe
         clearInterval(tap);
         window.__tappedAt = Date.now();
         btn.click();

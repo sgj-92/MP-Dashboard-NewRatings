@@ -2075,3 +2075,33 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   color: var(--gold-soft); cursor: pointer; text-decoration: underline;
 }
 .identity-line .identity-change:active{ opacity: .7; }
+
+/* ===================== GAMES: PLAYERS IN MATCH =====================
+   The heading owns the clear, which is the only place it makes sense: it
+   belongs to these four fields and to nothing else on the panel. Month and
+   Game type are not its business. */
+.gp-head{
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-bottom: 5px;
+}
+/* Secondary on purpose. It is an undo, not an action -- a filled button here
+   would compete with the search it exists to cancel. */
+.gp-clear-all{
+  background: none; border: none; padding: 0;
+  font-family: var(--font-interface); font-size: 11px; letter-spacing: .02em;
+  color: var(--text-dim); text-decoration: underline; cursor: pointer;
+}
+.gp-clear-all:active{ opacity: .6; }
+
+/* One field and its own remove, which is what lets a four-player search be
+   corrected by one name rather than retyped. */
+.gp-slot{ position: relative; margin-bottom: 6px; }
+.gp-slot .gp-field{ padding-right: 34px; }   /* room for the × */
+.gp-remove{
+  position: absolute; right: 2px; top: 0; bottom: 0;
+  width: 32px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-dim); font-size: 17px; line-height: 1;
+}
+.gp-remove:active{ opacity: .6; }
