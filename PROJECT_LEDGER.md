@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`4b53b77`** |
-| Tests | **515 / 515 passing** (130 of them drive a real browser) |
+| Last verified implementation commit | **`04efe2c`** |
+| Tests | **536 / 536 passing** (136 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -308,6 +308,31 @@ Development instrumentation lives behind `?perf=1` (`perfTrace.js`) and reports
 when the record arrived, when each screen was drawn and what each derived
 calculation cost; it compiles to nothing when off.
 
+**Three outcomes, never two (23 Sep).** A match is a win, a loss or a draw,
+and the draw is the one code forgets. On a drawn match `winners` and `losers`
+still hold the two sides — a match has two sides whatever the result — but
+they mean nothing, and the record says so: every drawn document carries
+`drawSideAssignmentArbitrary: true`. `matchOutcome.js` asks the question once,
+**from the recorded outcome and never from the score** (a Money Padel draw is
+usually an unfinished match, so its sets can look like anything, 6-0 6-1
+included). Any screen that describes a game goes through it. Wording is fixed:
+`A & B def C & D` for a decided match, **winner first whichever side is
+reading it**, and `A & B drew with C & D` for a draw.
+
+**Two match lists, and the difference matters (23 Sep).** `MATCHES` is the
+RATED set and excludes draws, because a draw has no winner to rate; every
+calculation reads it and must go on reading it. `matchesIncludingDraws()` adds
+the drawn games back for screens that DESCRIBE history — head-to-head, a
+player's own match log, the doughnut drill-down. Draws are rated (24 journey
+events across the six), so an enriched drawn match carries its pre-match
+ratings and its explanation like any other.
+
+**Finding a game by who was in it (23 Sep).** `playerFilter.js` compares SETS
+of participants, in canonical ids. Order-, side- and partnership-agnostic by
+construction; one to four players, each narrowing; four is the exact group,
+since a doubles match holds exactly four. Ids rather than labels so a rename
+cannot empty a historical search — pinned by a test.
+
 **Identity (22 Sep).** There were two. `currentUserName` is free text typed
 into a "Your name" box and kept on the device; the VIEWER is the player chosen
 in the header, validated against the roster. The viewer wins wherever it
@@ -466,6 +491,9 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Reassessment α ships at 0.25 | Below the best-performing 0.50, pending real reviews. |
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
+| A draw is read from the record, never inferred from the score | Shaun, 23 Sep: Money Padel draws come from unfinished matches, injury and time limits, so the scoreline proves nothing. `outcome` on the document is authoritative. No screen may classify an outcome any other way. |
+| Screens that describe history include draws; calculations do not | The rated set stays draw-free so no win percentage, league point or partnership figure moves. Head-to-head, the profile match log and the doughnut drill-down read the wider list, because a drawn game is still a game that was played. |
+| Historical search matches on canonical ids | Shaun, 23 Sep: the new name editing must not be able to break a historical search. Both sides of the comparison go through `playerIdFor`. |
 | The chosen player is the identity, not a typed name | Shaun, 22 Sep: the Games tab must not permanently spend screen space on a read-only name card when the app already knows who you are. The viewer wins; the typed name survives as the fallback. Attribution behaviour is unchanged — this is a better source for the same field, not a presentational shortcut. |
 | A prediction is calculated once and shown twice | Predict a Matchup and Upcoming share `matchPrediction.js` and one presentation function. Nothing about a prediction is stored: it is recomputed from the players whenever asked, so it cannot go stale against a rating that has since moved. Admin-only in both places. |
 | An Upcoming game may be created without a schedule | Date, time and venue are optional and show as TBC. Refusing to create a game without a date would make Upcoming describe a club that plans further ahead than it does. |
@@ -1852,6 +1880,58 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 23 Sep 2026 (draws, and finding a game by who was in it)
+
+`b2c8544` and `04efe2c`. **536 / 536 tests (136 browser).**
+
+**The draw bug was one instance of one mistake, made in five places.** Shaun
+reported the Doughnut drill-down writing "def" over a drawn game. The cause is
+worth stating plainly because it will be made again otherwise: on a drawn
+match `winners` and `losers` still hold the two sides, because a match has two
+sides whatever the result — but they mean nothing, and the record knows it
+(`drawSideAssignmentArbitrary: true` on every drawn document). So
+`winners.includes(name)` answers "which side was this player filed on", and
+`won ? 'WIN' : 'LOSS'` promotes a coin toss to a result.
+
+The audit found the Doughnut line, two head-to-head totals, the head-to-head
+opponent card, and one latent case in the profile's collapsed summary row
+(`=== 'WIN'` then `won ? 'WIN' : 'LOSS'`) which would have started showing
+LOSS the moment the card beneath it said DRAW — it was only correct because
+draws never reached it.
+
+**Two of the five were wrong by OMISSION, which was the more misleading
+half.** Head-to-head and a player's own match history were built from
+`MATCHES`, the RATED set, which excludes draws by design. So a drawn meeting
+was not misclassified, it was invisible: two players who had drawn once and
+never otherwise met were told they had never played each other. Both now read
+`matchesIncludingDraws()`. Nothing that calculates changed lists.
+
+**A finding Shaun should decide on, deliberately not acted on** (NEXT #16):
+draws ARE rated — 24 journey events across the six, with real expectations —
+yet the rated set excludes them, so Recent Form and the upset filter are
+computed over 153 of 159 games. Including them would move the Power Rankings
+"Recent form" sort, which is a ranking change and not a display fix, so it was
+left alone and written up rather than folded in quietly.
+
+**The four-player search is a set comparison, and that is the whole design.**
+Order, sides and partnership are not part of the question, so they are not
+part of the code: `playerFilter.js` compares participant sets. Fewer than four
+is not a degenerate case but the common one. Four is the exact group for free,
+since a doubles match holds exactly four people.
+
+It matches on canonical ids rather than displayed names, per Shaun's
+instruction, and a test pins the failure mode directly: searching a renamed
+player finds their old matches through the id layer and would not through the
+labels. `selectedGamesPlayer` was retired rather than kept beside the new
+filter — one filter, one source of truth — and the places that had a single
+point of view (heading, card tinting, score orientation) now derive it from
+the selection holding exactly one player.
+
+Verified against the record: Eli, Erf, Len and Max have played all three
+possible pairings of themselves, and the search finds all three.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 22 Sep 2026 (Play / Upcoming / prediction UX)
 
@@ -5023,6 +5103,8 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `04efe2c` | Four-player search in the Games filters (`playerFilter.js`): order-, side- and partnership-agnostic, one to four players, matching on canonical ids so a rename cannot break a historical search; compact group summary on the shut heading; the single Player select retired |
+| `b2c8544` | Draw classification fixed across every screen that describes a game (`matchOutcome.js`): the reported Doughnut "def" on a drawn match, head-to-head totals and cards, the profile summary row's latent `won ? WIN : LOSS`; head-to-head and the profile match log now read a display list that includes draws, leaving every calculation on the rated set |
 | `4b53b77` | Play/Upcoming/prediction UX: Games filters fold away with their state on the shut heading; the Your Name card replaced by a contextual identity line inside Add a game; Requests and Upcoming sectioned into folds (both tabs kept separate); Predict a Matchup can add a matchup straight to Upcoming carrying players, sides and optional scheduling; an agreed game exposes the same prediction to admins only; the prediction/Upcoming/result lifecycle made continuous with one record per game |
 | `459eb2f` | Data-loading audit and its fixes: start-up's fourteen reads issued together (3,779ms → 499ms to first content at 250ms latency); no screen drawn before the record exists, and start-up draws the screen the reader is actually on; every mutation redraws that screen through one function, guarded by a source-level test; `perfTrace.js` instrumentation behind `?perf=1`; stale reassessment snapshot cleared by any change to the journey; one duplicate Merit build removed |
 | `b864786` | Merit gains a Favoured column beside Hard, both tappable, opening the qualifying matches with their fixture-date tiers, score, tier-step gap and points — carried on the row by the canonical calculation rather than reclassified |
@@ -5086,8 +5168,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `4b53b77`,
-**515 / 515 tests (130 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `04efe2c`,
+**536 / 536 tests (136 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -5150,9 +5232,31 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    chosen player with nothing typed refused → accepted and attributed; no
    prediction from Upcoming → one.
 
+14. **DONE (`b2c8544`).** Draw wording bug and the audit behind it. Five sites
+   found, four wrong and one latent. Two of them were wrong by OMISSION rather
+   than misclassification: head-to-head and a player's own match history were
+   built from the rated set, so a drawn meeting was invisible — two players who
+   had drawn once and never otherwise met were told they had never played each
+   other. Tests use the six real recorded draws, and one checks the stored
+   documents come back unchanged with no write attempted.
+
+15. **DONE (`04efe2c`).** Four-player search. Verified against the record: Eli,
+   Erf, Len and Max have played all three possible pairings of themselves, and
+   the search finds all three whichever order the names are typed.
+
 ### Waiting on Shaun
 
-14. **Requests and Upcoming: one screen or two?** Held deliberately at Shaun's
+16. **Should the rated set include draws?** *(Found during the draw audit, not
+   acted on.)* Draws ARE rated — six matches, 24 journey events, real
+   `actualScore` and `preMatchExpectedScore` — but `getEffectiveMatches()`
+   filters them out, so `MATCHES` holds 153 of the 159 games. Player draw
+   counts are already tracked separately, so records reconcile; what does not
+   include them is Recent Form (which feeds the Power Rankings "Recent form"
+   sort) and the upset filter. Including them would move a ranking sort, which
+   is why it was left alone rather than folded into a display fix. Two lines
+   either way, and it needs a decision rather than a default.
+
+17. **Requests and Upcoming: one screen or two?** Held deliberately at Shaun's
    instruction until the condensed design could be seen. It can now:
    Requests is four folded sections (Challenges, Request a game, Admin add,
    Pending) and Upcoming is one folded list. **CCode's reading is that they
@@ -5161,41 +5265,41 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    taken most of the length out of both. But this is his call, not an
    implementation detail.
 
-15. **Should a plain request also carry time and venue?** The prediction path
+18. **Should a plain request also carry time and venue?** The prediction path
    and the admin add-straight-to-Upcoming path both do. The ordinary request
    form still offers only a preferred date, on the reading that an unconfirmed
    proposal is not a fixture. One line either way.
 
-16. **Cache the app shell?** Every launch downloads 825KB of JavaScript, 104KB
+19. **Cache the app shell?** Every launch downloads 825KB of JavaScript, 104KB
    of CSS and the Firebase SDK, with no service worker. A service worker would
    make repeat launches close to instant and carries **no risk to the record**
    — it caches code, never data. It is a deployment change (cache
    invalidation, an update path when a new version ships), which is why it is
    here rather than done. Roughly a second saved per launch on a phone.
 
-17. **Live updates between devices?** There are no Firestore listeners, so if
+20. **Live updates between devices?** There are no Firestore listeners, so if
    one person submits or approves a game, another person's open app does not
    see it until they reload. Nothing about this changed today, and it may well
    be acceptable for a club of 34 — but it is now the only remaining way a
    screen can hold an out-of-date number, so it should be an answered question
    rather than an assumption.
 
-18. **Predict a Matchup visual render.** The copy is delivered and the layout was
+21. **Predict a Matchup visual render.** The copy is delivered and the layout was
    deliberately left alone. `docs/screenshots/19-admin-predict.png` shows the
    current copy in the existing treatment, which should make the render easier
    to specify against. Nothing will be invented here in the meantime.
 
 ### Needing a person, not an implementer
 
-19. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
-20. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
-21. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
-22. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
+22. **`All together` tier column — confirm or correct.** It describes the tiers a player **occupied** that month, so someone who moved on the 20th and has not played since still reads `B → A`. Describing only the tiers they actually played in is a one-line change if Shaun prefers it. *(Carried since before the compaction; still unanswered.)*
+23. **Tier S is invisible to every tier-scoped view** (Section 5, item 8). Manny is the only Tier S player; **Kings of Tiers hardcodes A/B/C and the tier filter offers A/B/C**, so he cannot appear in either. *Partly addressed 22 Sep:* Shaun's instruction to collapse Tier S by default treats it as a real tier that belongs on the League and Merit tables, which it now is. **Still unanswered:** whether Kings of Tiers and the tier filter should include S. Low urgency, but it should not stay open before beta.
+24. **Engine precision** (Section 5, item 11). A one-line lossless fix in `ratingEngine.applyStateEvent`, recorded as a passing `KNOWN:` test rather than applied, because the engine is frozen. Replay-forward routes around it, so it blocks nothing — but it needs a decision rather than indefinite deferral.
+25. **Match cards changed shape** (Section 5, item 9). K is per-player, so the old "+X for winners · −X for losers" is true for nobody and each player's own change is listed instead. Recorded for review, never presented as settled.
 
 ### Standing
 
-23. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
-24. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
+26. **Every task:** add targeted browser/module regression coverage for changed behaviours, and update this Ledger with the commit, test totals and findings. A new regression test is verified to fail against the old code before it is accepted.
+27. **The rating-model backlog and match sharing (Section 5) remain parked and unauthorised.** No changes to Sequential-v1 methodology, tier-history semantics or Reliability rules.
 
 *The NEXT list this replaces, as it stood before the compaction (`deaec37`),
 read: "**All items are DONE (`49af41b`).** The League Table splits a month by
