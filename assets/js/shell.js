@@ -1664,10 +1664,14 @@ function computeMatchToMake(viewerName){
 }
 
 // The real per-game sequence behind the aggregate counts, oldest-to-newest,
-// as W / D / L. It returns letters rather than booleans because a boolean
-// cannot hold a draw: the old version mapped every game to
+// as the LETTERS 'W' / 'D' / 'L'. Letters rather than booleans because a
+// boolean cannot hold a draw: the old version mapped every game to
 // `winners.includes(name)`, which on a drawn match is whichever side the
 // record happened to file the player on.
+//
+// Every letter is truthy, so a caller testing this for truth gets a win every
+// time -- which is exactly what happened to Home's dots. Callers must go
+// through MatchOutcome.classFor(), never a conditional of their own.
 function computeRecentFormSequence(name, windowSize){
   windowSize = windowSize || 10;
   const own = MATCHES.filter(m => m.winners.includes(name) || m.losers.includes(name))
@@ -1846,8 +1850,8 @@ function renderHomeDashboard(){
       <div class="home-yourgame-group home-yourgame-form">
         <div class="section-sub" style="font-size:10px;">Recent Form · Last ${snap.recentForm ? snap.recentForm.games : 0}</div>
         <div class="home-form-row">
-          <div class="home-form-dots">${snap.recentForm ? computeRecentFormSequence(viewer.name, 10).map(isWin=>
-            `<span class="form-dot ${isWin?'w':'l'}"></span>`
+          <div class="home-form-dots">${snap.recentForm ? computeRecentFormSequence(viewer.name, 10).map(result=>
+            `<span class="form-dot ${MatchOutcome.classFor(result)}" title="${result || ''}"></span>`
           ).join('') : '—'}</div>
           <div class="home-form-record">${snap.recentForm ? `${snap.recentForm.wins}W – ${snap.recentForm.losses}L` : 'Not enough recent games'}</div>
         </div>
@@ -2127,7 +2131,7 @@ function renderPremiumProfile(name, matchFilter){
   const seq = computeRecentFormSequence(name, 10);
   const formHtml = snap.recentForm ? `
     <div class="pp-section">
-      <div class="pp-form-seq">${seq.map(letter=>`<span class="pp-form-letter ${letter.toLowerCase()}">${letter}</span>`).join('')}</div>
+      <div class="pp-form-seq">${seq.map(letter=>`<span class="pp-form-letter ${MatchOutcome.classFor(letter)}">${letter}</span>`).join('')}</div>
       <div class="pp-form-record">${snap.recentForm.wins}–${snap.recentForm.losses} · Last ${snap.recentForm.games}</div>
       <div class="pp-form-clutch section-sub">${p.avg_overperf_pct>=0?'+':''}${p.avg_overperf_pct}% vs expectation</div>
     </div>

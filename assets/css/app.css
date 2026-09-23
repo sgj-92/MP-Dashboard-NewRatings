@@ -1009,9 +1009,19 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .home-form-record{ font-family: var(--font-interface); font-size: 10.5px; color: var(--text-dim); white-space: nowrap; }
 /* Smaller, unlabelled dots -- less visually dominant than the earlier
    lettered-circle treatment; color alone communicates win/loss. */
-.form-dot{ width: 13px; height: 13px; border-radius: 50%; }
-.form-dot.w{ background: var(--green); }
-.form-dot.l{ background: var(--red); }
+/* A dot with no state is a dot with no result behind it, and it has to LOOK
+   like one. Before this it had no background at all, so an unclassified dot
+   was invisible rather than obviously wrong -- the failure mode that let ten
+   losses render as ten wins would at least have shown as ten gaps. */
+.form-dot{
+  width: 13px; height: 13px; border-radius: 50%;
+  background: transparent; border: 1px solid var(--line);
+}
+.form-dot.w{ background: var(--green); border-color: var(--green); }
+.form-dot.l{ background: var(--red); border-color: var(--red); }
+/* Neither, and borrowing neither colour. Matches the draw treatment used by
+   the profile's form letters and the League table's Last 10 column. */
+.form-dot.d{ background: var(--line); border-color: var(--line); }
 .home-insight{
   margin-top: var(--space-3); padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm);
   font-family: var(--font-interface); font-size: 12px; color: var(--text);

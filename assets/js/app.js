@@ -7225,10 +7225,14 @@ function sortLastTenRows(rows){
 // The run, newest first. Points say how the ten went; this says which way
 // they are going, which is the whole reason to look at form rather than a
 // season table.
+// The third renderer of a form run, and the reason the classification is
+// shared rather than repeated: this one keyed a colour map off the raw letter,
+// Home tested it for truth, and the profile lower-cased it. Three answers to
+// one question is how they came to disagree.
 function lastTenRunHtml(run){
-  const colour = { W: 'var(--green)', L: 'var(--red)', D: 'var(--text-dim)' };
+  const colour = { w: 'var(--green)', l: 'var(--red)', d: 'var(--text-dim)', '': 'var(--text-dim)' };
   return run.slice(0, 5).map(r =>
-    `<span style="display:inline-block; width:13px; text-align:center; color:${colour[r]}; font-weight:700;">${r}</span>`
+    `<span style="display:inline-block; width:13px; text-align:center; color:${colour[MatchOutcome.classFor(r)]}; font-weight:700;">${r}</span>`
   ).join('');
 }
 

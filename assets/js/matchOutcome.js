@@ -95,6 +95,29 @@
     return `${fmt(first)} drew with ${fmt(second)}`;
   }
 
+  // The one place a result becomes a CSS state.
+  //
+  // Three separate renderers draw a run of form -- Home's dots, the profile's
+  // letters, the League table's Last 10 column -- and each used to decide for
+  // itself what a result looked like. One of them decided with
+  // `won ? 'w' : 'l'`, written when the sequence it read returned booleans.
+  // When that sequence started returning 'W' / 'D' / 'L' instead, every one of
+  // those strings was truthy, and ten straight losses were drawn in green
+  // beside a record that correctly said 4W-6L. The aggregate was right, the
+  // dots were unanimous, and nothing threw.
+  //
+  // So the mapping lives here, once, and takes the letters and the words this
+  // module already deals in. Anything it does not recognise returns '' rather
+  // than a guess: an unstyled dot reads as missing, which is what it is, and a
+  // wrong one reads as a win.
+  function classFor(result) {
+    const r = String(result === null || result === undefined ? '' : result).toLowerCase();
+    if (r === 'w' || r === WIN) return 'w';
+    if (r === 'd' || r === DRAW) return 'd';
+    if (r === 'l' || r === LOSS) return 'l';
+    return '';
+  }
+
   // W/D/L over a list, from one player's point of view. The third counter is
   // the whole reason this exists: a tally built as `wins` and
   // `total - wins` cannot represent a draw and will file it as a loss.
@@ -111,5 +134,5 @@
     return out;
   }
 
-  return { WIN, LOSS, DRAW, W, D, L, isDraw, outcomeFor, sidesFor, letterFor, describe, tally };
+  return { WIN, LOSS, DRAW, W, D, L, isDraw, outcomeFor, sidesFor, letterFor, classFor, describe, tally };
 });
