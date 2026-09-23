@@ -2105,9 +2105,12 @@ test('the standing headline agrees with the recorded pre-match ratings', { skip 
         closeSheet();
       });
       // And the same thing computed straight from the record, per player.
+      // matchesIncludingDraws(), not MATCHES: a player's profile shows every
+      // game they played, and a draw is rated too, so it carries a pre-match
+      // standing and an explanation like any other.
       const expectations = [];
       ['Shaun', 'Rishi', 'Eli', 'Osh'].forEach((name) => {
-        MATCHES.filter((m) => m.winners.includes(name) || m.losers.includes(name))
+        matchesIncludingDraws().filter((m) => m.winners.includes(name) || m.losers.includes(name))
           .sort((a, b) => (a.date < b.date ? 1 : -1))
           .forEach((m) => {
             const v = MatchFacts.forPlayer(V3_MATCH_FACTS[m.id], name);
@@ -3392,15 +3395,12 @@ test('View match opens the right match, whether or not it was a draw', { skip },
     r.forEach((c) => {
       assert.ok(c.onProfile || c.inGames,
         `${c.name}: View match reached neither the profile nor the Games card for ${c.wantedId}`);
-      if (!c.isDraw) {
-        assert.strictEqual(c.onProfile, true,
-          `${c.name}: a decided match must open on their own profile`);
-        assert.strictEqual(c.who, c.name, 'their own profile, so the card is written from their side');
-      } else {
-        assert.strictEqual(c.inGames, true,
-          `${c.name}: a draw must fall back to the Games feed, expanded`);
-        assert.strictEqual(c.sheetOpen, false, 'and must not leave an empty profile sheet open');
-      }
+      // Every match opens on the player's own profile now, drawn or not: the
+      // profile's match log used to be built from the RATED set, so a draw
+      // had no card to open and fell back to the Games feed. It has one.
+      assert.strictEqual(c.onProfile, true,
+        `${c.name}: ${c.isDraw ? 'a draw' : 'a decided match'} must open on their own profile`);
+      assert.strictEqual(c.who, c.name, 'their own profile, so the card is written from their side');
     });
     assert.ok(r.some((c) => !c.isDraw), 'at least one decided match must be covered');
     assert.deepStrictEqual(app.pageErrors, []);

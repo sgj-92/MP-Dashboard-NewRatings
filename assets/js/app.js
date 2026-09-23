@@ -52,6 +52,7 @@ let STARTING_TIER_MAP = {};// name -> tier they started at, if different from cu
 
 let PLAYERS = [];
 let MATCHES = [];
+let DRAW_MATCHES = [];     // enriched draws; see recomputeAll and matchesIncludingDraws()
 let PARTNERSHIPS = [];
 let BEST_PARTNER = {};
 let BOUNDARY_TESTS = [];
@@ -622,6 +623,34 @@ function playerStateOf(name, asOf){
   });
 }
 
+// Every game actually played, decided or drawn, newest-agnostic. For screens
+// that DESCRIBE history. Never for anything that calculates a rating, a win
+// percentage or a league point -- those read MATCHES, which is the rated set.
+function matchesIncludingDraws(){
+  return MATCHES.concat(DRAW_MATCHES);
+}
+
+// The meetings between two players, on opposite sides. One definition, used by
+// both head-to-head surfaces, so they cannot disagree about what counts as a
+// meeting -- and it includes draws, which a pair of `winners/losers` clauses
+// silently dropped.
+function h2hOpponentMatches(a, b){
+  return matchesIncludingDraws().filter(m=>{
+    const inA = m.winners.includes(a) || m.losers.includes(a);
+    const inB = m.winners.includes(b) || m.losers.includes(b);
+    if(!inA || !inB) return false;
+    const sameSide = (m.winners.includes(a) && m.winners.includes(b))
+      || (m.losers.includes(a) && m.losers.includes(b));
+    return !sameSide;
+  });
+}
+
+function h2hTeammateMatches(a, b){
+  return matchesIncludingDraws().filter(m=>
+    (m.winners.includes(a) && m.winners.includes(b))
+    || (m.losers.includes(a) && m.losers.includes(b)));
+}
+
 function enrichMatches(matches){
   return matches.map(m=>{
     const gw = m.sets.reduce((s,set)=>s+set[0],0);
@@ -1096,7 +1125,7 @@ function recomputeAllNow(){
   // to a tier seed, or to 1400 -- a believable wrong number is the worst
   // outcome for a beta whose entire purpose is comparing two rating systems.
   if(!V3_STATE.loaded){
-    PLAYERS = []; MATCHES = []; ALL_MATCHES = []; H2H = {}; PARTNERSHIPS = []; BEST_PARTNER = {};
+    PLAYERS = []; MATCHES = []; DRAW_MATCHES = []; ALL_MATCHES = []; H2H = {}; PARTNERSHIPS = []; BEST_PARTNER = {};
     BOUNDARY_TESTS = []; CALIBRATION_GAMES = []; WITHIN_TIER_GAMES = []; DIFFICULTY_SUGGESTIONS = {};
     INACTIVE_PLAYERS = new Set();
     return;
@@ -1113,6 +1142,16 @@ function recomputeAllNow(){
   // expectations, which live in ratingJourney. They must not be presented as
   // such, and this function is scheduled for replacement.
   MATCHES = enrichMatches(ALL_MATCHES);
+  // Drawn matches, enriched the same way, kept in their own list.
+  //
+  // MATCHES deliberately holds only the matches the RATING is computed from,
+  // and a draw has no winner to rate, so it is not in there -- and must not
+  // be, or every win/loss total in the club would move. But a draw is still a
+  // game that was played, and a screen showing a player's history, a
+  // head-to-head or a doughnut has no business pretending it did not happen.
+  // So the screens that describe games ask for this as well, and the ones
+  // that calculate do not.
+  DRAW_MATCHES = enrichMatches(getAllApprovedMatches().filter(m => m.isDraw));
   PLAYERS = buildPlayers(MATCHES, ratings, TIER_MAP, ACTIVE_MAP);
   PLAYERS.forEach(p=>V3Bridge.decoratePlayer(p, V3_STATE, PRODUCTION_SNAPSHOT_INDEX));
 
@@ -3979,7 +4018,10 @@ function openSheet(name, matchFilter){
   const deltaByMatchId = journeyDeltasByMatchId(journeyResult.journey);
 
   document.getElementById('sheetProfile').innerHTML = `<div class="profile-box">${buildProfileText(p)}</div>` + buildDevAreasSection(name) + buildGameRequestsForPlayerSection(name) + buildRecentFormSection(name) + buildMonthlyRatingSection(name) + buildJourneySection(name, journeyResult) + buildRankingNeighborsSection(name) + buildCallOutSection(name) + buildDifficultySection(name);
-  let ms = MATCHES.filter(m => m.winners.includes(name) || m.losers.includes(name));
+  // A player's own match log is a record of what they played, so it holds the
+  // drawn games too. (The rated set, MATCHES, deliberately does not -- see
+  // recomputeAll. Nothing below this line feeds a rating or a ranking.)
+  let ms = matchesIncludingDraws().filter(m => m.winners.includes(name) || m.losers.includes(name));
   ms.sort((a,b)=> a.date < b.date ? 1 : -1);
 
   // If a month is selected elsewhere in the app, keep this profile's match log scoped to it too.
@@ -3996,6 +4038,8 @@ function openSheet(name, matchFilter){
     // are. There is no month-specific variant any more: a match was or was not
     // an upset when it was played, and no later month can change that.
     ms = ms.filter(m=>{
+      // Neither an upset win nor an upset loss: nobody won it.
+      if(MatchOutcome.isDraw(m)) return false;
       const won = m.winners.includes(name);
       const myTeamRating = won ? m.team_w_rating : m.team_l_rating;
       const oppTeamRating = won ? m.team_l_rating : m.team_w_rating;
@@ -4022,19 +4066,25 @@ function openSheet(name, matchFilter){
 
   const box = document.getElementById('sheetMatches');
   box.innerHTML = filterBannerHtml + ms.map(m=>{
-    const won = m.winners.includes(name);
-    const myTeam = won ? m.winners : m.losers;
-    const oppTeam = won ? m.losers : m.winners;
-    const partner = m.type==='doubles' ? myTeam.filter(n=>n!==name)[0] : null;
+    const sides = MatchOutcome.sidesFor(m, name);
+    const drew = sides.outcome === MatchOutcome.DRAW;
+    // On a drawn match `winners` is whichever side the record filed first, so
+    // it may not be this player's. `sidesFor` picks the side they were
+    // actually on, which is the only question that still has an answer.
+    const won = sides.outcome === MatchOutcome.WIN;
+    const onStoredWinnersSide = m.winners.includes(name);
+    const myTeam = sides.mine;
+    const oppTeam = sides.theirs;
+    const partner = m.type==='doubles' ? sides.partner : null;
 
-    const myTeamRating = won ? m.team_w_rating : m.team_l_rating;
-    const oppTeamRating = won ? m.team_l_rating : m.team_w_rating;
+    const myTeamRating = onStoredWinnersSide ? m.team_w_rating : m.team_l_rating;
+    const oppTeamRating = onStoredWinnersSide ? m.team_l_rating : m.team_w_rating;
     const favored = myTeamRating > oppTeamRating;
     const gap = Math.round(Math.abs(myTeamRating - oppTeamRating));
 
     const isCloseGoingIn = gap < 15;
     let upsetTag = '';
-    if(!isCloseGoingIn){
+    if(!isCloseGoingIn && !drew){
       if(favored && !won) upsetTag = `<div class="upset-tag upset-bad">⚠️ UPSET LOSS — lost as the favorite</div>`;
       else if(!favored && won) upsetTag = `<div class="upset-tag upset-good">🔥 UPSET WIN — won as the underdog</div>`;
     }
@@ -4052,10 +4102,10 @@ function openSheet(name, matchFilter){
       : '';
 
     return `<div class="match" data-match-id="${m.id}">
-      <div class="top"><span>${m.date}${m.type==='singles' ? ' · Singles' : ''}</span><span style="color:${won?'var(--green)':'var(--red)'}">${won?'WIN':'LOSS'}</span></div>
+      <div class="top"><span>${m.date}${m.type==='singles' ? ' · Singles' : ''}</span><span style="color:${drew?'var(--text-dim)':(won?'var(--green)':'var(--red)')}">${drew?'DRAW':(won?'WIN':'LOSS')}</span></div>
       ${upsetTag}
       <div class="teams"><b>${namesWithRatings}</b> vs ${oppWithRatings}</div>
-      <div class="score">${scoreForViewer(m, won)}${m.note ? ' · '+m.note : ''}</div>
+      <div class="score">${scoreForViewer(m, onStoredWinnersSide)}${m.note ? ' · '+m.note : ''}</div>
       ${whyYourRatingMovedHtml(m, name)}
       ${matchDeltaLineHtml(m)}
       ${adminButtons}
@@ -6343,20 +6393,20 @@ function renderH2H(){
     });
   }
 
-  const opponentMatches = MATCHES.filter(m=>{
-    const aWon = m.winners.includes(h2hPlayerA) && m.losers.includes(h2hPlayerB);
-    const bWon = m.winners.includes(h2hPlayerB) && m.losers.includes(h2hPlayerA);
-    return (aWon || bWon) && (!monthActive || m.date.slice(0,7)===selectedMonth);
-  }).sort((a,b)=> a.date < b.date ? 1 : -1);
+  // Both lists come from the shared selectors, which include drawn games.
+  // They were built here from `MATCHES` -- the RATED set -- so a drawn meeting
+  // was not a meeting at all: two players who had drawn once and never
+  // otherwise met were told they had never played each other.
+  const inMonth = (m) => !monthActive || m.date.slice(0,7) === selectedMonth;
+  const opponentMatches = h2hOpponentMatches(h2hPlayerA, h2hPlayerB)
+    .filter(inMonth).sort((a,b)=> a.date < b.date ? 1 : -1);
+  const teammateMatches = h2hTeammateMatches(h2hPlayerA, h2hPlayerB)
+    .filter(inMonth).sort((a,b)=> a.date < b.date ? 1 : -1);
 
-  const teammateMatches = MATCHES.filter(m=>{
-    const together = (m.winners.includes(h2hPlayerA) && m.winners.includes(h2hPlayerB)) ||
-           (m.losers.includes(h2hPlayerA) && m.losers.includes(h2hPlayerB));
-    return together && (!monthActive || m.date.slice(0,7)===selectedMonth);
-  }).sort((a,b)=> a.date < b.date ? 1 : -1);
-
-  const aWins = opponentMatches.filter(m=>m.winners.includes(h2hPlayerA)).length;
-  const bWins = opponentMatches.filter(m=>m.winners.includes(h2hPlayerB)).length;
+  const headToHead = MatchOutcome.tally(opponentMatches, h2hPlayerA);
+  const aWins = headToHead.wins;
+  const bWins = headToHead.losses;   // A's losses as opponents ARE B's wins
+  const h2hDraws = headToHead.draws;
 
   html += `<div class="section-heading" style="margin-top:6px;">⚔️ As opponents${monthActive ? ` (${monthLabel(selectedMonth)})` : ''}</div>`;
   if(opponentMatches.length === 0){
@@ -6364,21 +6414,28 @@ function renderH2H(){
   } else {
     html += `<div class="matchup-vs" style="text-align:center; font-size:16px; padding:12px;">
       <b style="color:${aWins>bWins?'var(--gold-bright)':'var(--text)'};">${h2hPlayerA} ${aWins}</b>
-      <span style="color:var(--text-dim); margin:0 6px;">–</span>
+      <span style="color:var(--text-dim); margin:0 6px;">–</span>${h2hDraws ? `<span style="color:var(--text-dim); font-size:13px;">${h2hDraws} drawn</span><span style="color:var(--text-dim); margin:0 6px;">–</span>` : ''}
       <b style="color:${bWins>aWins?'var(--gold-bright)':'var(--text)'};">${bWins} ${h2hPlayerB}</b>
       <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">${opponentMatches.length} meeting${opponentMatches.length===1?'':'s'} as opponents</div>
     </div>`;
     opponentMatches.forEach(m=>{
-      const aWon = m.winners.includes(h2hPlayerA);
-      const aTeam = aWon ? m.winners : m.losers;
-      const bTeam = aWon ? m.losers : m.winners;
-      const aPartner = aTeam.filter(n=>n!==h2hPlayerA)[0];
-      const bPartner = bTeam.filter(n=>n!==h2hPlayerB)[0];
+      const sidesA = MatchOutcome.sidesFor(m, h2hPlayerA);
+      const drew = sidesA.outcome === MatchOutcome.DRAW;
+      const aWon = sidesA.outcome === MatchOutcome.WIN;
+      const aPartner = sidesA.mine.filter(n=>n!==h2hPlayerA)[0];
+      const bPartner = sidesA.theirs.filter(n=>n!==h2hPlayerB)[0];
       const adminButtons = isUnlocked
         ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">To correct or remove this game, open it in the Games tab.</div>`
         : '';
+      // "X won" is not a thing that happened in a drawn match, and saying it
+      // of whichever side the record filed first is how this screen used to
+      // hand one player a win and the other a loss out of a coin toss.
+      const title = drew
+        ? `${h2hPlayerA} and ${h2hPlayerB} drew`
+        : `${aWon ? h2hPlayerA : h2hPlayerB} won`;
+      const titleColour = drew ? 'var(--text-dim)' : (aWon ? 'var(--green)' : 'var(--red)');
       html += `<div class="callout-card">
-        <div class="cc-title" style="color:${aWon?'var(--green)':'var(--red)'};">${aWon ? h2hPlayerA : h2hPlayerB} won</div>
+        <div class="cc-title" style="color:${titleColour};">${escapeHtml(title)}</div>
         <div class="cc-detail">${m.date} · ${aPartner?`${h2hPlayerA} &amp; ${aPartner}`:h2hPlayerA} vs ${bPartner?`${h2hPlayerB} &amp; ${bPartner}`:h2hPlayerB}<br/>${m.score}</div>
         ${adminButtons}
       </div>`;
@@ -6389,20 +6446,21 @@ function renderH2H(){
   if(teammateMatches.length === 0){
     html += `<div class="section-sub">${h2hPlayerA} and ${h2hPlayerB} ${monthActive ? `didn't play together in ${monthLabel(selectedMonth)}` : 'have never partnered together'}.</div>`;
   } else {
-    const wins = teammateMatches.filter(m=>m.winners.includes(h2hPlayerA)).length;
-    const losses = teammateMatches.length - wins;
+    // `losses = total - wins` is the shape that cannot hold a draw, and it
+    // filed every drawn game as a defeat for the pair.
+    const together = MatchOutcome.tally(teammateMatches, h2hPlayerA);
     const partnership = PARTNERSHIPS.find(p=> p.pair.includes(h2hPlayerA) && p.pair.includes(h2hPlayerB));
     html += `<div class="matchup-vs" style="padding:10px;">
-      <b>${wins}-${losses}</b> together${partnership ? ` · <span class="${partnership.avg_overperf>3?'perf-pos':(partnership.avg_overperf<-3?'perf-neg':'')}">${partnership.avg_overperf>=0?'+':''}${partnership.avg_overperf}% chemistry</span>` : ''}
+      <b>${together.wins}-${together.losses}${together.draws ? `-${together.draws}` : ''}</b> together${together.draws ? ` <span style="color:var(--text-dim); font-size:11px;">(W-L-D)</span>` : ''}${partnership ? ` · <span class="${partnership.avg_overperf>3?'perf-pos':(partnership.avg_overperf<-3?'perf-neg':'')}">${partnership.avg_overperf>=0?'+':''}${partnership.avg_overperf}% chemistry</span>` : ''}
     </div>`;
     teammateMatches.forEach(m=>{
-      const won = m.winners.includes(h2hPlayerA);
-      const oppTeam = won ? m.losers : m.winners;
+      const sides = MatchOutcome.sidesFor(m, h2hPlayerA);
+      const oppTeam = sides.theirs;
       const adminButtons = isUnlocked
         ? `<div class="section-sub" style="margin-top:8px; font-size:10.5px;">To correct or remove this game, open it in the Games tab.</div>`
         : '';
       html += `<div class="callout-card">
-        <div class="cc-title" style="color:${won?'var(--green)':'var(--red)'};">${won?'WIN':'LOSS'}</div>
+        <div class="cc-title" style="color:${sides.outcome===MatchOutcome.DRAW?'var(--text-dim)':(sides.outcome===MatchOutcome.WIN?'var(--green)':'var(--red)')};">${sides.outcome===MatchOutcome.DRAW?'DRAW':(sides.outcome===MatchOutcome.WIN?'WIN':'LOSS')}</div>
         <div class="cc-detail">${m.date} · vs ${oppTeam.join(' &amp; ')}<br/>${m.score}</div>
         ${adminButtons}
       </div>`;

@@ -309,11 +309,16 @@ function buildShellDom(){
   // changes as new matches are added.
   let doughnutSortMode = 'total'; // 'total' | 'given' | 'received'
 
+  // A doughnut can be handed out in a match nobody won: the list deliberately
+  // includes draws (see computeDoughnutStats), and six of them are in the
+  // record. Written as "def" regardless, this told a player they had lost a
+  // game the record says they drew -- which is why the outcome is now asked of
+  // MatchOutcome rather than read off which side a name happens to sit on.
   function formatDoughnutMatch(m){
     const scoreStr = m.sets.map(([x,y])=> m.shutoutSets.includes(`${x}-${y}`) ? `<b>${x}-${y}</b>` : `${x}-${y}`).join(', ');
     return `<div class="doughnut-game-row">
       <span class="section-sub" style="font-size:10.5px;">${dayLabel ? dayLabel(m.date) : m.date}</span>
-      <span class="doughnut-game-teams">${m.winners.join(' & ')} def ${m.losers.join(' & ')}</span>
+      <span class="doughnut-game-teams">${MatchOutcome.describe(m)}</span>
       <span class="doughnut-game-score">${scoreStr}</span>
     </div>`;
   }
@@ -1602,7 +1607,10 @@ function computeDoughnutStats(){
       if(x === 0){ losersGaveShutout = true; shutoutSets.push(`${x}-${y}`); }
     });
     if(!winnersGaveShutout && !losersGaveShutout) return;
-    const matchInfo = { date: m.date, winners: m.winners, losers: m.losers, sets: m.sets, shutoutSets };
+    // isDraw travels with the match. Without it the drill-down had no way to
+    // know, and described every drawn game as a win for one side.
+    const matchInfo = { date: m.date, winners: m.winners, losers: m.losers,
+      isDraw: !!m.isDraw, sets: m.sets, shutoutSets };
     if(winnersGaveShutout){
       m.losers.forEach(n=>{ A(n).received++; A(n).receivedMatches.push(matchInfo); });
       m.winners.forEach(n=>{ A(n).given++; A(n).givenMatches.push(matchInfo); });
@@ -1655,16 +1663,17 @@ function computeMatchToMake(viewerName){
   return { partner, opponents: best, pctFor: pct, pctAgainst: 100-pct, description: desc };
 }
 
+// The real per-game sequence behind the aggregate counts, oldest-to-newest,
+// as W / D / L. It returns letters rather than booleans because a boolean
+// cannot hold a draw: the old version mapped every game to
+// `winners.includes(name)`, which on a drawn match is whichever side the
+// record happened to file the player on.
 function computeRecentFormSequence(name, windowSize){
-  // computeRecentForm only returns aggregate counts (wins/losses), not which
-  // specific games were won or lost -- this derives the real per-game
-  // sequence from the same MATCHES data, oldest-to-newest (left-to-right),
-  // so the dot colours actually reflect what happened, not just the totals.
   windowSize = windowSize || 10;
   const own = MATCHES.filter(m => m.winners.includes(name) || m.losers.includes(name))
     .sort((a,b)=> a.date < b.date ? 1 : -1) // newest first
     .slice(0, windowSize);
-  return own.reverse().map(m => m.winners.includes(name)); // oldest-to-newest, true W/L per game
+  return own.reverse().map(m => MatchOutcome.letterFor(m, name));
 }
 
 function initials(name){
@@ -2028,16 +2037,20 @@ function getMatchToProveIt(name){
   return relevant[0] || null;
 }
 
-// Direct win/loss count between two specific players as opponents -- a
-// simple filter over existing match data, not a new rating calculation.
-// Used only for the viewer-relative module (item 9 of the brief).
+// Direct record between two specific players as opponents -- a simple filter
+// over existing match data, not a new rating calculation.
+//
+// Draws are counted as draws. They used to be counted as a win for whichever
+// side the record filed first, because the two clauses below test side
+// membership and a drawn match has both clauses true for arbitrary reasons.
 function getHeadToHeadRecord(a, b){
-  let aWins = 0, bWins = 0;
-  MATCHES.forEach(m=>{
-    if(m.winners.includes(a) && m.losers.includes(b)) aWins++;
-    else if(m.winners.includes(b) && m.losers.includes(a)) bWins++;
+  let aWins = 0, bWins = 0, draws = 0;
+  h2hOpponentMatches(a, b).forEach(m=>{
+    if(MatchOutcome.isDraw(m)) draws++;
+    else if(m.winners.includes(a)) aWins++;
+    else bWins++;
   });
-  return { aWins, bWins, total: aWins + bWins };
+  return { aWins, bWins, draws, total: aWins + bWins + draws };
 }
 
 function tierRankNeighbors(name){
@@ -2058,7 +2071,9 @@ function tierRankNeighbors(name){
 // from the v3 record only: if that is missing for a player, the row says so
 // instead of inventing a number.
 function playerJoinedLabel(name){
-  const dates = MATCHES
+  // Every game they played, so a player whose first appearance was a drawn
+  // match is not dated from their second.
+  const dates = matchesIncludingDraws()
     .filter(m => m.winners.includes(name) || m.losers.includes(name))
     .map(m => m.date)
     .sort();
@@ -2112,7 +2127,7 @@ function renderPremiumProfile(name, matchFilter){
   const seq = computeRecentFormSequence(name, 10);
   const formHtml = snap.recentForm ? `
     <div class="pp-section">
-      <div class="pp-form-seq">${seq.map(w=>`<span class="pp-form-letter ${w?'w':'l'}">${w?'W':'L'}</span>`).join('')}</div>
+      <div class="pp-form-seq">${seq.map(letter=>`<span class="pp-form-letter ${letter.toLowerCase()}">${letter}</span>`).join('')}</div>
       <div class="pp-form-record">${snap.recentForm.wins}–${snap.recentForm.losses} · Last ${snap.recentForm.games}</div>
       <div class="pp-form-clutch section-sub">${p.avg_overperf_pct>=0?'+':''}${p.avg_overperf_pct}% vs expectation</div>
     </div>
@@ -2229,7 +2244,7 @@ function renderPremiumProfile(name, matchFilter){
       <div class="pp-section">
         <div class="pp-section-label">You vs ${name}</div>
         <div class="pp-viewer-rel-grid">
-          <div class="pp-analysis-card"><div class="pp-ac-label">Head to Head</div><div class="pp-ac-main">${h2h.total ? `${h2h.aWins}–${h2h.bWins}` : 'Never played'}</div></div>
+          <div class="pp-analysis-card"><div class="pp-ac-label">Head to Head</div><div class="pp-ac-main">${h2h.total ? `${h2h.aWins}–${h2h.bWins}${h2h.draws ? `–${h2h.draws}` : ''}` : 'Never played'}</div></div>
           <div class="pp-analysis-card"><div class="pp-ac-label">Rating Gap</div><div class="pp-ac-main">${ratingDiff>=0?'+':''}${ratingDiff}</div></div>
           ${partnership ? `<div class="pp-analysis-card"><div class="pp-ac-label">Together</div><div class="pp-ac-main">${partnership.games} games</div></div>` : ''}
         </div>
@@ -2270,7 +2285,12 @@ function renderPremiumProfile(name, matchFilter){
   const matchesHost = document.getElementById('ppMatchesHost');
   const matchEls = [...document.querySelectorAll('#sheetMatches .match')];
   matchEls.forEach(matchEl=>{
-    const won = matchEl.querySelector('.top span:last-child')?.textContent === 'WIN';
+    // The card below already states the outcome; this row repeats it, so it
+    // must repeat it rather than re-decide it. `=== 'WIN'` followed by
+    // `won ? 'WIN' : 'LOSS'` is the exact shape that turns a draw into a
+    // defeat, and it did: DRAW is not 'WIN', so it came out as LOSS.
+    const resultText = (matchEl.querySelector('.top span:last-child')?.textContent || '').trim();
+    const resultClass = resultText === 'WIN' ? 'w' : (resultText === 'DRAW' ? 'd' : 'l');
     const dateText = matchEl.querySelector('.top span:first-child')?.textContent || '';
     const teamsText = matchEl.querySelector('.teams')?.textContent || '';
     const scoreText = matchEl.querySelector('.score')?.textContent || '';
@@ -2279,7 +2299,7 @@ function renderPremiumProfile(name, matchFilter){
     summaryRow.className = 'pp-match-row';
     summaryRow.innerHTML = `
       <div class="pp-match-summary">
-        <span class="pp-match-result ${won?'w':'l'}">${won?'WIN':'LOSS'}</span>
+        <span class="pp-match-result ${resultClass}">${resultText || 'LOSS'}</span>
         <span class="pp-match-date">${dateText}</span>
         <span class="pp-match-teams">${parts[0]||''}</span>
         <span class="pp-match-score">${scoreText.split(' · ')[0]||''}</span>

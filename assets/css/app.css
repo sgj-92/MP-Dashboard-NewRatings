@@ -1348,6 +1348,7 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 }
 .pp-form-letter.w{ background: var(--green); }
 .pp-form-letter.l{ background: var(--red); }
+.pp-form-letter.d{ background: var(--line); color: var(--text-dim); }
 .pp-form-record{ font-family: var(--font-interface); font-size: 13px; color: var(--text); margin-top: 8px; font-weight: 600; }
 .pp-form-clutch{ margin-top: 2px; }
 
@@ -1386,6 +1387,9 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .pp-match-result{ font-weight: 700; font-size: 10px; letter-spacing: 0.03em; flex-shrink: 0; }
 .pp-match-result.w{ color: var(--green); }
 .pp-match-result.l{ color: var(--red); }
+/* Neither, and it must not borrow either colour: a drawn game read as a red
+   LOSS is the bug this row was carrying. */
+.pp-match-result.d{ color: var(--text-dim); }
 .pp-match-date{ color: var(--text-dim); flex-shrink: 0; }
 .pp-match-teams{ color: var(--text); font-weight: 600; }
 .pp-match-score{ color: var(--text-dim); }
