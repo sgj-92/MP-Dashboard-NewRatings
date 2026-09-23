@@ -1222,7 +1222,18 @@ let gamesMonth = 'all';
 // 'match:AB vs BB', and so on. Layers with Month and Player rather than
 // replacing either.
 let gamesType = 'all';
-let selectedGamesPlayer = 'all';
+// Up to four players, as CANONICAL IDS, in no particular order. A match has
+// to contain all of them to be shown.
+//
+// Ids rather than the names on screen: a player's name is a label an admin can
+// change, and matching on labels would mean renaming Rishi silently emptied
+// every search that mentioned him. See playerFilter.js.
+let gamesPlayerIds = [];
+// What the selector wants to say about what was just typed -- an unrecognised
+// name, or the same player twice. Held in state rather than written straight
+// into the panel, because applying a filter re-renders the panel and would
+// wipe the note before anybody read it.
+let gamesPlayersNote = '';
 
 // The Games filters arrive shut. Three full-width selects sat above the match
 // log on every visit, and the log is what the screen is for. Not persisted:
@@ -7797,9 +7808,30 @@ function buildGameRequestsForPlayerSection(name){
 // What the filters are set to, in the words the controls themselves use. It
 // reads the same module state the selects are built from, so it cannot say one
 // thing while the list shows another.
+// The one way the Games player filter is set, from wherever: the filter panel,
+// a "see their games" link, or a reset. Takes what is on screen (labels) and
+// stores what the record uses (ids).
+function setGamesPlayerFilter(names){
+  gamesPlayerIds = PlayerFilter.normalise((names || []).map(n => playerIdFor(n)));
+  gamesPlayersNote = '';
+}
+
+// Exactly one player selected means the list is THEIR list: the heading says
+// so, the cards are tinted by their result and the scores are read from their
+// side. Two or more is a group, which has no single point of view, so the list
+// goes back to being neutral.
+function gamesFocusName(){
+  return gamesPlayerIds.length === 1 ? displayNameFor(gamesPlayerIds[0]) : null;
+}
+
+// What the filter is set to, as labels, for the selector and the summary.
+function gamesPlayerLabels(){
+  return gamesPlayerIds.map(id => displayNameFor(id));
+}
+
 function gamesFilterSummary(typeOptions){
   const monthPart = gamesMonth === 'all' ? 'All time' : monthLabel(gamesMonth);
-  const playerPart = selectedGamesPlayer === 'all' ? 'All players' : selectedGamesPlayer;
+  const playerPart = PlayerFilter.summary(gamesPlayerLabels()) || 'All players';
   let typePart = 'All game types';
   if(gamesType !== 'all' && typeOptions){
     const found = (typeOptions.categories || []).concat(typeOptions.matchups || [])
@@ -7817,9 +7849,9 @@ function renderGamesTab(){
   // Every filter layers. The options offered are generated from the matches
   // that survive the OTHER filters, so the control never offers a game type
   // that would show nothing.
-  const typeScope = selectedGamesPlayer === 'all'
-    ? display
-    : display.filter(m => m.winners.includes(selectedGamesPlayer) || m.losers.includes(selectedGamesPlayer));
+  // The game-type options are generated from what survives the OTHER filters,
+  // so the control never offers a type that would show nothing.
+  const typeScope = PlayerFilter.filter(display, gamesPlayerIds, playerIdFor);
   const gamesTypeOptions = (typeof GameType !== 'undefined')
     ? GameType.optionsFrom(typeScope.map(gameTypeOf).filter(Boolean))
     : { categories: [], matchups: [] };
@@ -7835,7 +7867,7 @@ function renderGamesTab(){
   if(gamesType !== 'all' && typeof GameType !== 'undefined'){
     display = display.filter(m => GameType.matches(gamesType, gameTypeOf(m)));
   }
-  if(selectedGamesPlayer !== 'all') display = display.filter(m=> m.winners.includes(selectedGamesPlayer) || m.losers.includes(selectedGamesPlayer));
+  display = PlayerFilter.filter(display, gamesPlayerIds, playerIdFor);
   display.sort((a,b)=> a.date < b.date ? 1 : -1);
 
   let html = '';
@@ -7847,8 +7879,16 @@ function renderGamesTab(){
       <div class="fg-row"><label class="fg-label">Month</label>
         <select id="gamesMonthSelect" class="fg-select"></select>
       </div>
-      <div class="fg-row"><label class="fg-label">Player</label>
-        <select id="gamesPlayerSelect" class="fg-select"></select>
+      <div class="fg-row"><label class="fg-label">Players in match</label>
+        <div class="section-sub" style="margin:0 0 6px; font-size:10.5px;">Any combination — partnerships and sides are ignored. One name finds their games; four finds that exact group.</div>
+        ${[0,1,2,3].map(i=>`<input id="gamesPlayer${i}" list="gamesPlayerNamesList" class="fg-select gp-field"
+            placeholder="Player ${i+1}" value="${escapeHtml(gamesPlayerLabels()[i] || '')}"
+            style="margin-bottom:6px;" />`).join('')}
+        <datalist id="gamesPlayerNamesList">${allPlayerNames().map(n=>`<option value="${escapeHtml(n)}">`).join('')}</datalist>
+        <div style="display:flex; align-items:baseline; gap:10px;">
+          <button type="button" class="preset-btn" id="gamesPlayersClear" style="flex:0 0 auto;">Clear</button>
+          <span id="gamesPlayersMessage" class="section-sub" style="margin:0; font-size:10.5px; color:var(--gold-bright);">${escapeHtml(gamesPlayersNote)}</span>
+        </div>
       </div>
       <div class="fg-row"><label class="fg-label">Game type</label>
         <select id="gamesTypeSelect" class="fg-select"></select>
@@ -7932,7 +7972,7 @@ Player C &amp; Player D"></textarea>
     </div>`;
   }
 
-  const pendingFiltered = selectedGamesPlayer === 'all' ? pending : pending.filter(m=> m.winners.includes(selectedGamesPlayer) || m.losers.includes(selectedGamesPlayer));
+  const pendingFiltered = PlayerFilter.filter(pending, gamesPlayerIds, playerIdFor);
 
   if(pendingFiltered.length > 0){
     html += `<div class="section-heading">⏳ Pending approval (${pendingFiltered.length})</div>`;
@@ -7943,8 +7983,9 @@ Player C &amp; Player D"></textarea>
         ? `${m.winners.join(' & ')} vs ${m.losers.join(' & ')} <span class="strength-pill" style="margin-left:6px;">DRAW</span>`
         : `<span style="color:var(--green);">${m.winners.join(' & ')}</span> <span style="color:var(--text-dim); font-weight:400;">def</span> <span style="color:var(--red);">${m.losers.join(' & ')}</span>`;
       let pendingCardStyle = '';
-      if(selectedGamesPlayer !== 'all' && !m.isDraw){
-        const playerWon = m.winners.includes(selectedGamesPlayer);
+      const pendingFocus = gamesFocusName();
+      if(pendingFocus && !m.isDraw){
+        const playerWon = m.winners.includes(pendingFocus);
         pendingCardStyle = playerWon
           ? 'background:rgba(90,156,90,0.12); border-color:rgba(90,156,90,0.4);'
           : 'background:rgba(181,69,63,0.12); border-color:rgba(181,69,63,0.4);';
@@ -7962,7 +8003,13 @@ Player C &amp; Player D"></textarea>
     });
   }
 
-  const gamesHeading = selectedGamesPlayer === 'all' ? `📋 All games (${display.length})` : `📋 ${selectedGamesPlayer}'s games (${display.length})`;
+  const focusName = gamesFocusName();
+  const groupLabel = PlayerFilter.summary(gamesPlayerLabels());
+  const gamesHeading = focusName
+    ? `📋 ${escapeHtml(focusName)}'s games (${display.length})`
+    : (groupLabel
+      ? `📋 Games with ${escapeHtml(groupLabel)} (${display.length})`
+      : `📋 All games (${display.length})`);
   html += `<div class="section-heading">${gamesHeading}</div>`;
   html += `<div class="section-sub">Newest first, grouped by day. Tap a game to see the full breakdown.</div>`;
   const idToIdx = {};
@@ -7998,8 +8045,8 @@ Player C &amp; Player D"></textarea>
       ? (m.isDraw ? buildDrawDetailBlock(m) : (enriched ? buildMatchDetailBlock(enriched, false) : ''))
       : '';
     let cardStyle = '';
-    if(selectedGamesPlayer !== 'all' && !m.isDraw){
-      const playerWon = m.winners.includes(selectedGamesPlayer);
+    if(focusName && !m.isDraw){
+      const playerWon = m.winners.includes(focusName);
       cardStyle = playerWon
         ? 'background:rgba(90,156,90,0.12); border-color:rgba(90,156,90,0.4);'
         : 'background:rgba(181,69,63,0.12); border-color:rgba(181,69,63,0.4);';
@@ -8007,7 +8054,7 @@ Player C &amp; Player D"></textarea>
     // Filtering to one player makes this list that player's -- the card is even
     // tinted by their result -- so the score is read from their side. With no
     // filter the list is neutral: winner order, said out loud.
-    const gamesViewerName = selectedGamesPlayer !== 'all' ? selectedGamesPlayer : null;
+    const gamesViewerName = focusName;
     const scoreText = gamesViewerName
       ? scoreForViewer(m, playerIsOnStoredWinningSide(m, gamesViewerName))
       : m.sets.map(s=>s.join('-')).join(', ');
@@ -8114,15 +8161,42 @@ Player C &amp; Player D"></textarea>
     });
   }
 
-  const gamesPlayerSelect = document.getElementById('gamesPlayerSelect');
-  if(gamesPlayerSelect){
-    const allNames = [...PLAYERS].map(p=>p.name).sort((a,b)=>a.localeCompare(b));
-    gamesPlayerSelect.innerHTML = `<option value="all">All players</option>` + allNames.map(n=>`<option value="${escapeHtml(n)}" ${n===selectedGamesPlayer?'selected':''}>${escapeHtml(n)}</option>`).join('');
-    gamesPlayerSelect.value = selectedGamesPlayer;
-    gamesPlayerSelect.addEventListener('change', e=>{
-      selectedGamesPlayer = e.target.value;
-      renderGamesTab();
+  const playerFields = [0,1,2,3].map(i => document.getElementById(`gamesPlayer${i}`)).filter(Boolean);
+  if(playerFields.length){
+    const known = new Map(PLAYERS.map(p => [p.name.toLowerCase(), p.name]));
+    const applyFields = ()=>{
+      const message = document.getElementById('gamesPlayersMessage');
+      const typed = playerFields.map(el => el.value.trim());
+      const unknown = [];
+      const repeated = [];
+      const chosen = [];
+      const seen = new Set();
+      typed.forEach(v=>{
+        if(!v) return;
+        const canonicalLabel = known.get(v.toLowerCase());
+        if(!canonicalLabel){ unknown.push(v); return; }
+        // "A player must not appear twice in the selector": a repeat is a
+        // filter that can never match anything, so it is refused rather than
+        // quietly narrowed to nothing.
+        if(seen.has(canonicalLabel)){ repeated.push(canonicalLabel); return; }
+        seen.add(canonicalLabel);
+        chosen.push(canonicalLabel);
+      });
+      setGamesPlayerFilter(chosen);   // clears the note; the new one is set below
+      const notes = [];
+      if(unknown.length) notes.push(`Not a player: ${unknown.join(', ')}`);
+      if(repeated.length) notes.push(`${repeated.join(', ')} can only be picked once`);
+      gamesPlayersNote = notes.join(' · ');
+      if(message) message.textContent = gamesPlayersNote;
+      return notes.length === 0;
+    };
+    playerFields.forEach(el=>{
+      // `change` rather than `input`, so the list does not re-filter (and the
+      // panel re-render does not steal focus) on every keystroke.
+      el.addEventListener('change', ()=>{ applyFields(); renderGamesTab(); });
     });
+    const clearBtn = document.getElementById('gamesPlayersClear');
+    if(clearBtn) clearBtn.onclick = ()=>{ gamesPlayerIds = []; gamesPlayersNote = ''; renderGamesTab(); };
   }
 
   // ===== Add a game (always available, not gated by admin lock) =====

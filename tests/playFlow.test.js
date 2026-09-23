@@ -63,10 +63,13 @@ maybe('the Games filters arrive shut and say what they are set to', async () => 
       };
       // Change a filter, then shut the panel again: the summary must follow.
       head().click();
-      selectedGamesPlayer = PLAYERS[0].name;
+      setGamesPlayerFilter([PLAYERS[0].name]);
       gamesType = 'all';
       renderGamesTab();
-      const opened = { selects: document.querySelectorAll('#gamesView select').length };
+      const opened = {
+        selects: document.querySelectorAll('#gamesView select').length,
+        playerFields: document.querySelectorAll('#gamesView .gp-field').length,
+      };
       document.getElementById('gamesFiltersToggle').click();
       return {
         shut, opened,
@@ -79,7 +82,8 @@ maybe('the Games filters arrive shut and say what they are set to', async () => 
     assert.match(r.shut.summary, /All players/);
     assert.match(r.shut.summary, /All game types/);
     assert.strictEqual(r.shut.selects, 0, 'a shut panel should not be occupying the screen');
-    assert.strictEqual(r.opened.selects, 3, 'opening it gives all three filters back');
+    assert.strictEqual(r.opened.selects, 2, 'opening it gives Month and Game type back');
+    assert.strictEqual(r.opened.playerFields, 4, 'and four player fields');
     assert.match(r.changedSummary, new RegExp(r.who),
       'a changed filter must show on the shut heading — a silent filter is worse than none');
     assert.deepStrictEqual(app.pageErrors, []);

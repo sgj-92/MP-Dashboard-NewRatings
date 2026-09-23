@@ -1987,7 +1987,7 @@ function openMatchInGames(matchId){
   if(typeof expandedGameId !== 'undefined') expandedGameId = matchId;
   if(typeof gamesMonth !== 'undefined') gamesMonth = 'all';
   if(typeof gamesType !== 'undefined') gamesType = 'all';
-  if(typeof selectedGamesPlayer !== 'undefined') selectedGamesPlayer = 'all';
+  if(typeof gamesPlayerIds !== 'undefined') gamesPlayerIds = [];
   if(typeof renderGamesTab === 'function') renderGamesTab();
   const card = document.querySelector(`#gamesView [data-gameid="${matchId}"]`);
   if(card) card.scrollIntoView({ block: 'center' });

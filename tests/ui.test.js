@@ -577,7 +577,7 @@ test('Games reads partnerships stronger-first and orders the filter by strength'
       isUnlocked = false;
       goToSection('play');
       document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
-      gamesMonth = 'all'; gamesType = 'all'; selectedGamesPlayer = 'all';
+      gamesMonth = 'all'; gamesType = 'all'; setGamesPlayerFilter([]);
       gamesFiltersOpen = true;   // the filter panel arrives shut; this test reads its select
       renderGamesTab();
 
@@ -645,7 +645,7 @@ test('the winners are always on the left, and a draw keeps its stored orientatio
     const r = await app.run(() => {
       goToSection('play');
       document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
-      gamesMonth = 'all'; gamesType = 'all'; selectedGamesPlayer = 'all';
+      gamesMonth = 'all'; gamesType = 'all'; setGamesPlayerFilter([]);
       renderGamesTab();
       const decided = [], draws = [];
       document.querySelectorAll('.callout-card').forEach((card) => {
@@ -920,7 +920,7 @@ test('a match card gives the matchup the full width and puts Manage on the submi
     const r = await app.run(() => {
       isUnlocked = true; adminRole = 'owner';
       document.querySelector('#tabrow .tab-btn[data-tab="games"]').click();
-      gamesMonth = 'all'; selectedGamesPlayer = 'all';
+      gamesMonth = 'all'; setGamesPlayerFilter([]);
       renderGamesTab();
       const cards = [...document.querySelectorAll('#gamesView .callout-card')].slice(0, 12);
       return cards.map((c) => {
@@ -2895,7 +2895,7 @@ test('Games cards label each player with their tier on the day', { skip }, async
     const r = await app.run(() => {
       const b = document.querySelector('#tabrow .tab-btn[data-tab="games"]');
       if (b) b.click();
-      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all';
+      gamesMonth = 'all'; setGamesPlayerFilter([]); gamesType = 'all';
       renderGamesTab();
 
       // Someone whose tier actually changed during the season.
@@ -2981,11 +2981,11 @@ test('Month, Player and Game type filters compose', { skip }, async () => {
       const ids = () => [...document.querySelectorAll('#gamesView .game-card-clickable')].map((e) => e.dataset.gameid);
 
       const out = {};
-      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      gamesMonth = 'all'; setGamesPlayerFilter([]); gamesType = 'all'; renderGamesTab();
       out.everything = count();
 
       // Player alone.
-      selectedGamesPlayer = 'Len'; renderGamesTab();
+      setGamesPlayerFilter(['Len']); renderGamesTab();
       out.lenAll = count();
 
       // Player + a specific, orientation-independent matchup.
@@ -3001,7 +3001,7 @@ test('Month, Player and Game type filters compose', { skip }, async () => {
       });
 
       // Same type without the player filter must be a superset.
-      selectedGamesPlayer = 'all'; renderGamesTab();
+      setGamesPlayerFilter([]); renderGamesTab();
       out.allAbBb = count();
       out.supersetOk = out.lenAbBbIds.every((id) => ids().includes(id));
 
@@ -3023,7 +3023,7 @@ test('Month, Player and Game type filters compose', { skip }, async () => {
         return gameTypeOf(m).category === 'ALL_B';
       });
 
-      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      gamesMonth = 'all'; setGamesPlayerFilter([]); gamesType = 'all'; renderGamesTab();
       return out;
     });
 
@@ -3055,10 +3055,10 @@ test('the game-type control offers only types the current selection contains', {
       const options = () => [...document.getElementById('gamesTypeSelect').querySelectorAll('option')]
         .map((o) => ({ value: o.value, text: o.textContent }));
 
-      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      gamesMonth = 'all'; setGamesPlayerFilter([]); gamesType = 'all'; renderGamesTab();
       const all = options();
 
-      selectedGamesPlayer = 'Len'; renderGamesTab();
+      setGamesPlayerFilter(['Len']); renderGamesTab();
       const len = options();
 
       // Every option offered for Len must actually return matches for Len.
@@ -3068,7 +3068,7 @@ test('the game-type control offers only types the current selection contains', {
         if (document.querySelectorAll('#gamesView .game-card-clickable').length === 0) empties.push(o.value);
       });
 
-      gamesMonth = 'all'; selectedGamesPlayer = 'all'; gamesType = 'all'; renderGamesTab();
+      gamesMonth = 'all'; setGamesPlayerFilter([]); gamesType = 'all'; renderGamesTab();
       return { allCount: all.length, lenCount: len.length, empties, first: all[0], all };
     });
 
