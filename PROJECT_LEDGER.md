@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`fc3706f`** |
-| Tests | **539 / 539 passing** (139 of them drive a real browser) |
+| Last verified implementation commit | **`55bd9ea`** |
+| Tests | **546 / 546 passing** (144 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -491,6 +491,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Reassessment α ships at 0.25 | Below the best-performing 0.50, pending real reviews. |
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
+| A result becomes a visual state in exactly one place | `MatchOutcome.classFor()`. Three renderers of a form run had three private answers, and when the shared sequence changed type one of them silently drew every loss as a win. Nothing may derive a form state from a truth test; a source-level test fails the build if it does. |
 | A draw is read from the record, never inferred from the score | Shaun, 23 Sep: Money Padel draws come from unfinished matches, injury and time limits, so the scoreline proves nothing. `outcome` on the document is authoritative. No screen may classify an outcome any other way. |
 | Screens that describe history include draws; calculations do not | The rated set stays draw-free so no win percentage, league point or partnership figure moves. Head-to-head, the profile match log and the doughnut drill-down read the wider list, because a drawn game is still a game that was played. |
 | Historical search matches on canonical ids | Shaun, 23 Sep: the new name editing must not be able to break a historical search. Both sides of the comparison go through `playerIdFor`. |
@@ -1880,6 +1881,42 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 23 Sep 2026 (form dots, and how the draw fix broke them)
+
+`55bd9ea`. **546 / 546 tests (144 browser).**
+
+**This one was mine.** `b2c8544` changed `computeRecentFormSequence` from
+returning booleans to returning the letters `'W' / 'D' / 'L'` — necessary,
+because a boolean cannot hold a draw. It updated the profile's call site and
+missed Home's, which read `isWin ? 'w' : 'l'`. Every letter is truthy, so
+every dot came out green. The aggregate beside them stayed correct, nothing
+threw, and no test noticed, **because no test had ever looked at an individual
+dot** — only at the counts. Reproduced against the live record: Antz's run is
+`L L W W L L L W W L` beside a correct "4W – 6L", ten green dots.
+
+**The lesson is the type change, not the typo.** Changing a shared helper's
+return type is a change to every one of its callers, and a language that
+happily treats `'L'` as true will not tell you which ones you missed. Two
+things now make the class of mistake visible rather than silent: a single
+`MatchOutcome.classFor()` that all three renderers go through, which returns
+NO state for anything it does not recognise (a stray boolean included) rather
+than defaulting to a win; and a `.form-dot` with a default outline, so an
+unclassified dot reads as missing instead of being invisible.
+
+**Three renderers, three private answers.** Home tested the value for truth,
+the profile lower-cased it, the League table's Last 10 column keyed a colour
+map off the raw letter. Only Home was wrong, but all three are now one
+decision — the League column was correct by luck of having been written after
+the letters existed.
+
+**Coverage that would have caught it:** a forced `W-L-W-L-D` run asserted to
+render as itself. Against the broken code that test reads
+`must render as itself, got w-w-w-w-w-w-w-w-w-w`. Six of the seven new tests
+fail on the old code, including a source-level guard that fails the build if
+a fourth renderer is written as a truth test.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 23 Sep 2026 (clearing the player filter)
 
@@ -5131,6 +5168,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `55bd9ea` | Home's Last 10 form dots fixed — all ten rendered green after the draw fix changed the sequence from booleans to letters and Home's `isWin?'w':'l'` read every letter as truthy; the three form-run renderers unified on `MatchOutcome.classFor()`, unknown states refused rather than guessed, per-dot regression tests added |
 | `fc3706f` | Player filter clearing: a subtle Clear all on the Players in match heading, rendered only while something is selected and leaving Month and Game type untouched; a per-field remove so a four-player search can be corrected by one name; a harness race fixed that made two data-flow tests intermittent |
 | `04efe2c` | Four-player search in the Games filters (`playerFilter.js`): order-, side- and partnership-agnostic, one to four players, matching on canonical ids so a rename cannot break a historical search; compact group summary on the shut heading; the single Player select retired |
 | `b2c8544` | Draw classification fixed across every screen that describes a game (`matchOutcome.js`): the reported Doughnut "def" on a drawn match, head-to-head totals and cards, the profile summary row's latent `won ? WIN : LOSS`; head-to-head and the profile match log now read a display list that includes draws, leaving every calculation on the rated set |
@@ -5197,8 +5235,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `fc3706f`,
-**539 / 539 tests (139 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `55bd9ea`,
+**546 / 546 tests (144 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -5276,6 +5314,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 15. **DONE (`04efe2c`).** Four-player search. Verified against the record: Eli,
    Erf, Len and Max have played all three possible pairings of themselves, and
    the search finds all three whichever order the names are typed.
+
+15b. **DONE (`55bd9ea`).** Home form-dot regression, reported by Shaun and
+   caused by CCode's own draw fix three commits earlier. Display only; no
+   calculation touched. See the handoff for what the audit found.
 
 ### Waiting on Shaun
 
