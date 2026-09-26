@@ -5525,6 +5525,16 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ### Waiting on Shaun
 
+15h. **Pages has stopped deploying (noticed 26 Sep, 03:15 UTC).** The last
+   "pages build and deployment" run is for `815e849` (02:12). Pushes of
+   `6efc096` (02:45) and `818e1cb` (03:05) are on GitHub `main` but no build
+   has started, so **Meaningful Month and the build stamp are not live yet**.
+   `6efc096` predates the new `_config.yml`, so the stamp is not the cause.
+   If nothing has run by the next push, re-save Settings → Pages (source
+   `main` / root) or check githubstatus.com. Once a build runs, the bottom of
+   More should read `Build 818e1cb` or later — the first live proof of the
+   stamp.
+
 15e. **RESOLVED 26 Sep by Meaningful Month (`87368a1`)** — League and Merit
    open on the current month once it has 5 games. *Original question, kept:*
    **Should League and Merit open on the current month?** Shaun's 26 Sep
