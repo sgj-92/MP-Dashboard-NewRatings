@@ -1,6 +1,6 @@
 // ===================== BUILD STAMP =====================
-// The bottom of More says which deployed build this device is running, so a
-// phone that is still on an old cached app can be caught at a glance.
+// The foot of Admin / Manage says which deployed build this device is
+// running, so a phone still on an old cached app can be caught at a glance.
 //
 // Three things make it trustworthy, and the tests are about them:
 //   - the SHA comes from the build itself (GitHub Pages' Jekyll run), never
@@ -115,24 +115,34 @@ test('the stamp loads with the app, before anything that shows it', () => {
 });
 
 // --- in the app ---------------------------------------------------------------
+// It lives at the foot of Admin / Manage (Shaun, 26 Sep: More was the first
+// home, but Admin is where he looks). Shown locked or unlocked.
+
+const openManage = (unlocked) => {
+  isUnlocked = unlocked; currentUserName = unlocked ? 'Board' : null;
+  document.querySelector('#tabrow .tab-btn[data-tab="manage"]').click();
+  renderManage();
+};
 
 const readStamp = () => {
-  const panel = document.querySelector('#shellMoreSheet .shell-more-panel');
-  const el = document.getElementById('shellBuildStamp');
+  const box = document.getElementById('manageView');
+  const el = document.getElementById('buildStamp');
+  if (!el) return null;
   const cs = getComputedStyle(el);
   return {
     lines: [...el.children].map((c) => c.textContent.trim()),
-    isLast: panel.lastElementChild === el,
-    afterAdmin: !!(panel.querySelector('.admin-item').compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING),
+    isLast: box.lastElementChild === el,
+    inMore: !!document.querySelector('#shellMoreSheet #buildStamp, #shellMoreSheet .build-stamp'),
     fontSize: parseFloat(cs.fontSize),
     border: cs.borderTopStyle,
     background: cs.backgroundColor,
   };
 };
 
-maybe('locally, the bottom of More says it is a local build', async () => {
+maybe('locally, the foot of Admin / Manage says it is a local build', async () => {
   const app = await H.open();
   try {
+    await app.run(openManage, true);
     const r = await app.run(readStamp);
     assert.deepStrictEqual(r.lines, ['Money Padel Beta · local build', 'Build dev']);
     assert.deepStrictEqual(app.pageErrors, []);
@@ -145,13 +155,25 @@ maybe('a deployed build shows its own date and SHA -- a week later, still its ow
     now: '2026-10-03T09:00:00',
   });
   try {
+    await app.run(openManage, true);
     const r = await app.run(readStamp);
     assert.deepStrictEqual(r.lines, ['Money Padel Beta · 26 Sep 2026', 'Build a4c91e2']);
-    assert.ok(r.isLast, 'the very bottom of More');
-    assert.ok(r.afterAdmin, 'below everything functional, Admin included');
+    assert.ok(r.isLast, 'the very bottom of Admin / Manage, below every section');
+    assert.strictEqual(r.inMore, false, 'moved, not duplicated');
     assert.ok(r.fontSize <= 11, `quiet text, got ${r.fontSize}px`);
     assert.strictEqual(r.border, 'none', 'not a card');
     assert.strictEqual(r.background, 'rgba(0, 0, 0, 0)', 'not a card');
+    assert.deepStrictEqual(app.pageErrors, []);
+  } finally { await app.close(); }
+});
+
+maybe('a locked Admin screen still shows the build, under the unlock form', async () => {
+  const app = await H.open({ files: { 'assets/js/buildInfo.js': stamped(SHA, '2026-09-26') } });
+  try {
+    await app.run(openManage, false);
+    const r = await app.run(readStamp);
+    assert.deepStrictEqual(r.lines, ['Money Padel Beta · 26 Sep 2026', 'Build a4c91e2']);
+    assert.ok(r.isLast);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
@@ -160,12 +182,12 @@ maybe('tapping the stamp copies a one-line version for a bug report', async () =
   const app = await H.open({ files: { 'assets/js/buildInfo.js': stamped(SHA, '2026-09-26') } });
   try {
     await app.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-    await app.run(() => openMoreSheet());
-    await app.page.click('#shellBuildStamp');
-    await app.page.waitForFunction(() => document.getElementById('shellBuildStampSha').textContent === 'Copied');
+    await app.run(openManage, true);
+    await app.page.click('#buildStamp');
+    await app.page.waitForFunction(() => document.getElementById('buildStampSha').textContent === 'Copied');
     const copied = await app.run(() => navigator.clipboard.readText());
     assert.strictEqual(copied, 'Money Padel Beta · 2026-09-26 · a4c91e2');
-    await app.page.waitForFunction(() => document.getElementById('shellBuildStampSha').textContent === 'Build a4c91e2',
+    await app.page.waitForFunction(() => document.getElementById('buildStampSha').textContent === 'Build a4c91e2',
       null, { timeout: 4000 });
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }

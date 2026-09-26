@@ -160,51 +160,6 @@ function renderSectionSubnav(){
 function openMoreSheet(){
   document.getElementById('shellMoreSheet').classList.add('show');
 }
-
-// ---- Build stamp, the last thing in More ----------------------------------
-// Which deployed build this device is actually running. A debugging aid, so
-// it is deliberately quiet and not a card. See buildStamp.js for where the
-// SHA and date come from and why they are never fetched.
-function buildStampHtml(){
-  const b = BuildStamp.describe(window.MP_BUILD);
-  return `<button type="button" class="shell-more-build" id="shellBuildStamp" data-copy="${escapeHtml(b.copyText)}" aria-label="${escapeHtml(b.copyText)}. Tap to copy.">
-    <span class="shell-more-build-title">${escapeHtml(b.title)}</span>
-    <span class="shell-more-build-sha" id="shellBuildStampSha">${escapeHtml(b.build)}</span>
-  </button>`;
-}
-function wireBuildStamp(){
-  const btn = document.getElementById('shellBuildStamp');
-  if(!btn) return;
-  const line = document.getElementById('shellBuildStampSha');
-  const original = line.textContent;
-  let timer = null;
-  const say = (text)=>{
-    line.textContent = text;
-    clearTimeout(timer);
-    timer = setTimeout(()=>{ line.textContent = original; }, 1600);
-  };
-  btn.onclick = ()=>{
-    copyText(btn.dataset.copy).then(ok => say(ok ? 'Copied' : original));
-  };
-}
-function copyText(text){
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    return navigator.clipboard.writeText(text).then(()=>true, ()=>legacyCopy(text));
-  }
-  return Promise.resolve(legacyCopy(text));
-}
-// Older iOS standalone web apps have no async clipboard.
-function legacyCopy(text){
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand('copy');
-    ta.remove();
-    return ok;
-  } catch(e){ return false; }
-}
 function closeMoreSheet(){
   document.getElementById('shellMoreSheet').classList.remove('show');
 }
@@ -292,10 +247,8 @@ function buildShellDom(){
     <h3>More</h3>
     ${MORE_ITEMS.map(it => `<button class="shell-more-item" data-tab="${it.tab||''}" data-special="${it.special||''}">${it.label}<span class="chev">›</span></button>`).join('')}
     <button class="shell-more-item admin-item" data-tab="${MORE_ADMIN_ITEM.tab}">${MORE_ADMIN_ITEM.label}<span class="chev">›</span></button>
-    ${buildStampHtml()}
   </div>`;
   document.body.appendChild(sheet);
-  wireBuildStamp();
   sheet.addEventListener('click', (e)=>{ if(e.target === sheet) closeMoreSheet(); });
   sheet.querySelectorAll('.shell-more-item').forEach(btn=>{
     btn.onclick = ()=>{

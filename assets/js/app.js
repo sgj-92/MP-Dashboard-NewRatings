@@ -5392,11 +5392,59 @@ function adminSection(key, title, bodyHtml){
   </div>`;
 }
 
+// ---- Build stamp, the last thing on Admin / Manage -----------------------
+// Which deployed build this device is actually running. A debugging aid, so
+// it is deliberately quiet and not a card. Shown locked or unlocked: a build
+// SHA is not sensitive, and a locked phone is still worth diagnosing. See
+// buildStamp.js for where the SHA and date come from and why they are never
+// fetched.
+function buildStampHtml(){
+  const b = BuildStamp.describe(window.MP_BUILD);
+  return `<button type="button" class="build-stamp" id="buildStamp" data-copy="${escapeHtml(b.copyText)}" aria-label="${escapeHtml(b.copyText)}. Tap to copy.">
+    <span class="build-stamp-title">${escapeHtml(b.title)}</span>
+    <span class="build-stamp-sha" id="buildStampSha">${escapeHtml(b.build)}</span>
+  </button>`;
+}
+function wireBuildStamp(){
+  const btn = document.getElementById('buildStamp');
+  if(!btn) return;
+  const line = document.getElementById('buildStampSha');
+  const original = line.textContent;
+  let timer = null;
+  const say = (text)=>{
+    line.textContent = text;
+    clearTimeout(timer);
+    timer = setTimeout(()=>{ line.textContent = original; }, 1600);
+  };
+  btn.onclick = ()=>{
+    copyText(btn.dataset.copy).then(ok => say(ok ? 'Copied' : original));
+  };
+}
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text).then(()=>true, ()=>legacyCopy(text));
+  }
+  return Promise.resolve(legacyCopy(text));
+}
+// Older iOS standalone web apps have no async clipboard.
+function legacyCopy(text){
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch(e){ return false; }
+}
+
 function renderManage(){
   const box = document.getElementById('manageView');
   if(!isUnlocked){
-    box.innerHTML = buildLockScreenHtml();
+    box.innerHTML = buildLockScreenHtml() + buildStampHtml();
     wireLockScreen(renderManage);
+    wireBuildStamp();
     return;
   }
   let html = '';
@@ -5476,7 +5524,10 @@ function renderManage(){
     <div id="exportMessage" class="section-sub"></div>
   </div>`);
 
+  html += buildStampHtml();
+
   box.innerHTML = html;
+  wireBuildStamp();
 
   // The whole header row toggles. Re-rendering rather than toggling a class
   // keeps one source of truth for what is open, and the sections that build
