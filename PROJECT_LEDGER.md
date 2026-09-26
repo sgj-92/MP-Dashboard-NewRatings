@@ -5631,6 +5631,20 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
      - System Back exits the app; touch targets are 12–30px; Games is ~23
        screens long.
 
+
+   **Product direction confirmed by Shaun / CGPT (26 Sep): Player Experience
+   Reset comes before any native-iOS conversion.** The next design phase is a
+   deliberate usability cleanup, not a cosmetic reskin and not a native rewrite.
+   The target is that an ordinary club player can understand what matters, find
+   what they need and take the obvious next action without Shaun explaining the
+   app. Phase 2 will use the audit evidence to classify the current experience
+   **Keep / Simplify / Move / Merge / Hide / Remove**, then redesign the core
+   player journeys and information architecture before CCode changes the UI.
+   Admin should progressively disappear from the normal player's mental model.
+   A possible dedicated **Me** experience is a product question to assess from
+   the evidence, not an approved navigation change. **No Phase 2 implementation
+   is authorised by this note; baton remains with Shaun / CGPT for synthesis.**
+
    **Defects found during the audit, NOT fixed (brief: no opportunistic
    fixes). D1, D2 and D4 are data-integrity or Shaun-decision matters, so
    they are for Shaun:**
