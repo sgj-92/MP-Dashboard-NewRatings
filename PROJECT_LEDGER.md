@@ -1965,6 +1965,17 @@ ideas only, or any matchup card) before it is scheduled.
 
 ## 6. HANDOFFS
 
+### CCode — 26 Sep 2026 (Best Month analysis)
+
+Analysis only; nothing in the app, engine, record or methodology changed. It
+used a read-only snapshot of the live beta at 04:10 UTC (169 matches, 48 in
+September) and split-month tiers via `TierHistory`. The D column reproduces the
+engine's Monthly Performance exactly. Findings and recommendation are in
+NEXT #15i and `BEST_MONTH_ANALYSIS.md`.
+
+Baton to Shaun (three product decisions) and CChat (challenge the fitted win
+curve and the cushion).
+
 ### CCode — 26 Sep 2026 (build stamp moved to Admin / Manage)
 
 `28f3514`. **604 / 604 tests (176 browser).** Shaun could not see the stamp in
@@ -5536,6 +5547,29 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    Manage, derived from the deployed commit. See Section 2 for the mechanism and the update lifecycle.
 
 ### Waiting on Shaun
+
+15i. **Best Month — analysis delivered, nothing implemented** (26 Sep).
+   Shaun asked who was *actually* the best player in each tier this month, as
+   distinct from League, Merit, Monthly Performance and Power Rating. Full
+   report with the September tables: [`BEST_MONTH_ANALYSIS.md`](./BEST_MONTH_ANALYSIS.md).
+   CCode's recommendation is **"wins above par"**: your results minus what an
+   average player of your tier would expect from the same matches (same
+   partners and opponents, a win curve fitted to results), ranked as
+   total ÷ (P + 8). It is neutral on opponent choice and gives no bonus for
+   being underrated.
+   - Raw win % fails every ducking test.
+   - Merit per game is too coarse inside a tier.
+   - "Wins vs own expectation" is Monthly Performance in disguise.
+   - Engine methodology is untouched. The engine's expectation under-predicts
+     favourites' wins (84% actual vs ~74%), which a results-based award must
+     not use raw.
+
+   **For CChat to challenge:** the fitted curve (scale 250, in-sample) and the
+   cushion (+8). **For Shaun to decide:**
+   - Can a mid-month mover hold the award in the tier they left? (Rishi tops
+     Tier B, then moved to A.)
+   - Is there a Tier C award? (Nobody reached 3 matches.)
+   - Should the headline be the total or the cushioned score?
 
 15h. **RESOLVED 26 Sep, 03:57 UTC — Pages deploys again; cause found.** No
    Pages build ran for any push between `6efc096` (02:45) and `971298e`, and
