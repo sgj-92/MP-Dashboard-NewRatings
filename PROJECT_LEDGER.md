@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`87368a1`** |
-| Tests | **589 / 589 passing** (172 of them drive a real browser) |
+| Last verified implementation commit | **`fc8ebb6`** |
+| Tests | **603 / 603 passing** (175 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -148,6 +148,12 @@ built; they exist — `scripts/screenshots.js`, 19 captures in
 ---
 
 ### Added since the compaction
+
+**Build stamp — DONE (`fc8ebb6`).** The bottom of More reads *"Money Padel
+Beta · 26 Sep 2026 / Build a4c91e2"*: the build the device is actually
+running, stamped by GitHub Pages' own Jekyll build, never hand-maintained and
+never fetched. Tap copies a one-line version for bug reports. **There is no
+service worker** — see Section 2 for when a new deploy reaches a phone.
 
 **Meaningful Month — DONE (`87368a1`).** Power Rankings, League and the Home
 monthly card open on the current month only once it holds **5 or more
@@ -354,6 +360,32 @@ calendar. Each such screen keeps two things, never one global:
 
 The note shows only while the default is the fallback, the reader is looking
 at it, and the current month has at least one game (nothing to show at 0).
+
+**Build stamp and how a deploy reaches a device (26 Sep, `fc8ebb6`).** Pages
+deploys `main` by the legacy branch source, which runs Jekyll (github-pages
+232) and passes it `build_revision` = the commit being built.
+`assets/js/buildInfo.pages.js` is a Liquid template rendered to
+`assets/js/buildInfo.js` with that SHA and the build date (Europe/London, set
+in `_config.yml`); the committed `buildInfo.js` is a placeholder (`sha: null`
+→ "local build / Build dev") that `_config.yml` excludes so it cannot overwrite
+the stamp. `buildStamp.js` formats it and believes only a hex SHA and an ISO
+date. **The stamp must never be fetched or asked of GitHub** — it is loaded in
+the same page load as the code it describes. If the site ever moves to an
+Actions workflow or adds `.nojekyll`, the stamp must move with it (the tests
+guard the template and the exclude, not the Pages setting).
+
+*Update lifecycle, audited:* no service worker is registered and the manifest
+is an inline data URL, so an installed home-screen app has no offline copy —
+it loads from the network through the ordinary HTTP cache. GitHub Pages serves
+every file with a 10-minute cache (`max-age=600`; documented behaviour, not
+measurable from CCode's sandbox). A deploy is live ~40s after a push; a device
+picks it up on its next full load once its cached copies are over 10 minutes
+old. A backgrounded iOS app that is resumed does not reload, so it keeps
+running what it loaded — which the stamp then reports truthfully. Files are
+cached independently, so a reload inside that 10-minute window can in
+principle mix a new `index.html` with older scripts; the stamp is loaded
+alongside the scripts, not with the HTML. Versioned asset URLs or a service
+worker would close that gap (NEXT #19).
 
 **Three outcomes, never two (23 Sep).** A match is a win, a loss or a draw,
 and the draw is the one code forgets. On a drawn match `winners` and `losers`
@@ -586,6 +618,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
+| More shows the deployed build, derived from the build itself | **DONE `fc8ebb6`.** Shaun, 26 Sep 2026. Bottom of More, small muted text: `Money Padel Beta · 26 Sep 2026` / `Build a4c91e2`. The SHA is the short Git SHA of the deployed commit, **derived automatically at build time, never maintained in source**; the date is the build's date, never the runtime date; the identifier describes the code actually executing on the device, **never** the latest commit from GitHub. Tap copies `Money Padel Beta · 2026-09-26 · a4c91e2`. Mechanism chosen by CCode: GitHub Pages' existing Jekyll build (`site.github.build_revision`), so no deployment setting changes. An `Update available · Refresh` prompt was considered and **not added** — see NEXT #19. |
 | Meaningful Month — screens open on this month only once it has 5 games | **DONE `87368a1`.** Shaun, 26 Sep 2026. If the current calendar month has fewer than 5 unique completed matches, default to the most recently completed month; at 5+, default to the current month. Count canonical matches, not appearances; draws count. The current month stays manually selectable before 5. **Initial/default only** — never overrides an explicit selection, never jumps a reader mid-page when match #5 lands. Default and selection are separate, per feature, never one global. Rolling/current features (Last 10, current Power Rating, profile current state) are not forced onto the previous month. **Supersedes** Rankings' and League's "open on the last completed month" rule, and resolves NEXT #15e. CCode applied it to the Home monthly card too (it was not on the list) so Home and its View Full Review agree. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
@@ -1930,6 +1963,25 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 26 Sep 2026 (build stamp)
+
+`fc8ebb6`. **603 / 603 tests (175 browser)**; 14 new, the 7 that touch the
+app or the deploy wiring verified failing on the previous code.
+
+**Mechanism.** Pages already runs Jekyll on every push and hands it the
+commit SHA (visible in every "pages build and deployment" log). So the stamp
+is a Liquid template rendered by that build, with no workflow to add and no
+Pages setting to change. Verified locally with the same github-pages 232 gem:
+the stamp renders, the placeholder is excluded, `index.html` is byte-identical
+and no other published file changes. The first live proof is the next deploy:
+the More screen should read `Build fc8ebb6` or later.
+
+**Service worker audit:** there isn't one. Details and the 10-minute cache in
+Section 2; the update prompt is folded into NEXT #19 rather than built on
+ground that cannot make Refresh reliable.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 26 Sep 2026 (Meaningful Month)
 
@@ -5303,6 +5355,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `fc8ebb6` | Build stamp at the bottom of More: date and short SHA of the deployed build, rendered by GitHub Pages' Jekyll run from `buildInfo.pages.js` (placeholder excluded via a new `_config.yml`), never fetched; tap copies a one-line version; verified with a local github-pages 232 build that nothing else published changes; service-worker lifecycle audited (there is none) |
 | `87368a1` | Meaningful Month: Rankings, League and the Home monthly card open on the current month only once it holds 5+ canonical completed matches (draws count, pending don't), else the last month with games plus a quiet "taking shape · N of 5 games" note with a one-tap switch; default pinned on arrival, explicit choice kept per screen; Home "View Full Review" now opens the card's month; Home "Games played" counts draws; 28 tests (0/1/4/5/6, boundaries, time zone, choice, navigation, independence) |
 | `63b4ea7` | Players Directory refresh finished in the canonical renderer: quiet filter line, compact sort beside the count, small unified chips, player cards with tier-tinted initials avatars; first player 256→218px shut, 438→344px open; reference screenshots regenerated |
 | `d8d6406` | Month state ownership: the Player Profile stopped opening as an August snapshot, Compare stopped writing the Rankings month; each screen owns its month; `populateMonthSelect` requires a value; Home's month workaround removed |
@@ -5467,6 +5520,9 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 15f. **DONE (`87368a1`).** Meaningful Month defaulting. See Section 2 for the
    per-screen rule and the handoff for what changed on Home.
 
+15g. **DONE (`fc8ebb6`).** Build stamp at the bottom of More, derived from the
+   deployed commit. See Section 2 for the mechanism and the update lifecycle.
+
 ### Waiting on Shaun
 
 15e. **RESOLVED 26 Sep by Meaningful Month (`87368a1`)** — League and Merit
@@ -5508,6 +5564,12 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    — it caches code, never data. It is a deployment change (cache
    invalidation, an update path when a new version ships), which is why it is
    here rather than done. Roughly a second saved per launch on a phone.
+   *26 Sep, from the build-stamp audit:* this is also where a reliable
+   **"Update available · Refresh"** belongs. Without a service worker there is
+   no waiting worker to detect; polling the stamp could tell a device a newer
+   build exists, but Refresh could still load cached scripts for up to 10
+   minutes, leaving the prompt showing after the tap. A service worker's
+   `waiting` → `skipWaiting` on tap makes it exact. Not built.
 
 20. **Live updates between devices?** There are no Firestore listeners, so if
    one person submits or approves a game, another person's open app does not
