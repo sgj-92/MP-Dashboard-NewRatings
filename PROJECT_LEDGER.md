@@ -149,6 +149,15 @@ built; they exist — `scripts/screenshots.js`, 19 captures in
 
 ### Added since the compaction
 
+**Player Experience Reset, Phase 1 audit — DELIVERED (`0f9db42`).**
+Evidence only; the app is unchanged.
+- **Report:** [`PLAYER_UX_AUDIT.md`](./PLAYER_UX_AUDIT.md).
+- **Evidence:** 77 screenshots of the current build on a read-only copy of the
+  live beta, with an index and the journey tap-log, in
+  [`docs/ux-audit/`](./docs/ux-audit/INDEX.md).
+- **Reproduce with:** `scripts/ux-audit-capture.js`.
+- **Also found:** five defects, not fixed (NEXT #15j).
+
 **Monthly Race (Best Month) — TRIAL DELIVERED (`25191b8`).** A fourth View on
 the League screen: everyone in a tier starts the month on 0 and each match
 carries stakes set for an ordinary player of that tier with the actual
@@ -1993,6 +2002,22 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 26 Sep 2026 (Player Experience Reset: Phase 1 audit)
+
+`0f9db42`. Evidence only: no UI, data, methodology or navigation change;
+625/625 tests still pass.
+- **How:** audited as an ordinary player (PDM) on the current build against a
+  read-only copy of the live beta. Every screen was reached by real taps, and
+  the capture fails if the app attempts a write (none did).
+- **Evidence:** the report is `PLAYER_UX_AUDIT.md`; the evidence is
+  `docs/ux-audit/` (77 screenshots with an index, and `journeys.json` for the
+  seven journeys); `scripts/ux-audit-capture.js` regenerates it. The live
+  snapshot is not committed: it holds club data and the admin password
+  hash, which the capture never serves.
+- **Defects found (D1–D5)** are in NEXT #15j, unfixed. D1, D2 and D4 need
+  Shaun.
+- **Baton:** back to Shaun / CGPT for Phase 2. Nothing is queued for CCode.
 
 ### CCode — 26 Sep 2026 (Monthly Race trial delivered)
 
@@ -5416,6 +5441,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `0f9db42` | Player Experience Reset Phase 1 UX audit (evidence only): `PLAYER_UX_AUDIT.md`, 77 screenshots and an index in `docs/ux-audit/`, the journey tap-log, and `scripts/ux-audit-capture.js`; five defects recorded, not fixed (NEXT #15j) |
 | `25191b8` | Monthly Race (Best Month) trial: `monthlyRace.js` plus a fourth League-screen View, by tier with provisional players and "No qualifier this month", and an auditable drill-down per score; reconciled to the analysis on the live record (same order in every tier, largest difference 0.23 from per-match rounding); 21 tests, including proof that ratings, League, Merit and Monthly Performance are unchanged |
 | `28f3514` | Build stamp moved from More to the foot of Admin / Manage at Shaun's request, shown under the unlock form too; More no longer carries it |
 | `fc8ebb6` | Build stamp at the bottom of More: date and short SHA of the deployed build, rendered by GitHub Pages' Jekyll run from `buildInfo.pages.js` (placeholder excluded via a new `_config.yml`), never fetched; tap copies a one-line version; verified with a local github-pages 232 build that nothing else published changes; service-worker lifecycle audited (there is none) |
@@ -5587,6 +5613,44 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    Manage, derived from the deployed commit. See Section 2 for the mechanism and the update lifecycle.
 
 ### Waiting on Shaun
+
+15j. **Player Experience Reset — Phase 1 UX audit DELIVERED (`0f9db42`).
+   Baton → Shaun / CGPT for Phase 2** (what Money Padel should feel like;
+   Keep / Simplify / Move / Merge / Hide / Remove; new journeys). Evidence
+   only: no UI, data, methodology or navigation change.
+   - **Evidence:** `PLAYER_UX_AUDIT.md`; screenshots and index in
+     `docs/ux-audit/`; `docs/ux-audit/journeys.json`.
+   - **Method:** selected player PDM, 390px plus a 375px pass, every state
+     reached by real taps, 0 writes attempted.
+   - **Headlines:**
+     - The fixture flow is broken at both ends.
+     - "Who's best this month?" has six different answers across the app.
+     - Admin leaks into four player surfaces.
+     - Home lacks "my next game" and "waiting on me".
+     - Engine vocabulary is on first screens.
+     - System Back exits the app; touch targets are 12–30px; Games is ~23
+       screens long.
+
+   **Defects found during the audit, NOT fixed (brief: no opportunistic
+   fixes). D1, D2 and D4 are data-integrity or Shaun-decision matters, so
+   they are for Shaun:**
+   - **D1.** Any player can delete any Upcoming or Pending game with one tap:
+     no admin gate, confirmation or undo.
+   - **D2.** A player's game-request confirmation ("I'm in!") renders hidden
+     in the current profile, so player-made requests can never reach
+     Upcoming. All 8 live Upcoming games were created by Shaun. If it were
+     visible, it is keyed to the viewed profile, not the viewer.
+   - **D3.** Upcoming is stale. Two 23 Sep games were played and recorded
+     but are still listed; one 24 Sep game is past its date.
+   - **D4.** The admin "Visible to everyone" toggles are ignored by the
+     current navigation. Find a Game (default *Admin only*) is every
+     player's Play landing tab and shows win-% predictions, contrary to the
+     21 Sep decision that predictions are admin-only.
+   - **D5.** A profile can show two different tier ranks for the same player
+     (Rishi: header "#8 Tier" vs analysis "#9 of 9").
+
+   CCode recommends deciding D1, D2 and D4 before Phase 2 redesigns the
+   same flow.
 
 15i. **APPROVED TRIAL — Best Month / Monthly Race** (Shaun, 26 Sep).
    Analysis is complete in [`BEST_MONTH_ANALYSIS.md`](./BEST_MONTH_ANALYSIS.md).
