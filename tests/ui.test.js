@@ -1277,13 +1277,16 @@ test('every tier chip is reachable and nothing runs off the edge', { skip }, asy
         chips: chips.map((c) => c.textContent),
         // The old row was a single line that clipped "Tier C" off the screen.
         clipped: chips.filter((c) => c.getBoundingClientRect().right > right + 1).length,
-        wrapped: new Set(chips.map((c) => Math.round(c.getBoundingClientRect().top))).size > 1,
+        // The chips are compact enough to fit one line at 375px now, so they
+        // need not wrap -- but the bar must still be ABLE to, or a narrower
+        // phone or a fifth tier brings the clipping straight back.
+        canWrap: getComputedStyle(bar).flexWrap === 'wrap',
         overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
       };
     });
     assert.deepStrictEqual(r.chips, ['All', 'Tier S', 'Tier A', 'Tier B', 'Tier C']);
     assert.strictEqual(r.clipped, 0, 'no chip may be cut off');
-    assert.strictEqual(r.wrapped, true, 'they wrap rather than scrolling out of sight');
+    assert.strictEqual(r.canWrap, true, 'they wrap rather than scrolling out of sight when space runs out');
     assert.strictEqual(r.overflow, false);
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }

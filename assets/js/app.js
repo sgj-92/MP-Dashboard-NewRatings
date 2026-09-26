@@ -2484,19 +2484,18 @@ function renderPlayersTab(){
     : (playersActiveFilter === 'active' ? 'active only' : 'inactive only');
   const filtered = playersTierFilter !== 'All' || playersActiveFilter !== 'all';
 
-  let html = `<div class="pdir-bar">
-    <button type="button" class="pdir-filter-btn${filtered ? ' is-on' : ''}" id="playersFilterToggle" aria-expanded="${playersFiltersOpen}">
-      <span>Filters · <span class="pdir-filter-state">${tierText}, ${statusText}</span></span>
-      <span class="pdir-filter-chev" aria-hidden="true">▾</span>
-    </button>
-    <div class="fg-toggle" id="playersSortToggle">
-      <button class="fg-toggle-btn ${playersSortBy==='name'?'active':''}" data-sortby="name">A–Z</button>
-      <button class="fg-toggle-btn ${playersSortBy==='rating'?'active':''}" data-sortby="rating">Power Rating</button>
-    </div>
-  </div>`;
+  // The filter is a line of text you can tap, the same quiet disclosure the
+  // Games, League and Requests screens use. It was a bordered card with a
+  // dropdown arrow -- the treatment rejected on the League screen and replaced
+  // everywhere else, which this screen predated and never caught up with.
+  let html = `<button type="button" class="pdir-filter-line${filtered ? ' is-on' : ''}" id="playersFilterToggle"
+      aria-expanded="${playersFiltersOpen}" aria-controls="playersFilterPanel">
+      Filters · <span class="pdir-filter-state">${tierText}, ${statusText}</span>
+      <span class="lg-inline-chev" aria-hidden="true">${playersFiltersOpen ? '⌄' : '›'}</span>
+    </button>`;
 
   if(playersFiltersOpen){
-    html += `<div class="pdir-filters">
+    html += `<div class="pdir-filters" id="playersFilterPanel">
       <div class="fg-row"><label class="fg-label">Tier</label>
         <div class="pdir-tierbar" id="playersTierBar"></div>
       </div>
@@ -2511,13 +2510,22 @@ function renderPlayersTab(){
   }
 
   if(rows.length === 0){
+    html += `<div class="pdir-countbar"><span class="pdir-count">0 players · filtered</span></div>`;
     html += `<div class="section-sub">No players match that filter.</div>`;
     box.innerHTML = html;
     wirePlayersControls();
     return;
   }
 
-  html += `<div class="pdir-count">${rows.length} player${rows.length===1?'':'s'}${filtered ? ' · filtered' : ''}</div>`;
+  // Count on the left, sort on the right: one slim line where there used to
+  // be a count under two full-width form buttons.
+  html += `<div class="pdir-countbar">
+    <span class="pdir-count">${rows.length} player${rows.length===1?'':'s'}${filtered ? ' · filtered' : ''}</span>
+    <div class="pdir-seg" id="playersSortToggle" role="group" aria-label="Sort players">
+      <button type="button" class="fg-toggle-btn ${playersSortBy==='name'?'active':''}" data-sortby="name" aria-pressed="${playersSortBy==='name'}">A–Z</button>
+      <button type="button" class="fg-toggle-btn ${playersSortBy==='rating'?'active':''}" data-sortby="rating" aria-pressed="${playersSortBy==='rating'}">Power Rating</button>
+    </div>
+  </div>`;
 
   // Letter headings only make sense alphabetically. Sorted by rating they
   // would mark divisions that are not there.
@@ -2531,12 +2539,17 @@ function renderPlayersTab(){
       }
     }
     // Active is the normal state and does not need to shout on every row;
-    // inactive is the one worth noticing.
+    // inactive is the one worth noticing, and the whole row quietens with it.
     const inactive = p.active ? '' : `<span class="pdir-inactive">Inactive</span>`;
-    html += `<button type="button" class="pdir-row" data-player="${escapeHtml(p.name)}">
+    const tierKey = String(p.tier || '').toLowerCase();
+    // A player card, not a record: the same initials avatar Home uses for the
+    // people in a suggested game, tinted by the club's own tier colours, so a
+    // glance down the list reads tiers before it reads a single word.
+    html += `<button type="button" class="pdir-row pdir-tier-${escapeHtml(tierKey)}${p.active ? '' : ' is-inactive'}" data-player="${escapeHtml(p.name)}">
+      <span class="pdir-avatar" aria-hidden="true">${escapeHtml(initials(p.name))}</span>
       <span class="pdir-main">
         <span class="pdir-name">${escapeHtml(p.name)}</span>
-        <span class="pdir-meta">Tier ${p.tier} · <b>${Math.round(p.rating)}</b></span>
+        <span class="pdir-meta">Tier ${escapeHtml(p.tier)} · <b>${Math.round(p.rating)}</b></span>
       </span>
       <span class="pdir-right">${inactive}<span class="pdir-chev" aria-hidden="true">›</span></span>
     </button>`;
