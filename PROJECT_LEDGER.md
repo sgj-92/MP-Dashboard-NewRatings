@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`28f3514`** (live via Pages from `40d9456`) |
-| Tests | **604 / 604 passing** (176 of them drive a real browser) |
+| Last verified implementation commit | **`25191b8`** |
+| Tests | **625 / 625 passing** (181 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -148,6 +148,12 @@ built; they exist — `scripts/screenshots.js`, 19 captures in
 ---
 
 ### Added since the compaction
+
+**Monthly Race (Best Month) — TRIAL DELIVERED (`25191b8`).** A fourth View on
+the League screen: everyone in a tier starts the month on 0 and each match
+carries stakes set for an ordinary player of that tier with the actual
+partner and opponents. Reconciled to `BEST_MONTH_ANALYSIS.md` on the live
+record: same order in every tier. See NEXT #15i.
 
 **Build stamp — DONE (`fc8ebb6`), moved to Admin / Manage (`28f3514`).** The
 foot of Admin / Manage (locked or unlocked) reads *"Money Padel Beta · 26 Sep
@@ -361,6 +367,28 @@ calendar. Each such screen keeps two things, never one global:
 
 The note shows only while the default is the fallback, the reader is looking
 at it, and the current month has at least one game (nothing to show at 0).
+
+**Monthly Race — a fifth monthly story (26 Sep, `25191b8`, trial).**
+`monthlyRace.js` is the whole calculation, and it is pure: it reads canonical
+approved matches (`getAllApprovedMatches`, draws in, pending out) in played
+order, `historicalTierOf`, and the persisted pre-match ratings in
+`V3_MATCH_FACTS`. It writes nothing and is never persisted.
+
+- **Par** for a tier-month is the mean month-opening rating (pre-match rating
+  of a player's first match that month) of the players who played in that
+  tier.
+- **par win** = winChance(mean(par, partner), mean(opponents)), with a
+  results-fitted Elo curve (scale 250, **not** sequential-v1's 400
+  game-share expectation).
+- **Points:** win K(1−par win), draw K(½−par win), loss −K·par win; K = 20.
+  Points are settled to 0.1 per match and the score is their sum, so a
+  drill-down adds up on screen.
+- **Rows** are per tier spell. 5 matches qualify; the rest are provisional.
+
+It lives behind the League screen's View select and follows `summaryMonth`
+(Meaningful Month). It is By tier only, and All Time asks for a month. A test
+asserts that opening it changes no rating, League, Merit or Monthly
+Performance output and writes nothing.
 
 **Build stamp and how a deploy reaches a device (26 Sep, `fc8ebb6`).** Pages
 deploys `main` by the legacy branch source, which runs Jekyll (github-pages
@@ -619,6 +647,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
+| Monthly Race (Best Month) is trialled as a fifth monthly story | **TRIAL DELIVERED `25191b8`.** Shaun, 26 Sep 2026 (NEXT #15i). Power-Rating-stakes monthly race: each tier spell starts at 0; stakes from partner/opponent pre-match Power Ratings with the scored player treated as an ordinary member of the tier; results-fitted curve 250; K 20; rank by race score; 5 matches qualify; mid-month movers can win in the tier they left; Tier C is never merged — "No qualifier this month"; League, Merit, Monthly Performance, Power Rating and sequential-v1 unchanged. |
 | More shows the deployed build, derived from the build itself | **DONE `fc8ebb6`; moved to the foot of Admin / Manage `28f3514`** (Shaun, 26 Sep, same day: *"put it at the bottom of admin/manage instead"* — supersedes the More placement only; shown locked or unlocked). Shaun, 26 Sep 2026. Originally the bottom of More, small muted text: `Money Padel Beta · 26 Sep 2026` / `Build a4c91e2`. The SHA is the short Git SHA of the deployed commit, **derived automatically at build time, never maintained in source**; the date is the build's date, never the runtime date; the identifier describes the code actually executing on the device, **never** the latest commit from GitHub. Tap copies `Money Padel Beta · 2026-09-26 · a4c91e2`. Mechanism chosen by CCode: GitHub Pages' existing Jekyll build (`site.github.build_revision`), so no deployment setting changes. An `Update available · Refresh` prompt was considered and **not added** — see NEXT #19. |
 | Meaningful Month — screens open on this month only once it has 5 games | **DONE `87368a1`.** Shaun, 26 Sep 2026. If the current calendar month has fewer than 5 unique completed matches, default to the most recently completed month; at 5+, default to the current month. Count canonical matches, not appearances; draws count. The current month stays manually selectable before 5. **Initial/default only** — never overrides an explicit selection, never jumps a reader mid-page when match #5 lands. Default and selection are separate, per feature, never one global. Rolling/current features (Last 10, current Power Rating, profile current state) are not forced onto the previous month. **Supersedes** Rankings' and League's "open on the last completed month" rule, and resolves NEXT #15e. CCode applied it to the Home monthly card too (it was not on the list) so Home and its View Full Review agree. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
@@ -1964,6 +1993,16 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 26 Sep 2026 (Monthly Race trial delivered)
+
+`25191b8`. **625 / 625 tests (181 browser).** The approved Power-Rating-stakes
+race is live behind League → View → Monthly Race. The calculation is one pure
+module; the screen reuses the League/Merit tier sections and drill-down
+pattern. On the live record it reproduces the analysis's order exactly.
+Upcoming stakes are deliberately deferred because par drifts by up to ~1
+point within a month; the recommendation is in NEXT #15i item 2. No engine,
+record, League, Merit or Monthly Performance change.
 
 ### CCode — 26 Sep 2026 (Best Month analysis)
 
@@ -5377,6 +5416,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `25191b8` | Monthly Race (Best Month) trial: `monthlyRace.js` plus a fourth League-screen View, by tier with provisional players and "No qualifier this month", and an auditable drill-down per score; reconciled to the analysis on the live record (same order in every tier, largest difference 0.23 from per-match rounding); 21 tests, including proof that ratings, League, Merit and Monthly Performance are unchanged |
 | `28f3514` | Build stamp moved from More to the foot of Admin / Manage at Shaun's request, shown under the unlock form too; More no longer carries it |
 | `fc8ebb6` | Build stamp at the bottom of More: date and short SHA of the deployed build, rendered by GitHub Pages' Jekyll run from `buildInfo.pages.js` (placeholder excluded via a new `_config.yml`), never fetched; tap copies a one-line version; verified with a local github-pages 232 build that nothing else published changes; service-worker lifecycle audited (there is none) |
 | `87368a1` | Meaningful Month: Rankings, League and the Home monthly card open on the current month only once it holds 5+ canonical completed matches (draws count, pending don't), else the last month with games plus a quiet "taking shape · N of 5 games" note with a one-tap switch; default pinned on arrival, explicit choice kept per screen; Home "View Full Review" now opens the card's month; Home "Games played" counts draws; 28 tests (0/1/4/5/6, boundaries, time zone, choice, navigation, independence) |
@@ -5638,6 +5678,44 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    live audit findings.
 
    **Baton → CCode. Approved to implement as a trial.**
+
+   **DELIVERED (`25191b8`, CCode, 26 Sep).** Implemented from the analysis,
+   formula unchanged. **625 / 625 tests** (21 new; the 5 browser tests fail
+   without the wiring).
+
+   **Reconciled on the live record (read 26 Sep, 04:10 UTC):**
+   - Par ratings are identical to the analysis.
+   - The qualified order is identical in every tier:
+     - A: Osh +47.5 > Erf +42.2 > KC +37.2 > Len +21.5 > Rishi −3.6 > Kaz −15.8
+       > Eli −38.8 > Ant Slicer −54.6.
+     - B: Rishi +76.4 > PDM +38.3 > Antz +22.9 > Tom +12.7 > Rocky +3.6 >
+       Max −16.7 > Stormz −24.9 > Jords −40.8.
+     - C and S: "No qualifier this month".
+   - Nothing was unresolved.
+
+   **Discrepancies and open items (reported, not acted on):**
+   1. **Rounding.** Points are settled to 0.1 per match so the drill-down adds
+      up on screen. Scores differ from the analysis's unrounded K × Σ by at
+      most **0.23**, and no position changes. This is an implementation
+      choice, not a methodology change.
+   2. **Stakes on Upcoming: not added. Needs a methodology decision.** Par is
+      built from everyone who plays in the tier that month, so it drifts as the
+      month goes on. In September a match's win stake moved by a median 0.4
+      and at most **0.9** between match day and month end; the order was the
+      same either way. Most of the drift came from the 20 Sep tier changes:
+      Rishi's opening rating joining A's par took it from 1694 to 1667.
+      Quoting stakes before a match would therefore be *nearly* right, not
+      final. **CCode's recommendation:** if stakes are to be shown pre-match,
+      fix par when the month starts (for example, the tier's opening ratings
+      as of the 1st) so a quoted stake never changes. That is a change to the
+      approved definition, so it is for CGPT/Shaun, not CCode.
+   3. **By the analysis's definition,** a player who moves tier mid-month
+      contributes their month-opening rating to the par of *both* tiers. It is
+      faithful to the analysis and small in effect (item 2), but worth
+      CChat's eye.
+
+   **Baton → Shaun/CGPT** for item 2, and CChat for items 2–3 and the
+   fitted curve. The trial is usable as it stands.
 
 15h. **RESOLVED 26 Sep, 03:57 UTC — Pages deploys again; cause found.** No
    Pages build ran for any push between `6efc096` (02:45) and `971298e`, and
