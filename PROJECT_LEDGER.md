@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`fc8ebb6`** |
-| Tests | **603 / 603 passing** (175 of them drive a real browser) |
+| Last verified implementation commit | **`28f3514`** |
+| Tests | **604 / 604 passing** (176 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -149,8 +149,9 @@ built; they exist — `scripts/screenshots.js`, 19 captures in
 
 ### Added since the compaction
 
-**Build stamp — DONE (`fc8ebb6`).** The bottom of More reads *"Money Padel
-Beta · 26 Sep 2026 / Build a4c91e2"*: the build the device is actually
+**Build stamp — DONE (`fc8ebb6`), moved to Admin / Manage (`28f3514`).** The
+foot of Admin / Manage (locked or unlocked) reads *"Money Padel Beta · 26 Sep
+2026 / Build a4c91e2"*: the build the device is actually
 running, stamped by GitHub Pages' own Jekyll build, never hand-maintained and
 never fetched. Tap copies a one-line version for bug reports. **There is no
 service worker** — see Section 2 for when a new deploy reaches a phone.
@@ -618,7 +619,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
-| More shows the deployed build, derived from the build itself | **DONE `fc8ebb6`.** Shaun, 26 Sep 2026. Bottom of More, small muted text: `Money Padel Beta · 26 Sep 2026` / `Build a4c91e2`. The SHA is the short Git SHA of the deployed commit, **derived automatically at build time, never maintained in source**; the date is the build's date, never the runtime date; the identifier describes the code actually executing on the device, **never** the latest commit from GitHub. Tap copies `Money Padel Beta · 2026-09-26 · a4c91e2`. Mechanism chosen by CCode: GitHub Pages' existing Jekyll build (`site.github.build_revision`), so no deployment setting changes. An `Update available · Refresh` prompt was considered and **not added** — see NEXT #19. |
+| More shows the deployed build, derived from the build itself | **DONE `fc8ebb6`; moved to the foot of Admin / Manage `28f3514`** (Shaun, 26 Sep, same day: *"put it at the bottom of admin/manage instead"* — supersedes the More placement only; shown locked or unlocked). Shaun, 26 Sep 2026. Originally the bottom of More, small muted text: `Money Padel Beta · 26 Sep 2026` / `Build a4c91e2`. The SHA is the short Git SHA of the deployed commit, **derived automatically at build time, never maintained in source**; the date is the build's date, never the runtime date; the identifier describes the code actually executing on the device, **never** the latest commit from GitHub. Tap copies `Money Padel Beta · 2026-09-26 · a4c91e2`. Mechanism chosen by CCode: GitHub Pages' existing Jekyll build (`site.github.build_revision`), so no deployment setting changes. An `Update available · Refresh` prompt was considered and **not added** — see NEXT #19. |
 | Meaningful Month — screens open on this month only once it has 5 games | **DONE `87368a1`.** Shaun, 26 Sep 2026. If the current calendar month has fewer than 5 unique completed matches, default to the most recently completed month; at 5+, default to the current month. Count canonical matches, not appearances; draws count. The current month stays manually selectable before 5. **Initial/default only** — never overrides an explicit selection, never jumps a reader mid-page when match #5 lands. Default and selection are separate, per feature, never one global. Rolling/current features (Last 10, current Power Rating, profile current state) are not forced onto the previous month. **Supersedes** Rankings' and League's "open on the last completed month" rule, and resolves NEXT #15e. CCode applied it to the Home monthly card too (it was not on the list) so Home and its View Full Review agree. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
@@ -1963,6 +1964,16 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 26 Sep 2026 (build stamp moved to Admin / Manage)
+
+`28f3514`. **604 / 604 tests (176 browser).** Shaun could not see the stamp in
+More and asked for it at the bottom of Admin / Manage. Moved, not duplicated;
+also shown under the unlock form. **Why he could not see it:** not the More
+list — Pages has not deployed anything since `815e849` (NEXT #15h), so his
+phone is running a build that predates the stamp. It will appear wherever it
+lives only once Pages builds again. The shared "How this works ›" link that
+every tab renders still sits below it; left alone, as it is not Admin's.
 
 ### CCode — 26 Sep 2026 (build stamp)
 
@@ -5355,6 +5366,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `28f3514` | Build stamp moved from More to the foot of Admin / Manage at Shaun's request, shown under the unlock form too; More no longer carries it |
 | `fc8ebb6` | Build stamp at the bottom of More: date and short SHA of the deployed build, rendered by GitHub Pages' Jekyll run from `buildInfo.pages.js` (placeholder excluded via a new `_config.yml`), never fetched; tap copies a one-line version; verified with a local github-pages 232 build that nothing else published changes; service-worker lifecycle audited (there is none) |
 | `87368a1` | Meaningful Month: Rankings, League and the Home monthly card open on the current month only once it holds 5+ canonical completed matches (draws count, pending don't), else the last month with games plus a quiet "taking shape · N of 5 games" note with a one-tap switch; default pinned on arrival, explicit choice kept per screen; Home "View Full Review" now opens the card's month; Home "Games played" counts draws; 28 tests (0/1/4/5/6, boundaries, time zone, choice, navigation, independence) |
 | `63b4ea7` | Players Directory refresh finished in the canonical renderer: quiet filter line, compact sort beside the count, small unified chips, player cards with tier-tinted initials avatars; first player 256→218px shut, 438→344px open; reference screenshots regenerated |
@@ -5520,8 +5532,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 15f. **DONE (`87368a1`).** Meaningful Month defaulting. See Section 2 for the
    per-screen rule and the handoff for what changed on Home.
 
-15g. **DONE (`fc8ebb6`).** Build stamp at the bottom of More, derived from the
-   deployed commit. See Section 2 for the mechanism and the update lifecycle.
+15g. **DONE (`fc8ebb6`, moved `28f3514`).** Build stamp at the foot of Admin /
+   Manage, derived from the deployed commit. See Section 2 for the mechanism and the update lifecycle.
 
 ### Waiting on Shaun
 
@@ -5531,9 +5543,10 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    has started, so **Meaningful Month and the build stamp are not live yet**.
    `6efc096` predates the new `_config.yml`, so the stamp is not the cause.
    If nothing has run by the next push, re-save Settings → Pages (source
-   `main` / root) or check githubstatus.com. Once a build runs, the bottom of
-   More should read `Build 818e1cb` or later — the first live proof of the
-   stamp.
+   `main` / root) or check githubstatus.com. Once a build runs, the foot of
+   Admin / Manage should read `Build 28f3514` or later — the first live proof
+   of the stamp. *Confirmed 26 Sep by Shaun's own screenshot:* his phone showed
+   More without any stamp, i.e. still the pre-stamp build.
 
 15e. **RESOLVED 26 Sep by Meaningful Month (`87368a1`)** — League and Merit
    open on the current month once it has 5 games. *Original question, kept:*
