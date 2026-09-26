@@ -2090,6 +2090,27 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
 .merit-count:active{ opacity: .6; }
 .merit-count.is-open{ border-bottom-style: solid; }
 
+/* Monthly Race: the score opens its matches, like a Merit count. */
+.race-score{ color: var(--gold-bright); }
+.race-score.is-neg{ color: var(--red); }
+.race-pts.is-neg{ color: var(--red); }
+/* The drill-down lives inside a table cell; let its prose wrap. */
+.race-drill-row .merit-drill-teams, .race-drill-meta{ white-space: normal; }
+.race-drill-meta{ line-height: 1.45; }
+.race-drill-score{ color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.race-drill-total{
+  border-top: 1px solid var(--line); margin-top: 4px; padding-top: 7px; text-align: right;
+  font-family: var(--font-interface); font-size: 11.5px; font-weight: 700; color: var(--gold-bright);
+}
+.race-noq{
+  font-family: var(--font-interface); font-size: 12px; color: var(--text-dim);
+  padding: 10px 2px 4px; font-style: italic;
+}
+.race-prov-head{
+  font-family: var(--font-interface); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-dim); margin: 12px 2px 6px;
+}
+
 /* The matches behind a count, inline under the row they belong to. */
 .merit-drill-body{
   background: var(--surface-2); border-top: 1px solid var(--surface-border);

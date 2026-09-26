@@ -7270,6 +7270,7 @@ function renderSummary(){
       <select id="summaryModeSelect" class="fg-select">
         <option value="league">League Table</option>
         <option value="merit">Merit Table</option>
+        <option value="race">Monthly Race</option>
         <option value="information">Information</option>
       </select>
     </div>
@@ -7293,10 +7294,11 @@ function renderSummary(){
   const legacyExplainer = document.getElementById('explainerWrapper');
   // Merit carries its own explanation too, so the legacy per-tab block would
   // be a second one on that view as well.
-  if(legacyExplainer) legacyExplainer.style.display = (summaryMode === 'league' || summaryMode === 'merit') ? 'none' : '';
+  if(legacyExplainer) legacyExplainer.style.display = (summaryMode === 'league' || summaryMode === 'merit' || summaryMode === 'race') ? 'none' : '';
 
   if(summaryMode === 'league') renderSummaryLeagueTable();
   else if(summaryMode === 'merit') renderMeritTable();
+  else if(summaryMode === 'race') renderMonthlyRace();
   else renderSummaryInformation();
 }
 
@@ -7888,6 +7890,171 @@ function renderMeritTable(){
       const key = `${btn.dataset.player}\u0000${btn.dataset.tier}\u0000${btn.dataset.kind}`;
       meritDrill = (meritDrill === key) ? null : key;
       renderMeritTable();
+    };
+  });
+}
+
+// ===================== MONTHLY RACE (Best Month) — trial =====================
+// A fourth view on the League screen, beside League and Merit, following the
+// same month (Meaningful Month) and the same tier-on-the-day split. The
+// arithmetic lives in monthlyRace.js and nowhere else; this only draws it.
+// Tier-only by design: the race is run against a tier's par, so an "All
+// together" table would compare scores measured against different standards.
+
+let raceTierOpen = {};
+let raceExplainerOpen = false;
+let raceDrill = null; // `${player}\u0000${tier}` -- one open at a time
+
+// The month's approved matches in the order they were played. Order matters:
+// a tier's par is built from each player's FIRST pre-match rating of the month.
+function raceMatches(month){
+  return getAllApprovedMatches()
+    .filter(m => m.date.slice(0,7) === month)
+    .slice()
+    .sort((a,b)=> a.date < b.date ? -1 : a.date > b.date ? 1 : (a.sourceIndex||0) - (b.sourceIndex||0))
+    .map(m => ({ id: m.id, date: m.date, winners: m.winners, losers: m.losers,
+      isDraw: !!m.isDraw, sets: m.sets }));
+}
+
+function buildMonthlyRace(month){
+  return MonthlyRace.build({
+    matches: raceMatches(month),
+    tierAt: (n, d) => historicalTierOf(n, d),
+    // The persisted pre-match rating, read back from the journey -- never
+    // today's rating and never a second calculation.
+    preRating: (id, n) => {
+      const f = V3_MATCH_FACTS && V3_MATCH_FACTS[id];
+      const p = f && f.byPlayer && f.byPlayer[n];
+      return p ? p.preMatchRating : null;
+    },
+  });
+}
+
+function racePoints(v){
+  if(v > 0) return '+' + v.toFixed(1);
+  if(v < 0) return '−' + Math.abs(v).toFixed(1);
+  return '0.0';
+}
+
+// The score as the player saw it: their side's games first.
+function raceScoreFor(d){
+  if(!d.sets || !d.sets.length) return '';
+  const flip = d.result === 'L';
+  return d.sets.map(([a,b]) => flip ? `${b}-${a}` : `${a}-${b}`).join(' ');
+}
+
+function raceDrillRowHtml(d, tier){
+  const who = (list) => list.map(p =>
+    `${escapeHtml(p.playerId)}<span class="merit-drill-tier">${escapeHtml(p.tier || '?')}</span>`).join(' & ');
+  const verb = d.result === 'W' ? 'Won' : d.result === 'D' ? 'Drew' : 'Lost';
+  const score = raceScoreFor(d);
+  const partner = d.partner.length ? ` with ${who(d.partner)}` : '';
+  return `<div class="merit-drill-row race-drill-row">
+    <div class="merit-drill-top">
+      <span class="merit-drill-date">${escapeHtml(d.date)}</span>
+      <span class="merit-drill-pts race-pts ${d.points < 0 ? 'is-neg' : ''}">${racePoints(d.points)}</span>
+    </div>
+    <div class="merit-drill-teams"><b>${verb}</b>${partner} v ${who(d.opponents)}${score ? ` <span class="race-drill-score">${escapeHtml(score)}</span>` : ''}</div>
+    <div class="merit-drill-meta race-drill-meta">Stakes: win ${racePoints(d.stakes.win)} · draw ${racePoints(d.stakes.draw)} · lose ${racePoints(d.stakes.loss)}<br>An ordinary Tier ${escapeHtml(tier)} player wins this ${Math.round(d.parWin*100)}% of the time</div>
+  </div>`;
+}
+
+function buildRaceTableHtml(rows, ranked){
+  let html = `<div class="callout-card" style="padding:0;">
+    <table class="merit-table race-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+      <thead><tr style="background:var(--bg2); text-align:left;">
+      <th style="padding:7px 2px 7px 7px;">#</th>
+      <th style="padding:7px 2px;">Player</th>
+      <th style="padding:7px 2px; text-align:center;">P</th>
+      <th style="padding:7px 2px; text-align:center;">W</th>
+      <th style="padding:7px 2px; text-align:center;">D</th>
+      <th style="padding:7px 2px; text-align:center;">L</th>
+      <th style="padding:7px 7px 7px 3px; text-align:right; color:var(--gold-bright);">Race</th>
+      </tr></thead><tbody>`;
+  rows.forEach((r,i)=>{
+    const key = `${r.playerId}\u0000${r.tier}`;
+    const open = raceDrill === key;
+    html += `<tr style="border-top:1px solid var(--line);">
+      <td style="padding:7px 2px 7px 7px; color:var(--text-dim);">${ranked ? i+1 : '–'}</td>
+      <td style="padding:7px 2px;"><span class="request-player-link" data-player="${escapeHtml(r.playerId)}" style="text-decoration:underline; cursor:pointer; font-weight:700;">${escapeHtml(r.playerId)}</span></td>
+      <td style="padding:7px 2px; text-align:center;">${r.played}</td>
+      <td style="padding:7px 2px; text-align:center; color:var(--green);">${r.wins}</td>
+      <td style="padding:7px 2px; text-align:center; color:var(--text-dim);">${r.draws}</td>
+      <td style="padding:7px 2px; text-align:center; color:var(--red);">${r.losses}</td>
+      <td style="padding:7px 7px 7px 3px; text-align:right;"><button type="button" class="merit-count race-score${open ? ' is-open' : ''}${r.score < 0 ? ' is-neg' : ''}"
+        data-player="${escapeHtml(r.playerId)}" data-tier="${escapeHtml(r.tier)}" aria-expanded="${open}">${racePoints(r.score)}</button></td>
+    </tr>`;
+    if(open){
+      html += `<tr class="merit-drill"><td colspan="7" style="padding:0;">
+        <div class="merit-drill-body">
+          <div class="merit-drill-head">${escapeHtml(r.playerId)} · Tier ${escapeHtml(r.tier)} race · ${r.played} match${r.played===1?'':'es'}</div>
+          ${r.matches.map(d => raceDrillRowHtml(d, r.tier)).join('')}
+          <div class="race-drill-total">Total ${racePoints(r.score)}</div>
+        </div>
+      </td></tr>`;
+    }
+  });
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+function renderMonthlyRace(){
+  const content = document.getElementById('summaryContent');
+  let html = '';
+  if(summaryMonth === 'all'){
+    html += `<div class="section-heading" style="margin-top:6px;">🏁 Monthly Race</div>`;
+    html += `<div class="section-sub">The race starts again every month. Choose a month to see it.</div>`;
+    content.innerHTML = html;
+    return;
+  }
+  const label = monthLabel(summaryMonth);
+  const { table, unresolved } = PerfTrace.time('MonthlyRace.build', ()=> buildMonthlyRace(summaryMonth));
+
+  html += `<div class="section-heading" style="margin-top:6px;">🏁 ${label} Monthly Race</div>`;
+  html += `<div class="section-sub" style="margin:2px 0 0;">Best Month: harder wins earn more, harder losses cost less.</div>`;
+  html += leagueInlineFold('raceExplainerToggle', 'How the race works', raceExplainerOpen,
+    `<div class="section-sub" style="margin:0;">Everyone in a tier starts the month on 0. Every match has stakes, set by how hard it was for an ordinary player of your tier with your actual partner against your actual opponents, judged by their Power Ratings going in. Harder wins earn more and harder losses cost less; an even match is +10 for a win and −10 for a loss. The highest score among players with at least ${MonthlyRace.MIN_MATCHES} matches in the tier had the best month. If you change tier during the month, each tier is its own race and starts from 0. Tap a score to see every match behind it.</div>`);
+
+  let anyShown = false;
+  const rowsByTier = {};
+  TIER_ORDER_LIST.forEach(tier=>{
+    const rows = table.filter(r => r.tier === tier);
+    if(rows.length === 0) return;
+    anyShown = true;
+    rowsByTier[tier] = rows.length;
+    const open = tierSectionOpen(raceTierOpen, tier, rows.length);
+    html += leagueTierHeading(tier, open).replace('leagueTier', 'raceTier');
+    if(!open) return;
+    const qualified = rows.filter(r => r.qualified);
+    const provisional = rows.filter(r => !r.qualified);
+    html += `<div id="raceTierBody${tier}">`;
+    if(qualified.length) html += buildRaceTableHtml(qualified, true);
+    else html += `<div class="race-noq">No qualifier this month</div>`;
+    if(provisional.length){
+      html += `<div class="race-prov-head">Provisional · fewer than ${MonthlyRace.MIN_MATCHES} matches</div>`;
+      html += buildRaceTableHtml(provisional, false);
+    }
+    html += `</div>`;
+  });
+  if(!anyShown) html += `<div class="section-sub">No games recorded for ${label}.</div>`;
+  if(unresolved.length) html += `<div class="section-sub">${unresolved.length} match${unresolved.length===1?'':'es'} could not be scored: a player's tier or pre-match rating on that date is unknown.</div>`;
+
+  content.innerHTML = html;
+  wireRequestPlayerLinks(content);
+  const ex = document.getElementById('raceExplainerToggle');
+  if(ex) ex.onclick = ()=>{ raceExplainerOpen = !raceExplainerOpen; renderMonthlyRace(); };
+  content.querySelectorAll('.lg-tier-head').forEach(btn=>{
+    btn.onclick = ()=>{
+      const t = btn.dataset.tier;
+      raceTierOpen[t] = !tierSectionOpen(raceTierOpen, t, rowsByTier[t] || 0);
+      renderMonthlyRace();
+    };
+  });
+  content.querySelectorAll('.race-score').forEach(btn=>{
+    btn.onclick = ()=>{
+      const key = `${btn.dataset.player}\u0000${btn.dataset.tier}`;
+      raceDrill = (raceDrill === key) ? null : key;
+      renderMonthlyRace();
     };
   });
 }
