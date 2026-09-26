@@ -1,0 +1,74 @@
+[
+  {
+    "id": "J1",
+    "question": "My Power Rating and overall/tier position",
+    "taps": [],
+    "answerFound": true,
+    "onFirstScreen": true,
+    "screensDown": 0
+  },
+  {
+    "id": "J2",
+    "question": "How am I doing this month (League, then Monthly Race)",
+    "taps": [
+      "nav: Rankings",
+      "sub: League",
+      "choose: summaryModeSelect → Monthly Race"
+    ],
+    "answerFound": true,
+    "onFirstScreen": false,
+    "screensDown": 0
+  },
+  {
+    "id": "J3",
+    "question": "My next game",
+    "taps": [
+      "nav: Play",
+      "sub: Upcoming"
+    ],
+    "answerFound": true,
+    "onFirstScreen": true,
+    "screensDown": 0
+  },
+  {
+    "id": "J4",
+    "question": "Request a game with a particular player",
+    "taps": [
+      "nav: Play",
+      "sub: Requests",
+      "tap: 🙋 Request a game name four players›"
+    ],
+    "answerFound": true,
+    "onFirstScreen": false,
+    "screensDown": 0.3
+  },
+  {
+    "id": "J5",
+    "question": "My most recent match",
+    "taps": [],
+    "answerFound": true,
+    "onFirstScreen": false,
+    "screensDown": 0.4
+  },
+  {
+    "id": "J6",
+    "question": "Why my rating changed after it",
+    "taps": [
+      "tap: View match ›"
+    ],
+    "answerFound": true,
+    "onFirstScreen": true,
+    "screensDown": 0.2
+  },
+  {
+    "id": "J7",
+    "question": "Find another player and how good / in-form they are",
+    "taps": [
+      "nav: Players",
+      "tap: R Rishi Tier A · 1631 ›"
+    ],
+    "answerFound": true,
+    "onFirstScreen": true,
+    "screensDown": 0
+  }
+]
