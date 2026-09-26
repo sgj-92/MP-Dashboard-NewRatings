@@ -60,7 +60,7 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`28f3514`** |
+| Last verified implementation commit | **`28f3514`** (live via Pages from `40d9456`) |
 | Tests | **604 / 604 passing** (176 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
@@ -5537,16 +5537,19 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ### Waiting on Shaun
 
-15h. **Pages has stopped deploying (noticed 26 Sep, 03:15 UTC).** The last
-   "pages build and deployment" run is for `815e849` (02:12). Pushes of
-   `6efc096` (02:45) and `818e1cb` (03:05) are on GitHub `main` but no build
-   has started, so **Meaningful Month and the build stamp are not live yet**.
-   `6efc096` predates the new `_config.yml`, so the stamp is not the cause.
-   If nothing has run by the next push, re-save Settings → Pages (source
-   `main` / root) or check githubstatus.com. Once a build runs, the foot of
-   Admin / Manage should read `Build 28f3514` or later — the first live proof
-   of the stamp. *Confirmed 26 Sep by Shaun's own screenshot:* his phone showed
-   More without any stamp, i.e. still the pre-stamp build.
+15h. **RESOLVED 26 Sep, 03:57 UTC — Pages deploys again; cause found.** No
+   Pages build ran for any push between `6efc096` (02:45) and `971298e`, and
+   Shaun's phone kept the pre-stamp build. **Cause: pushes from CCode's git
+   connection stopped triggering Pages** after the session resumed from a
+   context compaction; before that, the same kind of push had triggered a
+   build every time (last: `815e849`, 02:12). The commits were on `main`; only
+   the trigger was missing. **Proof:** one commit made through the GitHub API
+   (`40d9456`, authored as sgj-92) started a Pages build within seconds, and it
+   published everything outstanding (Meaningful Month, the build stamp) with
+   the stamp rendered as `assets/js/buildInfo.js`. **Standing practice for
+   CCode:** if a git push produces no "pages build and deployment" run, make
+   the last change through the GitHub API, then confirm the run. Nothing
+   needed from Shaun.
 
 15e. **RESOLVED 26 Sep by Meaningful Month (`87368a1`)** — League and Merit
    open on the current month once it has 5 games. *Original question, kept:*
