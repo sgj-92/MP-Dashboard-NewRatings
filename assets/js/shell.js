@@ -72,6 +72,7 @@ function goToSection(section){
   // Tapping Home always resets to the dashboard view, even if "View Full
   // Review" was open -- an implicit "back to Home" path.
   if(section === 'home'){
+    arriveAtHome();
     const backBtn = document.getElementById('homeBackFromReview');
     if(backBtn) backBtn.style.display = 'none';
     const summaryEl = document.getElementById('summaryView');
@@ -1503,8 +1504,12 @@ function getViewerSnapshot(name){
   const upcoming = involvedGames.filter(g => g.status === 'confirmed');
   const pending = involvedGames.filter(g => g.status === 'pending');
 
-  const availableMonths = (typeof getAvailableMonths === 'function') ? getAvailableMonths() : [];
-  const currentMonth = availableMonths.length ? availableMonths[availableMonths.length-1] : null;
+  // Home's month is the Meaningful Month, pinned when Home is arrived at. It
+  // used to be "the latest month with any match at all" -- pending
+  // submissions included -- which on the 1st crowned a Player of the Month
+  // off one game, and all month long headed the card with a different month
+  // from the League review its own "View Full Review" opened.
+  const currentMonth = (typeof homeMonth === 'function') ? homeMonth() : null;
   const monthStats = currentMonth ? (computeMonthlyStats(currentMonth)[name] || null) : null;
   const monthRating = currentMonth ? (monthEndRatings(currentMonth)[name] ?? null) : null;
 
@@ -1802,7 +1807,11 @@ function renderHomeDashboard(){
   const currentMonth = snap.currentMonth;
   const monthStatsAll = currentMonth ? computeMonthlySummaryStats(currentMonth) : {};
   const monthStatsArr = Object.values(monthStatsAll);
-  const gamesThisMonth = currentMonth ? MATCHES.filter(m=>m.date.slice(0,7)===currentMonth).length : 0;
+  // The same canonical count the Meaningful Month rule runs on -- draws
+  // included, because a drawn game was played -- so this number and the
+  // "taking shape · 3 of 5" line can never disagree about how many games a
+  // month holds.
+  const gamesThisMonth = currentMonth ? MeaningfulMonth.countInMonth(getAllApprovedMatches(), currentMonth) : 0;
   const mostActive = monthStatsArr.length ? topNTied(monthStatsArr, 'games', 1, true)[0] : null;
   const eligibleMonth = monthStatsArr.filter(s=>s.games>=3);
   const highestWinPct = eligibleMonth.length ? topNTied(eligibleMonth, 'winpct', 1, true)[0] : null;
@@ -1902,6 +1911,7 @@ function renderHomeDashboard(){
     ${buildLastResultCardHtml(viewer.name)}
 
     <div class="home-card-header home-section-header"><span>${currentMonth ? monthLabel(currentMonth).toUpperCase() : 'THIS MONTH'} AT MONEY PADEL</span><button class="home-card-link" id="homeFullReviewBtn">View Full Review ›</button></div>
+    ${meaningfulMonthNoteHtml(homeMonthDefault, currentMonth, 'homeMonth', false)}
     <div class="mp-card-standard home-card home-monthly-grid">
       <div class="home-monthly-stat"><div class="home-monthly-num">${gamesThisMonth}</div><div class="section-sub">Games played</div></div>
       <div class="home-monthly-stat"><div class="home-monthly-num" style="font-size:16px;">${mostActive ? mostActive.names[0] : '–'}</div><div class="section-sub">Most active${mostActive ? ` · ${mostActive.value} games` : ''}</div></div>
@@ -1996,8 +2006,15 @@ function openMatchInGames(matchId){
 // "View Full Review" -- shows the fully preserved legacy Summary view in
 // place of the dashboard, without leaving Home / changing activeTab.
 function showFullMonthlyReview(){
+  // The review of the month the card is about. It used to unhide whatever the
+  // League screen had last drawn -- on its own default, which for most of
+  // every month was a different month from the one named above the button.
+  // This is an explicit hand-off, not a shared variable: the League screen's
+  // own choice, if the reader made one, is left exactly as it was.
+  summaryMonth = homeMonth();
   document.getElementById('homeDashboard').style.display = 'none';
   document.getElementById('summaryView').style.display = 'block';
+  renderSummary();
   let backBtn = document.getElementById('homeBackFromReview');
   if(!backBtn){
     backBtn = document.createElement('button');

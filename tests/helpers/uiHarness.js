@@ -84,7 +84,16 @@ async function open(options = {}) {
   const server = await serve();
   const port = server.address().port;
   const browser = await pw.chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 430, height: 932 } });
+  // `timezoneId` lets a test put the reader somewhere specific -- London, say,
+  // where 00:30 on 1 October is still 30 September in UTC.
+  const page = await browser.newPage({
+    viewport: { width: 430, height: 932 },
+    ...(options.timezoneId ? { timezoneId: options.timezoneId } : {}),
+  });
+  // `now` fixes the reader's clock. Anything that depends on which month it
+  // is -- the Meaningful Month above all -- is otherwise a test of whatever
+  // day the suite happens to run on.
+  if (options.now) await page.clock.setFixedTime(new Date(options.now));
   const pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
 

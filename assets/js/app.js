@@ -1219,10 +1219,27 @@ let includeInactive = false;
 // Every other screen that has a month owns its own, and none of them may read
 // or write this one:
 //
-//   League / Merit / Information   summaryMonth   last completed month
+//   Power Rankings                 selectedMonth  Meaningful Month
+//   League / Merit / Information   summaryMonth   Meaningful Month
+//   Home's monthly card            (no control)   Meaningful Month
 //   Games                          gamesMonth     All time
 //   Compare (head-to-head)         h2hMonth       All time
 //   Player Profile                 profileMonth   All time, on every open
+//   Last 10, current rating, the   (none)         rolling / current -- never
+//   profile's current state                       a month at all
+//
+// MEANINGFUL MONTH (meaningfulMonth.js): the current month once it holds five
+// canonical matches, otherwise the most recently completed month. It replaced
+// "always last month", which solved the empty-1st-of-the-month problem by the
+// calendar and so went on opening August on the 25th of September.
+//
+// A screen that uses it keeps TWO things apart, never one:
+//   ...MonthChoice   what the reader picked with the month control, or null
+//   ...MonthDefault  the Meaningful Month, evaluated when they ARRIVE and then
+//                    held while they stay -- so a fifth game landing mid-read
+//                    does not move the page under them
+// and shows the choice if there is one, else the default. A choice lasts the
+// session; arriving again without one re-evaluates the default.
 //
 // This was ONE variable once, set by whoever touched a month select last, and
 // that was harmless while a person chose it. It stopped being harmless when
@@ -1233,7 +1250,88 @@ let includeInactive = false;
 // August snapshot for everybody until this was fixed at the root. A
 // source-level test now fails the build if anything outside Rankings touches
 // `selectedMonth`.
-let selectedMonth = 'all';
+let selectedMonth = 'all';          // what Rankings SHOWS: the choice, else the default
+let rankingsMonthChoice = null;     // what the reader picked, or null
+let rankingsMonthDefault = null;    // MeaningfulMonth.evaluate(), pinned on arrival
+let summaryMonthChoice = null;
+let summaryMonthDefault = null;
+let homeMonthDefault = null;        // Home has no control: a default and nothing else
+
+// The canonical count the rule runs on: rated/completed matches, draws
+// included, pending and display-only history excluded.
+function meaningfulMonthNow(){
+  return MeaningfulMonth.evaluate({ now: new Date(), matches: getAllApprovedMatches() });
+}
+
+// Rankings' month moves between All time and a month by the same rule the
+// month control has always followed: a month means the monthly min-games
+// default, All time the overall one.
+function applyRankingsMonth(month){
+  const wasAll = selectedMonth === 'all';
+  const isNowAll = month === 'all';
+  selectedMonth = month;
+  if(wasAll && !isNowAll) setMinGames(5);
+  else if(!wasAll && isNowAll) setMinGames(10);
+  const sel = document.getElementById('monthSelect');
+  if(sel && [...sel.options].some(o => o.value === month)) sel.value = month;
+}
+
+// Arriving at Rankings. A reader who has chosen gets their choice back; one
+// who has not gets the Meaningful Month as it stands NOW, which is the only
+// moment it is re-evaluated.
+function arriveAtRankings(){
+  if(rankingsMonthChoice !== null && (rankingsMonthChoice === 'all' || getAvailableMonths().includes(rankingsMonthChoice))){
+    applyRankingsMonth(rankingsMonthChoice);
+    return;
+  }
+  rankingsMonthChoice = null;
+  rankingsMonthDefault = meaningfulMonthNow();
+  applyRankingsMonth(rankingsMonthDefault.month);
+}
+
+function arriveAtSummary(){
+  if(summaryMonthChoice !== null && (summaryMonthChoice === 'all' || getAvailableMonths().includes(summaryMonthChoice))){
+    summaryMonth = summaryMonthChoice;
+    return;
+  }
+  summaryMonthChoice = null;
+  summaryMonthDefault = meaningfulMonthNow();
+  summaryMonth = summaryMonthDefault.month;
+}
+
+// Home has no month control, so it only ever shows its default -- pinned when
+// Home is arrived at, held through redraws. An empty club has no completed
+// month; Home then shows the current one rather than "All time", which is not
+// a month a card headed "<Month> at Money Padel" can be about.
+function homeMonth(){
+  if(!homeMonthDefault) homeMonthDefault = meaningfulMonthNow();
+  return homeMonthDefault.month === 'all' ? homeMonthDefault.current : homeMonthDefault.month;
+}
+function arriveAtHome(){ homeMonthDefault = null; }
+
+// The understated line that says why a screen opened on last month: "October
+// is taking shape · 3 of 5 games". Only while the screen is showing its
+// DEFAULT, only while the current month is still thin, and only once it has
+// at least one game -- on the 1st there is nothing to explain and nothing to
+// offer. The month name is a way in: tapping it chooses the current month.
+function meaningfulMonthNoteHtml(defaultInfo, showing, choiceId, interactive){
+  if(!defaultInfo || defaultInfo.reason !== 'current-too-thin') return '';
+  if(showing !== defaultInfo.month) return '';
+  if(defaultInfo.currentCount < 1) return '';
+  const name = MeaningfulMonth.monthLabel(defaultInfo.current).split(' ')[0];
+  // Home has no month control, so its line is only a line.
+  const lead = interactive === false
+    ? `<span>${name}</span>`
+    : `<button type="button" class="mm-note-link" id="${choiceId}Current" data-month="${defaultInfo.current}">${name}</button>`;
+  return `<div class="mm-note" id="${choiceId}Note">${lead} is taking shape · ${defaultInfo.currentCount} of ${defaultInfo.threshold} games</div>`;
+}
+
+// Tapping the month in that line CHOOSES it, exactly as the month control
+// would -- the current month is always there to be picked, five games or not.
+function wireMeaningfulMonthNote(choiceId, choose){
+  const link = document.getElementById(`${choiceId}Current`);
+  if(link) link.onclick = ()=> choose(link.dataset.month);
+}
 // The Play history keeps its OWN month, and it stays on All time. Rankings and
 // the monthly views deliberately open on the last completed month; the results
 // feed is a history you scroll, not a month you inspect, and Shaun's decision
@@ -1303,23 +1401,11 @@ function getAvailableMonths(){
   return [...months].sort();
 }
 
-// The most recently *completed* calendar month, derived from the real
-// system date -- not hard-coded, and not just "the latest month with any
-// data" (which could still be the current, in-progress month). Falls back
-// to the most recent earlier month that actually has data if the
-// immediately-previous month has none, and to 'all' only if there's no
-// historical data at all -- so Rankings/Monthly Summary never default to
-// an empty screen. Shared by Power Rankings and Monthly Summary so the two
-// "which month is current" concepts can never drift apart.
-function getDefaultRankingsMonth(){
-  const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth()-1, 1);
-  const ym = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
-  const available = getAvailableMonths(); // sorted ascending
-  if(available.includes(ym)) return ym;
-  const earlier = available.filter(m => m < ym);
-  return earlier.length ? earlier[earlier.length-1] : 'all';
-}
+// "Which month should a monthly view open on" used to live here as
+// getDefaultRankingsMonth(): always the previous calendar month. It is now the
+// Meaningful Month rule (meaningfulMonth.js), evaluated per screen on arrival
+// -- see "WHO OWNS WHICH MONTH" above. Deleted rather than left beside it, so
+// there is one rule and nothing to drift back to.
 
 // Month selection and Data Range are deliberately separate concepts: the
 // range decides which matches exist at all, the month decides which slice of
@@ -1331,7 +1417,11 @@ function getDefaultRankingsMonth(){
 function reconcileSelectedMonth(){
   if(selectedMonth === 'all') return false;
   if(getAvailableMonths().includes(selectedMonth)) return false;
-  selectedMonth = getDefaultRankingsMonth();
+  // The month shown no longer exists in this dataset. If the reader chose it,
+  // the choice has nothing left to point at; either way the screen goes back
+  // to its default, re-evaluated.
+  rankingsMonthChoice = null;
+  arriveAtRankings();
   return true;
 }
 
@@ -1733,7 +1823,16 @@ TIERS.forEach(t=>{
 
 document.querySelectorAll('#tabrow .tab-btn').forEach(b=>{
   b.onclick = ()=>{
+    const arrivingFrom = activeTab;
     activeTab = b.dataset.tab;
+    // Arrival is navigation, not redrawing. dataChanged() and every other
+    // redraw go through renderActiveTab and never pass here, which is what
+    // keeps a default from moving while somebody is reading it. Power and
+    // Win/Loss are one Rankings screen with one month; moving between them is
+    // not arriving.
+    const rankingsTabs = ['power', 'wl'];
+    if(rankingsTabs.includes(activeTab) && !rankingsTabs.includes(arrivingFrom)) arriveAtRankings();
+    if(activeTab === 'summary' && arrivingFrom !== 'summary') arriveAtSummary();
     document.querySelectorAll('#tabrow .tab-btn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
 
@@ -2016,14 +2115,10 @@ document.querySelectorAll('#stateFilterRow .state-toggle').forEach(b=>{
 
 const monthSelect = document.getElementById('monthSelect');
 monthSelect.addEventListener('change', e=>{
-  const wasAll = selectedMonth === 'all';
-  const isNowAll = e.target.value === 'all';
-  selectedMonth = e.target.value;
-  if(wasAll && !isNowAll){
-    setMinGames(5); // switching into a monthly review -- games-per-month are naturally lower
-  } else if(!wasAll && isNowAll){
-    setMinGames(10); // back to the overall view -- restore the usual default
-  }
+  // A choice, recorded as one. From here on this reader's Rankings month is
+  // theirs for the session, and no default re-evaluation touches it.
+  rankingsMonthChoice = e.target.value;
+  applyRankingsMonth(e.target.value);
   rerenderCurrentTab();
 });
 
@@ -2076,12 +2171,26 @@ function sortRows(rows){
   return arr;
 }
 
+function renderRankingsMonthNote(){
+  const host = document.getElementById('rankingsMonthNoteHost');
+  if(!host) return;
+  host.innerHTML = rankingsMonthChoice === null
+    ? meaningfulMonthNoteHtml(rankingsMonthDefault, selectedMonth, 'rankingsMonth')
+    : '';
+  wireMeaningfulMonthNote('rankingsMonth', (month)=>{
+    rankingsMonthChoice = month;
+    applyRankingsMonth(month);
+    rerenderCurrentTab();
+  });
+}
+
 function render(){
   // A sort button, a min-games preset or the search box can all be pressed
   // while the record is still arriving. Drawing an empty rankings list and an
   // "empty" message in answer is worse than saying nothing: it reads as a
   // finished screen with no players in the club.
   if(!DATA_READY){ showBootPlaceholder(); return; }
+  renderRankingsMonthNote();
   const monthRatingBtn = document.getElementById('sortMonthRatingBtn');
   if(monthRatingBtn){
     const showIt = selectedMonth !== 'all';
@@ -7091,8 +7200,12 @@ function renderSummary(){
   // Also re-checked on every render, not just the first: narrowing the Data
   // Range can strand the month this screen was last left on, and falling back
   // to the default beats rendering an empty month.
+  // Normally set on arrival (see the tab handler). Two cases get here
+  // without one: a first draw that did not come by navigation, and a month
+  // that a narrowed Data Range has taken away -- both re-arrive.
   if(!summaryMonth || (summaryMonth !== 'all' && !getAvailableMonths().includes(summaryMonth))){
-    summaryMonth = getDefaultRankingsMonth();
+    if(summaryMonth && summaryMonthChoice === summaryMonth) summaryMonthChoice = null;
+    arriveAtSummary();
   }
 
   // Month and View stay, both of them -- but side by side rather than stacked,
@@ -7110,10 +7223,16 @@ function renderSummary(){
       </select>
     </div>
   </div>
+  ${summaryMonthChoice === null ? meaningfulMonthNoteHtml(summaryMonthDefault, summaryMonth, 'summaryMonth') : ''}
   <div id="summaryContent"></div>`;
 
   box.innerHTML = html;
   populateSummaryMonthSelect();
+  wireMeaningfulMonthNote('summaryMonth', (month)=>{
+    summaryMonthChoice = month;
+    summaryMonth = month;
+    renderSummary();
+  });
   const modeSel = document.getElementById('summaryModeSelect');
   modeSel.value = summaryMode;
   modeSel.onchange = (e)=>{ summaryMode = e.target.value; renderSummary(); };
@@ -7831,7 +7950,7 @@ function populateSummaryMonthSelect(){
   const months = getAvailableMonths();
   sel.innerHTML = `<option value="all">All time</option>` + months.map(m=>`<option value="${m}" ${m===summaryMonth?'selected':''}>${monthLabel(m)}</option>`).join('');
   sel.value = summaryMonth;
-  sel.onchange = (e)=>{ summaryMonth = e.target.value; renderSummary(); };
+  sel.onchange = (e)=>{ summaryMonthChoice = e.target.value; summaryMonth = e.target.value; renderSummary(); };
 }
 
 function buildWhatsAppSummaryText(month, stats, groups){
@@ -8860,8 +8979,8 @@ async function init(){
   // The monthly min-games default (5, vs 10 for All Time) is applied here
   // too, matching exactly what the month-select's own change handler
   // already does for a manual switch.
-  selectedMonth = getDefaultRankingsMonth();
-  if(selectedMonth !== 'all') setMinGames(5);
+  // Start-up is an arrival like any other: Rankings gets its Meaningful Month.
+  arriveAtRankings();
   recomputeAll();
   applyTabVisibility();
 

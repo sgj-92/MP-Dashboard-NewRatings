@@ -18,20 +18,17 @@ const H = require('./helpers/uiHarness.js');
 
 const maybe = H.available() ? test : test.skip;
 
-// The last completed month in the fixture, so the tests do not depend on the
-// date they happen to run on.
-const lastCompleted = () => getDefaultRankingsMonth();
-
-maybe('Power Rankings still opens on the last completed month', async () => {
+// Rankings' default is the Meaningful Month (see meaningfulMonth.test.js for
+// the rule itself). These tests only care that each screen OWNS its month.
+maybe('Power Rankings opens on its Meaningful Month', async () => {
   const app = await H.open();
   try {
     const r = await app.run(() => ({
       rankings: selectedMonth,
-      expected: getDefaultRankingsMonth(),
-      available: getAvailableMonths(),
+      expected: meaningfulMonthNow().month,
     }));
     assert.notStrictEqual(r.rankings, 'all', 'Rankings must default to a month, not All time');
-    assert.strictEqual(r.rankings, r.expected, 'and to the last completed one');
+    assert.strictEqual(r.rankings, r.expected, 'and to the one the rule picks');
     assert.deepStrictEqual(app.pageErrors, []);
   } finally { await app.close(); }
 });
@@ -172,10 +169,10 @@ maybe('League, Merit and Games keep their own month behaviour', async () => {
       const games = gamesMonth;
       selectedMonth = rankingsMonth;
       return { rankingsMonth, league, leagueAfterRankingsMoved, merit, games,
-               expectedLeague: getDefaultRankingsMonth() };
+               expectedLeague: meaningfulMonthNow().month };
     });
     assert.strictEqual(r.league, r.expectedLeague,
-      'League opens on the last completed month by its own recorded decision');
+      'League opens on its own Meaningful Month');
     assert.strictEqual(r.leagueAfterRankingsMoved, r.league, 'and does not follow Rankings');
     assert.strictEqual(r.merit, r.league, 'Merit shares the League screen\'s month, by design');
     assert.strictEqual(r.games, 'all', 'Games opens on All time');
@@ -230,6 +227,7 @@ test('only Power Rankings reads or writes selectedMonth', () => {
     'renderKingsOfTiersPanel', 'applyRankingEligibility', 'rerenderCurrentTab',
     'syncHeaderSectionTitle', 'updateRankingsHero', 'buildRankingsHero',
     'rankingsMonthSelectHandler',
+    'applyRankingsMonth', 'arriveAtRankings', 'renderRankingsMonthNote',
   ]);
   const offenders = [];
   ['app.js', 'shell.js'].forEach((file) => {

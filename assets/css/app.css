@@ -2197,3 +2197,21 @@ body { padding-bottom: calc(var(--shell-nav-height) + var(--shell-safe-bottom));
   color: var(--text-dim); font-family: var(--font-interface); font-size: 11px;
   padding: 4px 10px; max-width: 55%;
 }
+
+/* ===================== MEANINGFUL MONTH NOTE =====================
+   Why a monthly view opened on last month: "October is taking shape · 3 of 5
+   games". A caption, not a banner -- it answers a question the reader may not
+   have asked, so it must not compete with the table it sits above. The month
+   name is a quiet way into the current month. */
+.mm-note{
+  font-family: var(--font-interface); font-size: 11px; color: var(--text-dim);
+  margin: 2px 2px 8px; line-height: 1.4;
+}
+.mm-note-link{
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: var(--font-interface); font-size: 11px; font-weight: 600;
+  color: var(--gold-soft); text-decoration: underline; text-underline-offset: 2px;
+}
+.mm-note-link:active{ opacity: .7; }
+#rankingsMonthNoteHost .mm-note{ margin: -2px 16px 8px; }
+.home-section-header + .mm-note{ margin: -4px 2px 8px; }
