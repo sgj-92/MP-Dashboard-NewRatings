@@ -5548,44 +5548,96 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ### Waiting on Shaun
 
-15i. **Best Month — analysis delivered, nothing implemented** (26 Sep).
-   Shaun asked who was *actually* the best player in each tier this month, as
-   distinct from League, Merit, Monthly Performance and Power Rating. Full
-   report with the September tables: [`BEST_MONTH_ANALYSIS.md`](./BEST_MONTH_ANALYSIS.md).
-   CCode's recommendation is **"wins above par"**: your results minus what an
-   average player of your tier would expect from the same matches (same
-   partners and opponents, a win curve fitted to results), ranked as
-   total ÷ (P + 8). It is neutral on opponent choice and gives no bonus for
-   being underrated.
-   - Raw win % fails every ducking test.
-   - Merit per game is too coarse inside a tier.
-   - "Wins vs own expectation" is Monthly Performance in disguise.
-   - Engine methodology is untouched. The engine's expectation under-predicts
-     favourites' wins (84% actual vs ~74%), which a results-based award must
-     not use raw.
+15i. **APPROVED TRIAL — Best Month / Monthly Race** (Shaun, 26 Sep).
+   Analysis is complete in [`BEST_MONTH_ANALYSIS.md`](./BEST_MONTH_ANALYSIS.md).
+   Shaun has approved taking the **Power-Rating-stakes monthly race** forward as
+   a trial. This is deliberately a fifth story, distinct from League, Merit,
+   Monthly Performance and Power Rating:
 
-   **For CChat to challenge:** the fitted curve (scale 250, in-sample) and the
-   cushion (+8). **For Shaun to decide:**
-   - Can a mid-month mover hold the award in the tier they left? (Rishi tops
-     Tier B, then moved to A.)
-   - Is there a Tier C award? (Nobody reached 3 matches.)
-   - Should the headline be the total or the cushioned score?
+   - **Power Rating** — who is strongest overall.
+   - **Best Month / Monthly Race** — who had the best results this month,
+     adjusted for the actual difficulty of the matches they took.
+   - **Monthly Performance** — who most exceeded their own pre-match
+     expectation.
+   - **League** — cumulative conventional result points.
+   - **Merit** — cumulative points with coarse tier-step difficulty adjustment.
 
-   *Follow-up, same day:* Shaun wants par to be simple, like the club's old
-   monthly race (everyone in a tier starts level; best rating at month-end).
-   **The race is the same mathematics**, so the recommendation becomes
-   **"the race with Power-Rating stakes"**:
-   - Everyone starts the month on 0.
-   - Each match's win/lose stakes are set from the partner's and opponents'
-     Power Ratings, with you counted as an ordinary member of your tier.
-   - An even match is ±10; September ranged from +18/−2 to +1/−19.
+   **Why this is approved for trial.** Raw win percentage was rejected because
+   it rewards easier fixtures and protecting a hot record. The live September
+   analysis also shows why a separate difficulty-aware monthly race matters:
+   players can be active and successful against unusually hard schedules
+   without topping volume-led leaderboards. PDM is the clearest live example:
+   7-2-7 in his Tier B September spell, average opposing pair 1525 and only a
+   38% par win chance; he is #2 in the PR-stakes race despite not leading the
+   conventional tables. This is the intended product value: make strength of
+   schedule visible without declaring that any player should be promoted.
 
-   The pure old race gave nearly the same September order, but it pays for
-   ducking strong same-tier pairs and for picking strong partners (±2.3 and
-   ±1.1 points per match at the start of a month). The Power-Rating race is
-   neutral. Its one cost is a mild reward for volume while beating par (Osh
-   ahead of Erf in Tier A). Details are in `BEST_MONTH_ANALYSIS.md`, "Presenting
-   it as a monthly race".
+   **Trial model.**
+   - Every player starts each tier spell in the month on **0**.
+   - Match stakes are set before the result from the partner's and opponents'
+     persisted pre-match Power Ratings, while the player being scored is
+     treated as an **ordinary/average member of their tier**. This keeps the
+     race about performance against tier standard rather than whether the
+     player was personally underrated.
+   - Use the results-calibrated win curve from the analysis (current fitted
+     scale **250**, not sequential-v1's game-share expectation). This is a
+     separate monthly-results calculation and **must not alter sequential-v1**.
+   - Use the simple race presentation from the analysis: with K=20 an even
+     fixture is approximately **+10 / -10**; harder fixtures offer more upside
+     and less downside, easier fixtures the reverse.
+   - Rank by the **running race score / total stakes result**, not the earlier
+     `total ÷ (P + 8)` cushioned score. The +8 model remains preserved in the
+     analysis as explored history, but is **not the approved trial UI/model**.
+   - **5 matches** in that tier spell remains the qualification threshold.
+     Below-threshold players may be shown as provisional.
+   - Draw treatment must follow the exact race analysis/calibration and be
+     documented in the implementation; do not improvise a new rule.
+   - Historical tier resolution remains canonical. A mid-month move creates
+     separate tier spells; results are never moved into the player's new tier.
+
+   **Product decisions now resolved.**
+   - **Mid-month movers CAN win Best Month in the tier they left.** The award
+     belongs to the tier spell in which those matches occurred. Rishi's B
+     results remain a Tier B September race even though he later became A; his
+     A spell starts separately from 0.
+   - **Tier C is not merged into B.** If nobody reaches the qualification
+     threshold, show **No qualifier this month** rather than manufacturing an
+     award.
+   - **Headline number is the race score**, not the cushioned +8 score.
+   - Treat this as a **trial**, not a replacement for any existing table.
+     Preserve League, Merit, Monthly Performance, Power Rating and their
+     methodology unchanged.
+
+   **UX / transparency requirements.**
+   - The player-facing explanation must stay simple: *everyone in a tier starts
+     the month level; each match has stakes based on how hard it is for an
+     average player of that tier with the actual partner/opponents; harder wins
+     earn more and harder losses cost less; highest qualified score at month-end
+     had the best month.*
+   - Make the score auditable. A player must be able to open their monthly race
+     score and see the matches that produced it, including opponent/partner
+     context, pre-match stakes, result and points gained/lost.
+   - Prefer showing the stakes anywhere it naturally strengthens the existing
+     Admin Prediction / Upcoming relationship, but **do not expose the
+     admin-only prediction itself to players**. Race stakes are a separate
+     transparent competition fact.
+   - Use the same historical match/tier and persisted pre-match rating facts as
+     the analysis; do not create a parallel source of truth.
+   - Keep the UI consistent with the existing premium monthly tables and
+     Meaningful Month behaviour.
+
+   **CCode implementation brief.** Implement the trial from the already-audited
+   analysis rather than re-inventing the formula. Add targeted module/browser
+   tests for neutral opponent-choice behaviour, hard/even/easy stakes, draws,
+   5-match qualification, provisional players, split-month tier spells,
+   no-qualifier Tier C, drill-down reconciliation, and proof that
+   sequential-v1/League/Merit/Monthly Performance are unchanged. Re-run the
+   September comparison after implementation and reconcile the rendered order
+   to `BEST_MONTH_ANALYSIS.md`; report any discrepancy before changing the
+   methodology. Update this Ledger with implementation commit, test totals and
+   live audit findings.
+
+   **Baton → CCode. Approved to implement as a trial.**
 
 15h. **RESOLVED 26 Sep, 03:57 UTC — Pages deploys again; cause found.** No
    Pages build ran for any push between `6efc096` (02:45) and `971298e`, and
