@@ -1958,15 +1958,11 @@ function openInsightsFromTop(){
 // one. Rather than leave the button dead on those matches, it falls back to the
 // Games feed, which does show draws. The fallback is checked, not assumed.
 function openMatchFromHome(name, matchId){
-  // The profile's match log is scoped to `selectedMonth`, which Rankings sets
-  // to the last completed month at boot. A result from THIS month would then be
-  // filtered out of the very profile we are opening to show it. The sheet is
-  // built synchronously, so the scope is widened for that build and put back
-  // immediately -- Rankings never sees it change.
-  const savedMonth = selectedMonth;
-  selectedMonth = 'all';
+  // A profile opens on All time by construction now (see `profileMonth` in
+  // app.js), so the result being asked for is always in it. This used to
+  // widen the Rankings month around the call and restore it -- a workaround
+  // for the profile borrowing a month that was never its own.
   openSheet(name);
-  selectedMonth = savedMonth;
   setTimeout(()=>{
     const host = document.getElementById('ppMatchesHost');
     const detail = host
@@ -2263,7 +2259,13 @@ function renderPremiumProfile(name, matchFilter){
   wrap = document.createElement('div');
   wrap.id = 'premiumProfileWrap';
   wrap.innerHTML = heroLabelHtml + heroHtml + formHtml + analysisHtml + rivalsHtml + proveItHtml + journeyHtml + viewerRelativeHtml
-    + `<div class="pp-section"><div class="pp-section-label">Recent Results</div><div id="ppMatchesHost"></div></div>`
+    // The month control lives on the heading it scopes, and says All time
+    // unless the reader chose otherwise here. It is the profile's own; see
+    // `profileMonth` in app.js.
+    + `<div class="pp-section"><div class="pp-results-head">
+        <div class="pp-section-label" style="margin:0;">${profileMonth === 'all' ? 'Recent Results' : 'Results · ' + monthLabel(profileMonth)}</div>
+        ${profileMonthSelectHtml()}
+      </div><div id="ppMatchesHost"></div></div>`
     + `<div class="pp-section" id="ppDevAreasHost"></div>`;
 
   const sheetProfileEl = document.getElementById('sheetProfile');
@@ -2286,6 +2288,7 @@ function renderPremiumProfile(name, matchFilter){
   // Reparent each existing match card into a collapsed-by-default row --
   // wrapping, not rebuilding, so edit/delete listeners already attached to
   // these exact nodes keep working untouched.
+  wireProfileMonthSelect(name);
   const matchesHost = document.getElementById('ppMatchesHost');
   const matchEls = [...document.querySelectorAll('#sheetMatches .match')];
   matchEls.forEach(matchEl=>{

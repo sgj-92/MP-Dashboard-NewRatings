@@ -1186,7 +1186,7 @@ function recomputeAllNow(){
   WITHIN_TIER_GAMES = buildWithinTierGames(activePlayers, H2H);
   DIFFICULTY_SUGGESTIONS = buildDifficultySuggestions(PLAYERS, activePlayers);
   const monthSelectEl = document.getElementById('monthSelect');
-  if(monthSelectEl) populateMonthSelect(monthSelectEl);
+  if(monthSelectEl) populateMonthSelect(monthSelectEl, selectedMonth);
 }
 
 
@@ -1210,6 +1210,29 @@ let minGames = 10;
 let includeIdle = false;
 let includeInactive = false;
 
+// ===================== WHO OWNS WHICH MONTH =====================
+// `selectedMonth` belongs to POWER RANKINGS and to nothing else: the list, the
+// podium, Kings of Tiers, the tier badge and the month select above them. It
+// opens on the last completed month because a finished month is the
+// competition Rankings is showing.
+//
+// Every other screen that has a month owns its own, and none of them may read
+// or write this one:
+//
+//   League / Merit / Information   summaryMonth   last completed month
+//   Games                          gamesMonth     All time
+//   Compare (head-to-head)         h2hMonth       All time
+//   Player Profile                 profileMonth   All time, on every open
+//
+// This was ONE variable once, set by whoever touched a month select last, and
+// that was harmless while a person chose it. It stopped being harmless when
+// Rankings began choosing it automatically at start-up: from then on every
+// screen that shared it inherited "August" from a view the reader had never
+// opened. Games was the first to show it and got its own month; Home's
+// "View match" was worked around; the Player Profile went on opening as an
+// August snapshot for everybody until this was fixed at the root. A
+// source-level test now fails the build if anything outside Rankings touches
+// `selectedMonth`.
 let selectedMonth = 'all';
 // The Play history keeps its OWN month, and it stays on All time. Rankings and
 // the monthly views deliberately open on the last completed month; the results
@@ -1644,9 +1667,13 @@ function topNTied(statsArr, key, n, descending){
 }
 const ZERO_MONTH_STATS = {wins:0,losses:0,total:0,winpct:0,avg_match_strength:0,avg_overperf_pct:0,game_diff:0,upset_wins:0,upset_losses:0,upset_total:0,upset_rate:0};
 
+// `value` is required. It used to default to the Rankings month, which is how a
+// select that forgot to say whose month it showed quietly displayed -- and
+// then, via its change handler, overwrote -- somebody else's.
 function populateMonthSelect(selectEl, value){
   if(!selectEl) return;
-  const current = value === undefined ? selectedMonth : value;
+  if(value === undefined) throw new Error('populateMonthSelect: say whose month this is');
+  const current = value;
   const months = getAvailableMonths();
   selectEl.innerHTML = `<option value="all">All time</option>` + months.map(m=>`<option value="${m}" ${m===current?'selected':''}>${monthLabel(m)}</option>`).join('');
   selectEl.value = current;
@@ -2011,7 +2038,7 @@ function applyDataRangeChange(value){
   // Narrowing the range can strand the selected month (see
   // reconcileSelectedMonth) -- fix it before anything re-reads it.
   reconcileSelectedMonth();
-  populateMonthSelect(document.getElementById('monthSelect'));
+  populateMonthSelect(document.getElementById('monthSelect'), selectedMonth);
   syncFullHistoryIndicator();
   renderActiveTab();
   renderHomeDashboard(); // no-ops if Home isn't built yet
@@ -3745,9 +3772,9 @@ function buildDevAreasSection(name){
 // overall and within their tier. Negative movement is shown exactly like
 // positive; a player who sat the month out still gets their boundary state.
 function buildMonthlyRatingSection(name){
-  if(selectedMonth === 'all' || !MONTHLY_VIEWS) return '';
-  const label = monthLabel(selectedMonth);
-  const r = MonthlyViews.playerMonth(MONTHLY_VIEWS, selectedMonth, name);
+  if(profileMonth === 'all' || !MONTHLY_VIEWS) return '';
+  const label = monthLabel(profileMonth);
+  const r = MonthlyViews.playerMonth(MONTHLY_VIEWS, profileMonth, name);
   const p = PLAYERS.find(x=>x.name===name);
   if(!r){
     return `<div class="section-heading" style="margin-top:14px;">📅 ${label}</div>
@@ -4006,7 +4033,46 @@ function buildMonthlyRatingCompareHtml(nameA, nameB, month){
   <div class="section-sub" style="margin-top:8px;">${explainer}</div>`;
 }
 
+// The Player Profile's own month. A profile is the player as they are: current
+// rating, career record, every result. Narrowing it to one month is something
+// the reader asks for, from the profile itself -- it is never inherited.
+//
+// It lasts for as long as the sheet stays open on the same player, because the
+// sheet re-renders itself in place (confirming a delete, clearing a filter) and
+// those refreshes must keep the reader's choice. Any other open -- from the
+// Directory, from Rankings, from Home, from anywhere -- starts again at
+// All time.
+let profileMonth = 'all';
+let profileMonthFor = null;
+
+// The explicit month control on the profile's results. Lives here so the
+// premium profile (shell.js) and anything else that shows a player's results
+// draw the same control from the same state.
+function profileMonthSelectHtml(){
+  const months = getAvailableMonths();
+  return `<select id="profileMonthSelect" class="pp-month-select" aria-label="Show results from">
+    <option value="all" ${profileMonth==='all'?'selected':''}>All time</option>
+    ${months.map(m=>`<option value="${m}" ${m===profileMonth?'selected':''}>${monthLabel(m)}</option>`).join('')}
+  </select>`;
+}
+
+function wireProfileMonthSelect(name){
+  const sel = document.getElementById('profileMonthSelect');
+  if(!sel) return;
+  sel.onchange = ()=>{
+    profileMonth = sel.value;
+    openSheet(name);   // an in-place refresh, so the choice is kept
+  };
+}
+
+function profileSheetIsOpenOn(name){
+  const overlay = document.getElementById('overlay');
+  return profileMonthFor === name && !!overlay && overlay.classList.contains('show');
+}
+
 function openSheet(name, matchFilter){
+  if(!profileSheetIsOpenOn(name)) profileMonth = 'all';
+  profileMonthFor = name;
   const p = PLAYERS.find(x=>x.name===name);
   document.getElementById('sheetName').textContent = name;
   const riskInfo = RISK_LABELS[p.risk] || RISK_LABELS.stable;
@@ -4035,10 +4101,13 @@ function openSheet(name, matchFilter){
   let ms = matchesIncludingDraws().filter(m => m.winners.includes(name) || m.losers.includes(name));
   ms.sort((a,b)=> a.date < b.date ? 1 : -1);
 
-  // If a month is selected elsewhere in the app, keep this profile's match log scoped to it too.
-  const monthActive = selectedMonth !== 'all';
+  // Scoped only by the profile's OWN month. This line used to read "if a month
+  // is selected elsewhere in the app, keep this profile scoped to it too" --
+  // harmless when a person chose that month, and wrong from the day Rankings
+  // started choosing August automatically.
+  const monthActive = profileMonth !== 'all';
   if(monthActive){
-    ms = ms.filter(m => m.date.slice(0,7) === selectedMonth);
+    ms = ms.filter(m => m.date.slice(0,7) === profileMonth);
   }
 
   let filterBannerHtml = '';
@@ -4062,7 +4131,7 @@ function openSheet(name, matchFilter){
   }
 
   if(monthActive || upsetFilterActive){
-    const monthPart = monthActive ? monthLabel(selectedMonth) : '';
+    const monthPart = monthActive ? monthLabel(profileMonth) : '';
     const upsetPart = upsetFilterActive ? (matchFilter === 'upset_wins' ? 'upset wins' : 'upset losses') : '';
     let label;
     if(monthActive && upsetFilterActive) label = `${upsetPart} in ${monthPart}`;
@@ -6302,6 +6371,10 @@ function requireName(){
 }
 
 // ===================== HEAD TO HEAD =====================
+// Compare's own month. All time by default: a head-to-head is a history, the
+// same reasoning Shaun applied to Games. It used to read AND write the Rankings
+// month, so choosing a month here silently changed Power Rankings.
+let h2hMonth = 'all';
 let h2hPlayerA = null;
 let h2hPlayerB = null;
 
@@ -6326,17 +6399,17 @@ function renderH2H(){
   if(h2hPlayerA === h2hPlayerB){
     html += `<div class="section-sub">Pick two different players to compare.</div>`;
     box.innerHTML = html;
-    populateMonthSelect(document.getElementById('h2hMonthSelect'));
-    document.getElementById('h2hMonthSelect').addEventListener('change', e=>{ selectedMonth = e.target.value; renderH2H(); });
+    populateMonthSelect(document.getElementById('h2hMonthSelect'), h2hMonth);
+    document.getElementById('h2hMonthSelect').addEventListener('change', e=>{ h2hMonth = e.target.value; renderH2H(); });
     wireH2HSelects(names);
     return;
   }
 
-  const monthActive = selectedMonth !== 'all';
+  const monthActive = h2hMonth !== 'all';
 
   if(monthActive){
-    const monthlyRatings = monthEndRatings(selectedMonth);
-    const monthlyStatsAll = computeMonthlyStats(selectedMonth);
+    const monthlyRatings = monthEndRatings(h2hMonth);
+    const monthlyStatsAll = computeMonthlyStats(h2hMonth);
     const aHas = h2hPlayerA in monthlyRatings, bHas = h2hPlayerB in monthlyRatings;
     const aOverall = PLAYERS.find(p=>p.name===h2hPlayerA).rating;
     const bOverall = PLAYERS.find(p=>p.name===h2hPlayerB).rating;
@@ -6349,7 +6422,7 @@ function renderH2H(){
     const aWL = aStats ? `<span style="color:var(--green);">${aStats.wins}W</span>-<span style="color:var(--red);">${aStats.losses}L</span>` : '0W-0L';
     const bWL = bStats ? `<span style="color:var(--green);">${bStats.wins}W</span>-<span style="color:var(--red);">${bStats.losses}L</span>` : '0W-0L';
 
-    html += `<div class="section-heading" style="margin-top:6px;">📊 Power Rating — ${monthLabel(selectedMonth)}</div>`;
+    html += `<div class="section-heading" style="margin-top:6px;">📊 Power Rating — ${monthLabel(h2hMonth)}</div>`;
     html += `<div class="matchup-vs" style="padding:12px;">
       <div style="display:flex; justify-content:space-around; text-align:center;">
         <div>
@@ -6368,15 +6441,15 @@ function renderH2H(){
       </div>
     </div>`;
 
-    html += `<div class="section-sub" style="padding:4px 2px;">The rating below is the continuous Power Rating, shown from where each player carried it into ${monthLabel(selectedMonth)}. It is not reset at the start of the month and not re-solved for the month: these are the moves the engine actually recorded, in order.</div>`;
+    html += `<div class="section-sub" style="padding:4px 2px;">The rating below is the continuous Power Rating, shown from where each player carried it into ${monthLabel(h2hMonth)}. It is not reset at the start of the month and not re-solved for the month: these are the moves the engine actually recorded, in order.</div>`;
 
     [h2hPlayerA, h2hPlayerB].forEach(pname=>{
-      const monthJourney = computeMonthlyJourney(pname, selectedMonth);
+      const monthJourney = computeMonthlyJourney(pname, h2hMonth);
       const monthEntries = monthJourney ? monthJourney.entries.filter(e=>e.kind==='match') : [];
       const startPoint = monthJourney ? Math.round(monthJourney.startRating) : null;
       html += `<div class="section-sub" style="font-weight:700; color:var(--text); margin-top:8px;">${pname}'s games this month${startPoint!==null ? ` — carried in at ${startPoint}` : ''}</div>`;
       if(monthEntries.length === 0){
-        html += `<div class="section-sub">No games for ${pname} in ${monthLabel(selectedMonth)}.</div>`;
+        html += `<div class="section-sub">No games for ${pname} in ${monthLabel(h2hMonth)}.</div>`;
       } else {
         monthEntries.forEach(e=>{
           const m = MATCHES.find(x=>x.id===e.matchId);
@@ -6408,7 +6481,7 @@ function renderH2H(){
   // They were built here from `MATCHES` -- the RATED set -- so a drawn meeting
   // was not a meeting at all: two players who had drawn once and never
   // otherwise met were told they had never played each other.
-  const inMonth = (m) => !monthActive || m.date.slice(0,7) === selectedMonth;
+  const inMonth = (m) => !monthActive || m.date.slice(0,7) === h2hMonth;
   const opponentMatches = h2hOpponentMatches(h2hPlayerA, h2hPlayerB)
     .filter(inMonth).sort((a,b)=> a.date < b.date ? 1 : -1);
   const teammateMatches = h2hTeammateMatches(h2hPlayerA, h2hPlayerB)
@@ -6419,9 +6492,9 @@ function renderH2H(){
   const bWins = headToHead.losses;   // A's losses as opponents ARE B's wins
   const h2hDraws = headToHead.draws;
 
-  html += `<div class="section-heading" style="margin-top:6px;">⚔️ As opponents${monthActive ? ` (${monthLabel(selectedMonth)})` : ''}</div>`;
+  html += `<div class="section-heading" style="margin-top:6px;">⚔️ As opponents${monthActive ? ` (${monthLabel(h2hMonth)})` : ''}</div>`;
   if(opponentMatches.length === 0){
-    html += `<div class="section-sub">${h2hPlayerA} and ${h2hPlayerB} ${monthActive ? `didn't play each other in ${monthLabel(selectedMonth)}` : 'have never played against each other'}.</div>`;
+    html += `<div class="section-sub">${h2hPlayerA} and ${h2hPlayerB} ${monthActive ? `didn't play each other in ${monthLabel(h2hMonth)}` : 'have never played against each other'}.</div>`;
   } else {
     html += `<div class="matchup-vs" style="text-align:center; font-size:16px; padding:12px;">
       <b style="color:${aWins>bWins?'var(--gold-bright)':'var(--text)'};">${h2hPlayerA} ${aWins}</b>
@@ -6453,9 +6526,9 @@ function renderH2H(){
     });
   }
 
-  html += `<div class="section-heading">🤝 As teammates${monthActive ? ` (${monthLabel(selectedMonth)})` : ''}</div>`;
+  html += `<div class="section-heading">🤝 As teammates${monthActive ? ` (${monthLabel(h2hMonth)})` : ''}</div>`;
   if(teammateMatches.length === 0){
-    html += `<div class="section-sub">${h2hPlayerA} and ${h2hPlayerB} ${monthActive ? `didn't play together in ${monthLabel(selectedMonth)}` : 'have never partnered together'}.</div>`;
+    html += `<div class="section-sub">${h2hPlayerA} and ${h2hPlayerB} ${monthActive ? `didn't play together in ${monthLabel(h2hMonth)}` : 'have never partnered together'}.</div>`;
   } else {
     // `losses = total - wins` is the shape that cannot hold a draw, and it
     // filed every drawn game as a defeat for the pair.
@@ -6500,9 +6573,9 @@ function renderH2H(){
   });
   wireH2HSelects(names);
 
-  populateMonthSelect(document.getElementById('h2hMonthSelect'));
+  populateMonthSelect(document.getElementById('h2hMonthSelect'), h2hMonth);
   document.getElementById('h2hMonthSelect').addEventListener('change', e=>{
-    selectedMonth = e.target.value;
+    h2hMonth = e.target.value;
     renderH2H();
   });
 }
