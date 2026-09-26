@@ -1,5 +1,11 @@
 # Best Month — analysis of candidate measures (September 2026)
 
+> **Implemented as a trial (26 Sep 2026, `25191b8`)** — the Power-Rating-stakes
+> monthly race approved in Ledger NEXT #15i is live at League → View → Monthly
+> Race. It reproduces the race tables below exactly in order; scores differ by
+> at most 0.23 because each match is settled to 0.1 so the drill-down adds up.
+> The analysis itself is kept as written.
+
 **Status: analysis only.** Nothing in the app, the engine (`sequential-v1`),
 the record, League, Merit or Monthly Performance was changed. Requested by
 Shaun, 26 Sep 2026. Author: CCode.
