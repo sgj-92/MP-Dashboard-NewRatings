@@ -1,0 +1,14 @@
+# GitHub Pages builds this site with Jekyll on every push to main. This file
+# exists for one purpose: stamping the deployed build, so the More screen can
+# say exactly which commit a device is running.
+#
+# assets/js/buildInfo.pages.js is a Liquid template rendered to
+# assets/js/buildInfo.js with the commit being built. The committed
+# assets/js/buildInfo.js is the local placeholder and is excluded, so it can
+# never be copied over the stamped one.
+
+# The build date is the club's date, not the build server's (UTC).
+timezone: Europe/London
+
+exclude:
+  - assets/js/buildInfo.js

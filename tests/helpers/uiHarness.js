@@ -62,9 +62,15 @@ function fixture() {
   return fixtureCache;
 }
 
-function serve() {
+// `files` replaces what a path serves -- the deployed build stamp, say, which
+// only exists once GitHub Pages has built the site.
+function serve(files = {}) {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    if (Object.prototype.hasOwnProperty.call(files, rel)) {
+      res.writeHead(200, { 'Content-Type': TYPES[path.extname(rel)] || 'application/octet-stream' });
+      res.end(files[rel]); return;
+    }
     const file = path.join(ROOT, rel);
     if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
       res.writeHead(404); res.end('not found'); return;
@@ -81,7 +87,7 @@ function serve() {
 async function open(options = {}) {
   const pw = getPlaywright();
   if (!pw) throw new Error('Playwright is not available.');
-  const server = await serve();
+  const server = await serve(options.files);
   const port = server.address().port;
   const browser = await pw.chromium.launch();
   // `timezoneId` lets a test put the reader somewhere specific -- London, say,
