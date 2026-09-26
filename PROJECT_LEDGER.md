@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`55bd9ea`** |
-| Tests | **546 / 546 passing** (144 of them drive a real browser) |
+| Last verified implementation commit | **`63b4ea7`** |
+| Tests | **561 / 561 passing** (158 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -308,6 +308,15 @@ Development instrumentation lives behind `?perf=1` (`perfTrace.js`) and reports
 when the record arrived, when each screen was drawn and what each derived
 calculation cost; it compiles to nothing when off.
 
+**Every screen owns its month (26 Sep).** `selectedMonth` belongs to Power
+Rankings alone and opens on the last completed month. Every other screen with
+a month owns its own: League/Merit/Information `summaryMonth` (last completed
+month), Games `gamesMonth` (All time), Compare `h2hMonth` (All time), Player
+Profile `profileMonth` (All time on every open, narrowed only by the profile's
+own control, kept across the sheet's in-place refreshes). `populateMonthSelect`
+requires the value it displays. A source-level test fails the build if
+anything outside Power Rankings reads or writes `selectedMonth`.
+
 **Three outcomes, never two (23 Sep).** A match is a win, a loss or a draw,
 and the draw is the one code forgets. On a drawn match `winners` and `losers`
 still hold the two sides — a match has two sides whatever the result — but
@@ -491,6 +500,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Reassessment α ships at 0.25 | Below the best-performing 0.50, pending real reviews. |
 | Coordination moves from Google Drive to this file | Claude Code could read the Drive doc but not write to it. |
 | Engine is frozen | A surprising-looking rating is not a bug. Report suspected defects; do not adjust. |
+| Month state is owned per screen, never shared by default | Shaun, 26 Sep: "Month defaults should belong to the feature/view that requires them unless we have explicitly designed a shared month selection." A profile must never become a historical snapshot because Rankings chose a month. Compare's default was set to All time by CCode on the same reasoning Shaun applied to Games (a head-to-head is a history); one line to change if he prefers otherwise. |
 | A result becomes a visual state in exactly one place | `MatchOutcome.classFor()`. Three renderers of a form run had three private answers, and when the shared sequence changed type one of them silently drew every loss as a win. Nothing may derive a form state from a truth test; a source-level test fails the build if it does. |
 | A draw is read from the record, never inferred from the score | Shaun, 23 Sep: Money Padel draws come from unfinished matches, injury and time limits, so the scoreline proves nothing. `outcome` on the document is authoritative. No screen may classify an outcome any other way. |
 | Screens that describe history include draws; calculations do not | The rated set stays draw-free so no win percentage, league point or partnership figure moves. Head-to-head, the profile match log and the doughnut drill-down read the wider list, because a drawn game is still a game that was played. |
@@ -1881,6 +1891,58 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 26 Sep 2026 (Player Profile month leak; Directory refresh finished)
+
+`d8d6406` and `63b4ea7`. **561 / 561 tests (158 browser).**
+
+**1. The profile's August was genuine shared-state leakage.** Audited before
+anything changed. There was one month variable. The profile was written, in
+the original pre-v3 app, to follow it deliberately — "if a month is selected
+elsewhere in the app, keep this profile's match log scoped to it too" — which
+was reasonable while a person chose that month. It stopped being reasonable
+when Rankings began choosing it automatically at start-up. Reproduced: Rishi
+opened from the Directory showed 18 of his 80 games under "Showing only August
+2026". Compare was quieter and worse: its month picker *wrote* the Rankings
+month.
+
+This had surfaced twice before and been treated as a symptom both times. Games
+got its own month (the right fix, applied to one screen), and Home's "View
+match" widened the month around one call and restored it (a workaround, and
+CCode's). The Ledger recorded the workaround without recording that the cause
+was still live, which is how the profile went on opening as an August snapshot
+for everyone. Fixed at the root: each screen owns its month, the workaround is
+deleted, and a source-level test now fails the build if anything but Rankings
+touches `selectedMonth`.
+
+Kept, and verified independent: Rankings still opens on August; League and
+Merit still open on the last completed month from their own `summaryMonth`
+(question for Shaun in NEXT #15e); Games stays All time. The app has no
+router, so "back" means in-app navigation — a test walks Rankings → Players →
+profile → month chosen → away → back and asserts nothing moved.
+
+**The profile keeps its month-specific view as an explicit control of its
+own** on the Recent Results heading. Not previously designed; added so the
+capability the implicit scoping provided is not lost. Flagged here in case
+Shaun would rather it went.
+
+**2. The Directory had not regressed and was not being overridden.** Checked
+in order: nothing touched the Directory after `43401f8`; one renderer writes
+it; GitHub Pages last deployed `main` HEAD. What Shaun saw *was* the delivered
+design, and it had gone half the distance. It folded the filters, but left a
+bordered filter card, two full-width sort buttons, full-size chips inside the
+fold, and plain rows. The bordered card is the treatment Shaun rejected on
+League one day after the Directory shipped; every other screen was brought
+into line and this one never was.
+
+Finished in the same renderer with the same ids: quiet filter line, compact
+sort on the count line, small chips with one "selected" look, and player cards
+using Home's initials avatar tinted by the tier tokens. First player 256→218px
+shut and 438→344px open at 375px. **Worth carrying forward:** the original
+Directory tests pinned behaviour only, which is why a half-finished look passed
+review and stayed. Seven new tests pin the look.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 23 Sep 2026 (form dots, and how the draw fix broke them)
 
@@ -5168,6 +5230,8 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `63b4ea7` | Players Directory refresh finished in the canonical renderer: quiet filter line, compact sort beside the count, small unified chips, player cards with tier-tinted initials avatars; first player 256→218px shut, 438→344px open; reference screenshots regenerated |
+| `d8d6406` | Month state ownership: the Player Profile stopped opening as an August snapshot, Compare stopped writing the Rankings month; each screen owns its month; `populateMonthSelect` requires a value; Home's month workaround removed |
 | `55bd9ea` | Home's Last 10 form dots fixed — all ten rendered green after the draw fix changed the sequence from booleans to letters and Home's `isWin?'w':'l'` read every letter as truthy; the three form-run renderers unified on `MatchOutcome.classFor()`, unknown states refused rather than guessed, per-dot regression tests added |
 | `fc3706f` | Player filter clearing: a subtle Clear all on the Players in match heading, rendered only while something is selected and leaving Month and Game type untouched; a per-field remove so a four-player search can be corrected by one name; a harness race fixed that made two data-flow tests intermittent |
 | `04efe2c` | Four-player search in the Games filters (`playerFilter.js`): order-, side- and partnership-agnostic, one to four players, matching on canonical ids so a rename cannot break a historical search; compact group summary on the shut heading; the single Player select retired |
@@ -5235,8 +5299,8 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
 
 ## 8. NEXT
 
-**The approved queue is empty.** Baton with Shaun / CGPT. `55bd9ea`,
-**546 / 546 tests (144 browser)**.
+**The approved queue is empty.** Baton with Shaun / CGPT. `63b4ea7`,
+**561 / 561 tests (158 browser)**.
 
 1. **DONE (`838ca66`).** Tom/Fatch integrity audit — record verified correct.
 2. **DONE (`43401f8`).** Players Directory visual refresh.
@@ -5319,7 +5383,21 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    caused by CCode's own draw fix three commits earlier. Display only; no
    calculation touched. See the handoff for what the audit found.
 
+15c. **DONE (`d8d6406`).** Player Profile stuck on August — genuine
+   shared-state leakage, fixed at the root. See the handoff.
+
+15d. **DONE (`63b4ea7`).** Players Directory visual regression — the refresh
+   had been delivered but only half-finished; now completed in the same
+   renderer. See the handoff.
+
 ### Waiting on Shaun
+
+15e. **Should League and Merit open on the current month?** Shaun's 26 Sep
+   brief said League/Merit *may* default to the current month. They open on
+   the last completed month today, by their own recorded decision, from their
+   own state — they were never coupled to Rankings, and this task did not
+   change them. If he wants the current month, it is one line in
+   `renderSummary`.
 
 16. **Should the rated set include draws?** *(Found during the draw audit, not
    acted on.)* Draws ARE rated — six matches, 24 journey events, real
