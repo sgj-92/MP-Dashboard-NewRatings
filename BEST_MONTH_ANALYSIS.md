@@ -291,6 +291,74 @@ it distinct from Monthly Performance.
 
 ---
 
+## Presenting it as a monthly race (added after Shaun's feedback)
+
+Shaun: players will ask how par is calculated, so it must be simple. The club
+previously ran a monthly race: everyone in a tier started level, and the best
+rating at month-end won.
+
+**That race and "wins above par" are the same mathematics.** A race's
+end-of-month gain is K × Σ(result − expected result). The only real choice is
+**what judges how tough each match was**:
+
+| | **Pure race** (the old system) | **Race with Power-Rating stakes** (recommended) |
+|---|---|---|
+| Start | Everyone in the tier level | Everyone in the tier level |
+| Toughness of a match | This month's race ratings only (tier offsets across tiers) | Partner's and opponents' Power Ratings; **you** count as an ordinary member of your tier |
+| Ranking | Highest at month-end | Highest at month-end |
+
+The Power-Rating race's "par" is the old "equal footing" idea, applied to you.
+It is not your own rating, which is what keeps it from becoming Monthly
+Performance. What changes is that your partner and opponents are judged as
+they really are.
+
+**For players:** *Everyone in a tier starts the month on 0. Each match has
+stakes, set before it is played from the four players' Power Ratings: the
+tougher the match for your side, the more a win earns and the less a loss
+costs. Highest total at the end of the month has the best month.* With K = 20:
+an even match is win +10 / lose −10. September's toughest Tier B fixture was
++18 / −2, the easiest +1 / −19. Showing the stakes on a match before it is
+played would make the whole thing self-explaining.
+
+**September, K = 20** (qualified players; the order is the same at K = 32):
+
+| Tier A | Pure race | PR-stakes race | | Tier B | Pure race | PR-stakes race |
+|---|---|---|---|---|---|---|
+| Osh 8-3-5 | +38 (#2) | **+47 (#1)** | | Rishi 10-3-8 | +52 (#1) | **+77 (#1)** |
+| Erf 5-0-0 | **+41 (#1)** | +42 (#2) | | PDM 7-2-7 | +22 (#2) | +38 (#2) |
+| KC 6-0-3 | +28 (#3) | +37 (#3) | | Antz 5-1-2 | +20 (#3) | +23 (#3) |
+| Len 10-3-3 | +26 (#4) | +21 (#4) | | Tom 5-2-2 | +13 (#4) | +13 (#4) |
+| Rishi 2-2-1 | +2 (#5) | −4 (#5) | | Rocky 3-0-2 | +4 (#5) | +4 (#5) |
+| Kaz 2-3-5 | −27 (#6) | −16 (#6) | | Max 2-1-7 | −29 (#7) | −17 (#6) |
+| Eli 3-2-5 | −39 (#7) | −39 (#7) | | Stormz 2-0-5 | −25 (#6) | −25 (#7) |
+| Ant Slicer 0-1-4 | −52 (#8) | −55 (#8) | | Jords 3-3-8 | −46 (#8) | −41 (#8) |
+
+**Why not the pure race:** it cannot see who is actually strong inside a tier
+until the month's results reveal it. At the start of a month, for a Tier B
+player rated 1400:
+
+| Choice | True win chance | Pure race, expected | PR-stakes race, expected |
+|---|---|---|---|
+| vs a strong B pair (1450) | 39% | **−2.3** | +0.4 |
+| vs a weak B pair (1350) | 61% | **+2.3** | +0.4 |
+| with a 1350 B partner | 44% | −1.1 | +0.4 |
+| with a 1450 B partner | 56% | **+1.1** | +0.4 |
+
+So the pure race pays for ducking the strong pairs in your own tier and for
+choosing strong partners. The Power-Rating race pays the same whoever you
+play and whoever you play with.
+
+**What the race form gives up:** a race is a running total, so a player who
+keeps beating par over many matches outscores one who beat it by more over
+fewer. In Tier A this puts Osh (16 matches) ahead of Erf (5-0). The +8 cushion
+earlier in this report fixes that, but it cannot be explained in race
+language. **The simple form is the race with a 5-match minimum; the cost is a
+mild reward for volume, but only for players who are beating par.** Playing
+more while below par lowers your total.
+
+Tier changes: each tier spell is its own race and restarts at 0 in the new
+tier, which is the same split rule as League and Merit.
+
 ## Recommendation
 
 1. **Take E, "wins above par", forward.** It is the one candidate that answers

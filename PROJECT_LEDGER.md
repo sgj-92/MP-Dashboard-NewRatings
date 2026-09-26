@@ -5571,6 +5571,22 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    - Is there a Tier C award? (Nobody reached 3 matches.)
    - Should the headline be the total or the cushioned score?
 
+   *Follow-up, same day:* Shaun wants par to be simple, like the club's old
+   monthly race (everyone in a tier starts level; best rating at month-end).
+   **The race is the same mathematics**, so the recommendation becomes
+   **"the race with Power-Rating stakes"**:
+   - Everyone starts the month on 0.
+   - Each match's win/lose stakes are set from the partner's and opponents'
+     Power Ratings, with you counted as an ordinary member of your tier.
+   - An even match is ±10; September ranged from +18/−2 to +1/−19.
+
+   The pure old race gave nearly the same September order, but it pays for
+   ducking strong same-tier pairs and for picking strong partners (±2.3 and
+   ±1.1 points per match at the start of a month). The Power-Rating race is
+   neutral. Its one cost is a mild reward for volume while beating par (Osh
+   ahead of Erf in Tier A). Details are in `BEST_MONTH_ANALYSIS.md`, "Presenting
+   it as a monthly race".
+
 15h. **RESOLVED 26 Sep, 03:57 UTC — Pages deploys again; cause found.** No
    Pages build ran for any push between `6efc096` (02:45) and `971298e`, and
    Shaun's phone kept the pre-stamp build. **Cause: pushes from CCode's git
