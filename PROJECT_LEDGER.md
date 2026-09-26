@@ -60,8 +60,8 @@ rating chokepoint now reads v3 persisted state.
 | | |
 |---|---|
 | Branch | `main` |
-| Last verified implementation commit | **`63b4ea7`** |
-| Tests | **561 / 561 passing** (158 of them drive a real browser) |
+| Last verified implementation commit | **`87368a1`** |
+| Tests | **589 / 589 passing** (172 of them drive a real browser) |
 | First content, at a phone's 250ms round trip | **499ms** (was 3,779ms) |
 | **Live record status** | **REPAIRED 20 Sep — replays to itself (0 differences), diagnostics 8/8. Editing works again.** |
 | Firebase (beta) | `mp-dashboard-beta-v3` |
@@ -148,6 +148,15 @@ built; they exist — `scripts/screenshots.js`, 19 captures in
 ---
 
 ### Added since the compaction
+
+**Meaningful Month — DONE (`87368a1`).** Power Rankings, League and the Home
+monthly card open on the current month only once it holds **5 or more
+canonical completed matches** (draws count; pending submissions and player
+appearances do not). Before that they open on the most recent month with
+games, with a quiet *"September is taking shape · 3 of 5 games"* note and a
+one-tap way to view the current month anyway. The default is pinned on
+arrival, never on a redraw, so a fifth game being approved does not move a
+reader mid-page. See Section 2 for which rule each screen follows.
 
 **Tom/Fatch reassessment audit — RESOLVED (`838ca66`).** Shaun reported the app
 still described Tom and Fatch as reassessed to Jords' level. **The numbers were
@@ -309,13 +318,42 @@ when the record arrived, when each screen was drawn and what each derived
 calculation cost; it compiles to nothing when off.
 
 **Every screen owns its month (26 Sep).** `selectedMonth` belongs to Power
-Rankings alone and opens on the last completed month. Every other screen with
-a month owns its own: League/Merit/Information `summaryMonth` (last completed
+Rankings alone and opens on its Meaningful Month (below; was: the last
+completed month). Every other screen with a month owns its own:
+League/Merit/Information `summaryMonth` (Meaningful Month; was: last completed
 month), Games `gamesMonth` (All time), Compare `h2hMonth` (All time), Player
 Profile `profileMonth` (All time on every open, narrowed only by the profile's
 own control, kept across the sheet's in-place refreshes). `populateMonthSelect`
 requires the value it displays. A source-level test fails the build if
 anything outside Power Rankings reads or writes `selectedMonth`.
+
+**Meaningful Month (26 Sep, `87368a1`).** A screen that opens on "the month"
+opens on the current month once it has **5+ unique completed matches**, else
+the most recent earlier month with any (else All time). Pure rule in
+`meaningfulMonth.js`; counts canonical approved matches (`getAllApprovedMatches`,
+draws included, pending excluded), deduped by id, in the reader's **local**
+calendar. Each such screen keeps two things, never one global:
+
+- a **default**, evaluated and pinned on *arrival* (tab click from another
+  screen, boot, Home via `goToSection`) — never in `render()`/`dataChanged()`,
+  so new data cannot move a page someone is reading;
+- the user's **choice**, kept per screen, which beats the default until the
+  month disappears from the record.
+
+| View | Month rule |
+|---|---|
+| Power Rankings (+ W/L, podium, Kings of Tiers, monthly summary — they share its month) | **Meaningful Month** · own choice (`rankingsMonthChoice`) |
+| League / Merit / Information (+ WhatsApp summary) | **Meaningful Month** · own choice (`summaryMonthChoice`) |
+| Home monthly card (+ Player of the Month) | **Meaningful Month** · no control; re-evaluated each arrival at Home |
+| Home → View Full Review | opens **the month the card shows**, without touching League's own choice |
+| Games | **All time** · own local selection (`gamesMonth`) |
+| Compare | **All time** · own local selection (`h2hMonth`) |
+| Player Profile | **All time** match log · own control (`profileMonth`); current state is **rolling** |
+| Last 10, current Power Rating, Home Your Game, Doughnuts, Call-outs, Directory | **Rolling / current / all-time** — never month-scoped |
+| Monthly rating breakdown | follows the month its caller passes |
+
+The note shows only while the default is the fallback, the reader is looking
+at it, and the current month has at least one game (nothing to show at 0).
 
 **Three outcomes, never two (23 Sep).** A match is a win, a loss or a draw,
 and the draw is the one code forgets. On a drawn match `winners` and `losers`
@@ -548,6 +586,7 @@ Shaun's decisions, including where an agent recommended otherwise.
 | Compact Games breakdown; full calculation must actually open | The expanded Games card is still too wordy. Keep only the concise matchup/expectation line(s), then rating change per player. Remove redundant explanatory prose already implied by the expectation/result line. `See full calculation` must be a working disclosure/accordion on the same card; it is currently inert and is a bug. |
 | Mid-month tier changes split League Table results by match-date tier | For any month in which a player changes tier, League Table membership is determined **per match using the tier in force on that match date**. `date < effectiveDate` belongs to the old tier; `date >= effectiveDate` belongs to the new tier. Points/results never transfer between tiers. A player may therefore appear in two tier tables in the same month, with each row containing only the matches/points earned while classified in that tier. In `All together`, keep one whole-month row and show the transition (e.g. `B → A`) rather than duplicating the player. This is generic temporal-tier behaviour via `tierAsOf(player, matchDate)`, not hardcoded to the September movers. |
 | League Table gets progressive disclosure + Last 10 form table | Shaun, 20 Sep 2026. The explanatory copy under the month League Table heading should be hideable/collapsible; the By tier breakdown should also be collapsible to reduce vertical length on mobile. Add a dedicated league-table view based on each player's **most recent 10 rated games overall** so current form can be compared cleanly as a table rather than compressed into the existing `Form (10g)` column. This is a results/form view only — do not create a new rating calculation or alter Sequential-v1. |
+| Meaningful Month — screens open on this month only once it has 5 games | **DONE `87368a1`.** Shaun, 26 Sep 2026. If the current calendar month has fewer than 5 unique completed matches, default to the most recently completed month; at 5+, default to the current month. Count canonical matches, not appearances; draws count. The current month stays manually selectable before 5. **Initial/default only** — never overrides an explicit selection, never jumps a reader mid-page when match #5 lands. Default and selection are separate, per feature, never one global. Rolling/current features (Last 10, current Power Rating, profile current state) are not forced onto the previous month. **Supersedes** Rankings' and League's "open on the last completed month" rule, and resolves NEXT #15e. CCode applied it to the Home monthly card too (it was not on the list) so Home and its View Full Review agree. |
 | League Table disclosure correction — per-tier, not global | **DONE `11ed091`.** Shaun, 21 Sep 2026. **Supersedes only the disclosure layout from the 20 Sep League refinement.** `How this table works` must be a subtle inline text/chevron disclosure with no large bordered block. Remove the global `Tier tables` accordion. Tier S, A, B and C each get their own independent subtle chevron and collapse state, default **expanded** when entering By tier. Collapsing one tier must not affect any other. Keep the existing `By tier / All together / Last 10` selector and all underlying split-month/Last-10 behaviour. |
 | Predict a Matchup remains Admin-only and returns to plain-language result copy | **Copy DONE `55d2fa7`; visual render still awaited.** Shaun, 21 Sep 2026. Predict a Matchup stays in **Admin / More** and is deliberately not exposed to normal players, because players could use predictions to avoid agreed games or cherry-pick favourable ones. Real workflow: players agree a match in the group, then send Shaun the four-player matchup for prediction. The result UI should return to the older, simpler language: clearly name the **predicted winning team**, show the **expected share of games (%)**, and show the **rating-point advantage**. Remove user-facing `Expected performance score` / 80:20 engine terminology from the result card; the underlying Sequential-v1 calculation is unchanged. Do not prescribe a new visual layout yet. Keep the copy simplification and information hierarchy only; visual redesign is deferred until Shaun provides/approves a visual render. Keep only a small muted note that it is based on current Power Ratings and records nothing. |
 | A one-player tier section arrives collapsed | Shaun, 22 Sep 2026: *"Tier S should be collapsed by default as there's only one player there."* **Supersedes "tier sections default expanded on entry to By tier" (21 Sep) for one-player sections only**; populated sections are unchanged. Implemented as the reason rather than as the letter S, so a section that gains a second player opens on its own and any tier that thins to one folds without the rule being revisited. The heading always renders, so collapsed is one tap from open, and an explicit tap always beats the default. Applies to both the League and Merit tier sections. **DONE `1781ed5`.** |
@@ -1891,6 +1930,40 @@ ideas only, or any matchup card) before it is scheduled.
 ---
 
 ## 6. HANDOFFS
+
+### CCode — 26 Sep 2026 (Meaningful Month)
+
+`87368a1`. **589 / 589 tests (172 browser)**; 28 new, 12 of the browser ones
+verified failing on the previous code (the other two are guards for rolling
+views and feature independence, which must pass either way).
+
+**What it does.** `meaningfulMonth.js` is the one rule: current month once it
+holds 5+ unique completed matches, else the latest earlier month with any.
+Counts canonical approved matches — draws in, pending out, one match however
+many players — in the reader's own time zone (tested at 23:30 UTC on 30 Sep
+for a London reader, who is already in October). Rankings and League each keep
+a pinned default and a separate user choice; Home re-evaluates on each
+arrival. Section 2 has the per-view table Shaun asked for.
+
+**Not jumping the reader.** The default is fixed when someone *arrives* at a
+screen, never on a redraw, so a fifth game approved while they read changes
+nothing until they next come in. An explicit choice is never overridden; it is
+dropped only if that month vanishes from the record.
+
+**Two things Shaun should know, both small and reversible:**
+1. **The Home monthly card follows the rule too.** It was not on his list. It
+   used to show the latest month with *any* match, pending included — so on
+   26 Sep it said September while its own View Full Review opened August.
+   Now card and review agree, and View Full Review opens the card's month
+   without touching League's own choice. It carries the same note, without
+   the switch link (Home has no month control).
+2. **Home "Games played" now counts draws**, because it uses the same count
+   as the rule. Previously a draw was missing from it.
+
+`getDefaultRankingsMonth()` is deleted; a comment points at the replacement.
+The engine and the record are untouched.
+
+Baton back to Shaun / CGPT. Nothing is queued.
 
 ### CCode — 26 Sep 2026 (Player Profile month leak; Directory refresh finished)
 
@@ -5230,6 +5303,7 @@ specification text.*
 
 | Commit | Work |
 |---|---|
+| `87368a1` | Meaningful Month: Rankings, League and the Home monthly card open on the current month only once it holds 5+ canonical completed matches (draws count, pending don't), else the last month with games plus a quiet "taking shape · N of 5 games" note with a one-tap switch; default pinned on arrival, explicit choice kept per screen; Home "View Full Review" now opens the card's month; Home "Games played" counts draws; 28 tests (0/1/4/5/6, boundaries, time zone, choice, navigation, independence) |
 | `63b4ea7` | Players Directory refresh finished in the canonical renderer: quiet filter line, compact sort beside the count, small unified chips, player cards with tier-tinted initials avatars; first player 256→218px shut, 438→344px open; reference screenshots regenerated |
 | `d8d6406` | Month state ownership: the Player Profile stopped opening as an August snapshot, Compare stopped writing the Rankings month; each screen owns its month; `populateMonthSelect` requires a value; Home's month workaround removed |
 | `55bd9ea` | Home's Last 10 form dots fixed — all ten rendered green after the draw fix changed the sequence from booleans to letters and Home's `isWin?'w':'l'` read every letter as truthy; the three form-run renderers unified on `MatchOutcome.classFor()`, unknown states refused rather than guessed, per-dot regression tests added |
@@ -5390,9 +5464,14 @@ Backfill of 817 documents to `mp-dashboard-beta-v3` verified against the plan:
    had been delivered but only half-finished; now completed in the same
    renderer. See the handoff.
 
+15f. **DONE (`87368a1`).** Meaningful Month defaulting. See Section 2 for the
+   per-screen rule and the handoff for what changed on Home.
+
 ### Waiting on Shaun
 
-15e. **Should League and Merit open on the current month?** Shaun's 26 Sep
+15e. **RESOLVED 26 Sep by Meaningful Month (`87368a1`)** — League and Merit
+   open on the current month once it has 5 games. *Original question, kept:*
+   **Should League and Merit open on the current month?** Shaun's 26 Sep
    brief said League/Merit *may* default to the current month. They open on
    the last completed month today, by their own recorded decision, from their
    own state — they were never coupled to Rankings, and this task did not
